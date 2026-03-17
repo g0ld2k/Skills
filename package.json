@@ -1,0 +1,23 @@
+{
+  "name": "skills",
+  "version": "1.0.0",
+  "description": "Custom agentic skills, agents, and prompts installer",
+  "main": "index.js",
+  "bin": {
+    "skills": "./bin/skills.js"
+  },
+  "scripts": {
+    "test": "node --test test/skills.test.js"
+  },
+  "keywords": [
+    "skills",
+    "agents",
+    "prompts",
+    "agentic"
+  ],
+  "author": "g0ld2k",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
