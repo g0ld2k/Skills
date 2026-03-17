@@ -58,7 +58,8 @@ content="$({
       "No unresolved top-level review comments found."
     else
       to_entries[]
-      | "## Comment #\(.value.comment_id) [\(.value.path):\(.value.line // "n/a")]\n"
+      | (.value.line // "n/a") as $line
+      | "## Comment #\(.value.comment_id) [\(.value.path):\($line)]\n"
         + "- URL: \(.value.url)\n"
         + "- Validity: <valid|partial|invalid>\n"
         + "- Priority: <high|medium|low>\n"

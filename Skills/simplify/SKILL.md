@@ -89,7 +89,7 @@ Deduplicate overlapping findings and keep the clearest one.
 
 ## Phase 3: Present Findings and Get User Selection
 
-Wait for all three agents to complete. Aggregate their findings and fix each issue directly using the Edit tool. If a finding is a false positive or not worth addressing, note it and move on — do not argue with the finding, just skip it.
+Wait for all three agents to complete. Aggregate their findings for presentation. If a finding is a false positive or not worth addressing, note it and move on — do not argue with the finding, just skip it.
 
 Do not edit code in this phase.
 

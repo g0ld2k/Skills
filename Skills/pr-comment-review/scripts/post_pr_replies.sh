@@ -69,8 +69,8 @@ require_cmd jq
 
 fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
 
-if [[ ! -x "$fetch_script" ]]; then
-  die "Missing executable helper: $fetch_script"
+if [[ ! -f "$fetch_script" || ! -r "$fetch_script" ]]; then
+  die "Missing readable helper: $fetch_script"
 fi
 
 unresolved_ids="$(mktemp)"
@@ -89,7 +89,9 @@ would_post=0
 skipped=0
 failed=0
 
-while IFS=$'\t' read -r comment_id body; do
+while IFS= read -r reply_json; do
+  comment_id="$(jq -r '.comment_id // empty' <<<"$reply_json")"
+  body="$(jq -r '.body // ""' <<<"$reply_json")"
 
   if [[ -z "$comment_id" || "$comment_id" == "null" ]]; then
     echo "Skipping entry without comment_id" >&2
@@ -119,7 +121,7 @@ while IFS=$'\t' read -r comment_id body; do
     echo "Failed posting reply to comment $comment_id" >&2
     failed=$((failed + 1))
   fi
-done < <(jq -r '.[] | [.comment_id, (.body // "")] | @tsv' "$replies_file")
+done < <(jq -c '.[]' "$replies_file")
 
 echo "Summary: posted=$posted would_post=$would_post skipped=$skipped failed=$failed dry_run=$dry_run"
 

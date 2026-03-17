@@ -48,8 +48,12 @@ Run these first:
 git rev-parse --is-inside-work-tree
 git --no-pager branch --show-current
 git fetch --prune origin
-gh --version
-gh auth status
+if command -v gh >/dev/null 2>&1; then
+  gh --version
+  gh auth status
+else
+  echo "gh not found; use GitHub MCP fallback for PR create/update."
+fi
 ```
 
 Stop if:
@@ -171,11 +175,12 @@ BRANCH="$(git branch --show-current)"
 gh pr view "$BRANCH" --json number,url,title,baseRefName 2>/dev/null
 ```
 
-2) Write body to a file (portable and quote-safe):
+2) Write body to a temp file (portable, quote-safe, and no repo litter):
 
 ```bash
-mkdir -p .tmp
-cat > .tmp/pr-body.md <<'MD'
+pr_body_file="$(mktemp)"
+trap 'rm -f "$pr_body_file"' EXIT
+cat > "$pr_body_file" <<'MD'
 <generated markdown body>
 MD
 ```
@@ -184,7 +189,7 @@ MD
 
 - If PR exists: update it
 ```bash
-gh pr edit <number> --title "<title>" --body-file .tmp/pr-body.md
+gh pr edit <number> --title "<title>" --body-file "$pr_body_file"
 ```
 
 - If PR does not exist: create it
@@ -192,7 +197,7 @@ gh pr edit <number> --title "<title>" --body-file .tmp/pr-body.md
 git push -u origin "$BRANCH"
 gh pr create \
   --title "<title>" \
-  --body-file .tmp/pr-body.md \
+  --body-file "$pr_body_file" \
   --base "$BASE_BRANCH" \
   --head "$BRANCH"
 ```
