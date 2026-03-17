@@ -1,230 +1,224 @@
 ---
 name: pr-generator
-description: "Generate comprehensive GitHub pull request descriptions by analyzing branch changes, commits, and test coverage. Creates concise PR descriptions with goal, changes, testing instructions, and files summary. Always presents for review before publishing."
+description: Generate and optionally publish high-quality GitHub pull requests using a deterministic, evidence-based workflow. Produces concise PR titles and markdown bodies with goal, change summary, testing, risks, and rollout notes. Always requires explicit user approval before creating or updating a PR.
 tools:
   - bash
   - view
-  - git
-  - gh
+  - edit
   - grep
   - glob
 ---
 
-# Pull Request Generator
+# PR Generator (v2)
+
+## When to Use
+
+Use this skill when a user asks to:
+- generate a PR description
+- create a pull request
+- improve/update an existing PR body/title
+
+## Runtime Compatibility
+
+This skill is designed for:
+- Codex CLI
+- Codex Desktop
+- GitHub Copilot CLI
+
+Capability strategy:
+1. Prefer `gh` + `git` CLI.
+2. If `gh` is unavailable but GitHub MCP is available, use MCP equivalents.
+3. If neither path can create/update PRs, stop and report the missing capability.
+
+## Non-Negotiable Guardrails
+
+- Never create or update a PR without explicit user approval.
+- Never invent test execution, issue links, or validation results.
+- Never claim "tests passed" unless commands were actually run and succeeded.
+- Never use destructive git commands unless explicitly requested.
+- Never silently choose a base branch; detect and report it.
 
 ## Workflow
 
-### 1) Verify branch and changes
+### Phase 0: Preflight
 
-Start by collecting branch information:
+Run these first:
 
 ```bash
-# Get current branch name
+git rev-parse --is-inside-work-tree
 git --no-pager branch --show-current
-
-# Get commits ahead of main/master
-git --no-pager log origin/main..HEAD --oneline 2>/dev/null || git --no-pager log origin/master..HEAD --online
-
-# Get diff statistics
-git --no-pager diff origin/main...HEAD --stat 2>/dev/null || git --no-pager diff origin/master...HEAD --stat
+git fetch --prune origin
+gh --version
+gh auth status
 ```
 
-**Stop if**:
-- Not on a feature branch (still on main/master)
-- No commits ahead of base branch
-- No file changes detected
+Stop if:
+- not in a git repo
+- current branch is `main` or `master`
+- `gh` auth is invalid and no MCP fallback is available
 
-### 2) Analyze commits and changes
+If `gh` is unavailable but GitHub MCP is available:
+- resolve repo + current branch context
+- detect existing open PR for the branch
+- create PR when none exists, or update PR title/body when one exists
+- follow the same approval and truthfulness guardrails as the `gh` path
 
-Review the commit messages to understand the scope:
+### Phase 1: Detect Base Branch Deterministically
+
+Detect base branch once and reuse it for all later steps.
 
 ```bash
-# Get detailed commit information
-git --no-pager show --stat HEAD
-
-# If multiple commits, review them all
-git --no-pager log --pretty=format:"%h %s" origin/main..HEAD
+BASE_BRANCH="$(bash scripts/detect_base_branch.sh)"
+echo "Using base branch: ${BASE_BRANCH:-<none>}"
 ```
 
-**Extract**:
-- Primary goal/purpose from commit messages
-- Which models/views/services were modified
-- Whether tests were added/updated
-- Documentation changes
+Stop if `BASE_BRANCH` is empty.
 
-### 3) Check project context
-
-If available, read relevant project files:
-- `CONTEXT.md` - Current phase, recent decisions
-- `PRD.md` - Phase information, feature descriptions
-- `TASKS.md` - Task completion status
-
-This helps frame the PR in terms of project milestones.
-
-### 4) Identify test coverage
-
-Look for test file changes:
+### Phase 2: Collect Branch Evidence
 
 ```bash
-# Check for test additions in the diff
-git --no-pager diff origin/main...HEAD --stat | grep -i test
+# Commits ahead of base
+git --no-pager log "origin/$BASE_BRANCH"..HEAD --oneline
+
+# File stats and patch context
+git --no-pager diff "origin/$BASE_BRANCH"...HEAD --stat
+git --no-pager diff "origin/$BASE_BRANCH"...HEAD --name-status
+git --no-pager diff "origin/$BASE_BRANCH"...HEAD
 ```
 
-Count new tests if applicable:
-- Unit tests added
-- Integration tests added
-- UI tests added
+Stop if:
+- no commits ahead
+- no changed files
 
-### 5) Generate PR description
+### Phase 3: Optional Project Context
 
-Create a concise, structured PR description following this template:
+If present, read:
+- `CONTEXT.md`
+- `PRD.md`
+- `TASKS.md`
+- `README.md`
+
+Use only to improve terminology and milestone framing; do not override diff evidence.
+
+### Phase 4: Testing Evidence Collection
+
+Capture two separate signals:
+
+1) **Tests Changed** (from diff paths)
+
+```bash
+git --no-pager diff "origin/$BASE_BRANCH"...HEAD --name-only | grep -Ei '(^|/)(test|tests|__tests__|specs?)(/|$)|(_test\.|\.test\.|\.spec\.)'
+```
+
+2) **Tests Run** (executed in this session)
+- Record only commands actually run (for example `swift test`, `make test`, `npm test`).
+- If no tests are run, explicitly state: `Not run in this session`.
+
+### Phase 5: Generate Draft PR Title and Body
+
+Title rules:
+- Conventional Commit style: `<type>(optional-scope): <subject>`
+- Allowed types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`, `chore`
+- Keep subject specific and concise.
+
+Body template:
 
 ```markdown
 ### Goal
-[1-2 sentences describing what this PR accomplishes and why]
+[1-2 sentences: what this PR does and why]
 
 ### What Changed
-- **[Category]:** [Brief description of changes]
-- **[Category]:** [Brief description of changes]
-- **Testing:** [Test additions/coverage]
+- **[Category]:** [Key change and impact]
+- **[Category]:** [Key change and impact]
+
+### Testing
+- **Tests Changed:** [Summary]
+- **Tests Run:** [Exact commands + results, or "Not run in this session"]
 
 ### Files Changed
 [X files, +Y/-Z lines]
 
-### How to Test
-1. **[Test scenario 1]:** [Expected behavior]
-2. **[Test scenario 2]:** [Expected behavior]
-3. **Run tests:** `make test` or equivalent
+### Risks / Breaking Changes
+- [Known risks, migrations, compatibility notes, or "None identified"]
+
+### How to Validate
+1. [Manual scenario with expected result]
+2. [Manual scenario with expected result]
+3. **Automated:** `[test command(s)]`
 
 ### Notes
-[Any additional context, phase completion, breaking changes, or follow-up work]
+[Issue links, phase completion, follow-up tasks]
 ```
 
-**Categories to use**:
-- Models
-- Views/UI
-- Services/Business Logic
-- Configuration
-- Documentation
-- Testing
-- Performance
-- Availability Logic (for availability-related changes)
+Category guidance: `API`, `Models`, `UI`, `Business Logic`, `Data`, `Infra/Config`, `Docs`, `Testing`, `Performance`, `Security`.
 
-**Guidelines**:
-- Keep the goal concise (1-2 sentences max)
-- Use bullet points with bold category labels
-- Include specific file/class names when relevant
-- Provide practical test scenarios users can follow
-- Mention phase completion if from PRD.md
-- Total description should be scannable in ~30 seconds
+### Phase 6: Present Draft for Approval
 
-### 6) Present for review
+Always show:
+- proposed PR title
+- full PR body
+- detected base branch
+- whether this will create a new PR or update an existing PR
 
-**Important**: Always show the generated PR description to the user and explicitly ask for approval before publishing.
+Ask for explicit approval before publish/update.
 
-Say something like:
-> "Here's the PR description. Does this look good, or would you like me to adjust anything before publishing?"
+### Phase 7: Create or Update PR (Post-Approval Only)
 
-Wait for explicit approval (e.g., "looks good", "publish it", "go ahead").
-
-### 7) Publish to GitHub
-
-Only after receiving approval:
+1) Check whether an open PR already exists for this branch:
 
 ```bash
-# First, push the branch if not already pushed
-git push -u origin $(git branch --show-current)
+BRANCH="$(git branch --show-current)"
+gh pr view "$BRANCH" --json number,url,title,baseRefName 2>/dev/null
+```
 
-# Then create the PR using gh CLI
+2) Write body to a file (portable and quote-safe):
+
+```bash
+mkdir -p .tmp
+cat > .tmp/pr-body.md <<'MD'
+<generated markdown body>
+MD
+```
+
+3) Publish action:
+
+- If PR exists: update it
+```bash
+gh pr edit <number> --title "<title>" --body-file .tmp/pr-body.md
+```
+
+- If PR does not exist: create it
+```bash
+git push -u origin "$BRANCH"
 gh pr create \
-  --title "[conventional commit format title]" \
-  --body "[generated description]" \
-  --base main \
-  --head $(git branch --show-current)
+  --title "<title>" \
+  --body-file .tmp/pr-body.md \
+  --base "$BASE_BRANCH" \
+  --head "$BRANCH"
 ```
 
-**Title format**: Use conventional commit format (e.g., `feat: Add working hours to teams`)
+4) On success:
+- show PR URL
+- summarize title/base/head
 
-**On success**:
-- Show the PR URL
-- Confirm publication
+5) On failure:
+- report exact failing command and stderr
+- suggest the next concrete fix (auth, permissions, branch push, base mismatch)
 
-**On failure**:
-- Check if branch is already pushed
-- Verify gh CLI is authenticated
-- Provide helpful error message
+## Output Contract
 
-## Best Practices
+When done, provide:
+1. PR title
+2. PR body
+3. Base/head branches
+4. Create vs update decision
+5. Tests changed
+6. Tests run (or explicitly not run)
+7. PR URL (after publish)
 
-### Conciseness
-- Avoid verbose explanations
-- Focus on what changed and why
-- Skip obvious details (e.g., "added a file" when the file list shows it)
+## References
 
-### Structure
-- Always use the template structure
-- Bold important terms for scannability
-- Use consistent category labels
-
-### Testing section
-- Provide manual testing steps where applicable
-- Include automated test commands
-- Note expected outcomes
-
-### Context awareness
-- Reference phase completion from PRD.md
-- Mention related issues/PRs if relevant
-- Flag breaking changes prominently
-
-## Examples
-
-### Good PR Description
-
-```markdown
-### Goal
-Enable working hours support at both team and teammate levels with intelligent precedence logic: teammate-specific hours override team hours, which override location-based hours.
-
-### What Changed
-- **Models:** Added optional `workingHoursStart` and `workingHoursEnd` to `Team` and `Teammate`
-- **Availability Logic:** Enhanced `AvailabilityState` with effective working hours precedence
-- **UI Updates:** Working hours editor integrated into Add/Edit flows
-- **Testing:** Added 56 new unit tests covering precedence scenarios
-
-### Files Changed
-15 files, +432/-92 lines
-
-### How to Test
-1. **Single team hours:** Create team with hours, add teammate, verify availability
-2. **Teammate override:** Set custom teammate hours, verify precedence
-3. **Run tests:** `make test` - all 56 new tests should pass
-
-### Notes
-Completes Phase 7 working hours enhancement.
-```
-
-### Bad PR Description (too verbose)
-
-```markdown
-### Goal
-This pull request adds the ability for users to set working hours on teams and also on individual teammates. The system will use a precedence hierarchy to determine which working hours apply. If a teammate has their own hours set, those will be used. Otherwise, if they belong to a team with hours, the team's hours will be used. And if they belong to multiple teams, we calculate the intersection of all the team hours. This is important because it gives users flexibility...
-
-[Rest is too long and rambling]
-```
-
-## Anti-patterns
-
-❌ **Don't**:
-- Write verbose paragraphs instead of bullets
-- Include implementation details better suited for code comments
-- List every single file changed (use summary stats)
-- Create the PR without user approval
-- Skip the testing section
-- Use vague category labels
-
-✅ **Do**:
-- Keep it scannable and concise
-- Focus on user-facing changes and impacts
-- Provide practical testing instructions
-- Always get explicit approval before publishing
-- Use consistent formatting and structure
-- Reference project documentation when relevant
+- [style-guide.md](references/style-guide.md)
+- [title-heuristics.md](references/title-heuristics.md)
+- [testing-language.md](references/testing-language.md)
+- [failure-handling.md](references/failure-handling.md)
