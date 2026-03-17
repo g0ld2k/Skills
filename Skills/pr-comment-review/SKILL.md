@@ -1,249 +1,159 @@
 ---
 name: pr-comment-review
-description: Systematically review and respond to GitHub pull request comments. Fetches all review comments, analyzes each for validity and priority, recommends actions (code fixes vs explanatory replies), implements approved changes, runs tests, and posts responses with proper attribution. Use when asked to "review PR comments", "respond to PR review", or "address PR feedback".
-allowed-tools: github-mcp-server-pull_request_read bash view edit grep glob ask_user update_todo create
-metadata:
-  author: user
-  version: "1.0"
+description: Review and address GitHub PR feedback with a deterministic workflow: fetch unresolved review threads, triage each comment, apply approved fixes, validate changes, and post precise replies. Use when asked to review PR comments, respond to review feedback, or close out PR review items in Codex or Copilot CLI.
+tools:
+  - bash
+  - view
+  - edit
+  - grep
+  - glob
 ---
 
-# PR Comment Review Skill
+# PR Comment Review
 
-## Overview
+## When to Use
 
-This skill provides a systematic 4-phase workflow for handling GitHub pull request review comments:
+Use this skill when a user asks to:
+- review PR comments
+- respond to reviewer feedback
+- address review threads on a pull request
 
-1. **Fetch & Analyze** - Retrieve and assess all comments
-2. **Present Recommendations** - Show prioritized action plan
-3. **Implement Fixes** - Make code changes and run tests
-4. **Post Responses** - Reply to each comment with attribution
+## Runtime Compatibility
+
+This skill is designed for:
+- Codex CLI
+- Codex Desktop
+- GitHub Copilot CLI
+
+Use a capability-first strategy:
+1. Prefer GitHub MCP tools if available.
+2. Otherwise use `gh api` / `gh pr` commands.
+3. If neither is available, stop and report the missing capability.
+
+### MCP Fallback (No `gh`)
+
+If `gh` is unavailable but GitHub MCP is available:
+- Fetch PR metadata (owner/repo/number, branch context).
+- Fetch review threads/comments including resolved state.
+- Triage only comments from unresolved threads.
+- Post replies via MCP comment-reply capability.
+
+Maintain the same guardrails and output contract as the `gh` path.
+
+## Non-Negotiable Guardrails
+
+- Never post replies before user approval.
+- Never claim a fix unless it is implemented or intentionally declined.
+- Never reply to resolved review threads.
+- Never continue to posting if validation fails.
+- Never force-push or use destructive git commands unless explicitly requested.
 
 ## Workflow
 
-### Phase 1: Fetch & Analyze
+### Phase 0: Preflight
 
-1. **Get PR Information**
-   - Ask user for repository owner/name and PR number if not provided
-   - Use `github-mcp-server-pull_request_read` to fetch:
-     - `method: get` - PR metadata
-     - `method: get_review_comments` - All review comment threads
-     - `method: get_comments` - General issue comments
+Collect PR target from any of:
+- PR URL
+- `{owner}/{repo}` + PR number
+- current branch PR via `gh pr view`
 
-2. **Analyze Each Comment**
-   For each review comment, determine:
-   - **Validity**: Is the concern legitimate? (VALID/INVALID/PARTIAL)
-   - **Priority**: Impact level (HIGH/MEDIUM/LOW)
-   - **Action**: What to do (CODE FIX / REPLY ONLY / DISCUSS)
-   - **Effort**: Time estimate for implementation
-
-#### Priority Levels
-- **HIGH**: Security issues, bugs, misleading claims, breaking changes
-- **MEDIUM**: Code quality, test coverage, error handling, maintainability
-- **LOW**: Style preferences, unclear/stale comments, minor optimizations
-
-### Phase 2: Present Recommendations
-
-Create a structured summary for user approval:
-
-```markdown
-## Comment #N - [File:Line] [Priority]
-**Issue:** Brief description
-**Validity:** VALID/INVALID with reasoning
-**Recommendation:** FIX/REPLY/DISCUSS
-**Action:** Specific steps to take
-**Suggested Response:** Draft reply text
-```
-
-Group comments by action type (code fixes vs replies) and present summary table with:
-- Comment number
-- File and line reference
-- Priority level
-- Recommended action
-- Estimated effort
-
-Use `ask_user` to:
-- Get approval on the plan
-- Clarify ambiguous cases (e.g., multiple valid implementation approaches)
-- Determine signature format preference for responses
-
-### Phase 3: Implement Code Fixes
-
-**ONLY proceed with user approval**
-
-1. **Branch Strategy**
-   - Ask user preference: same PR branch or new fix branch
-   - Use `git checkout` to switch to appropriate branch
-
-2. **Make Changes**
-   - Use `view` to read relevant files
-   - Use `edit` to make **surgical, minimal** changes
-   - Address only what's needed for each comment
-   - Avoid scope creep
-
-3. **Validate Changes**
-   - Run existing test suite (e.g., `make test`, `npm test`, etc.)
-   - **CRITICAL**: Do not proceed if tests fail
-   - Report test results clearly
-
-4. **Commit & Push**
-   - Commit with descriptive message referencing PR and topics
-   - Example: `"Address PR #19 review comments - Fix WCAG claim, add error handling"`
-   - Push to PR branch using `git push`
-
-### Phase 4: Post Responses
-
-1. **Get Comment IDs**
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq '.[] | .id'
-   ```
-
-2. **Post Each Reply**
-   ```bash
-   gh api -X POST repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies \
-     -f body="Response text
-
-   - [Signature]"
-   ```
-
-3. **Verify Posting**
-   - Check for successful API responses
-   - Report any failures immediately
-
-## Response Guidelines
-
-### Tone & Style
-- **Acknowledge valid concerns**: "Good catch!" or "You're right"
-- **Explain decisions**: "For this use case..." or "The rationale is..."
-- **Request clarification**: "Could you clarify..." or "I don't see..."
-- **Be concise**: Keep responses under 3-4 sentences
-- **Be specific**: Avoid generic "will fix" - say what you did
-
-### Signature Format
-Always ask user for preferred signature. Common patterns:
-- `- GitHub Copilot CLI`
-- `- AI Assistant`
-- Custom format specified by user
-
-## Tool Usage
-
-### GitHub API Tools
-- **`github-mcp-server-pull_request_read`**: Fetch PR data
-  - `method: get` - Get PR details
-  - `method: get_review_comments` - Get review threads
-  - `method: get_comments` - Get issue comments
-
-### File Operations
-- **`view`**: Read source files for context
-- **`edit`**: Make surgical code changes
-- **`grep`**: Search codebase for related code
-- **`glob`**: Find files by pattern
-
-### Git Operations (via bash)
+Validate environment:
 ```bash
-git checkout <branch>           # Switch branches
-git checkout -b <new-branch>    # Create fix branch
-git add -A                      # Stage changes
-git commit -m "message"         # Commit changes
-git push origin <branch>        # Push to remote
+git rev-parse --is-inside-work-tree
+gh --version
+gh auth status
 ```
 
-### GitHub CLI (via bash)
+If `gh` is unavailable, use equivalent MCP tools when possible.
+
+### Phase 1: Fetch Unresolved Review Feedback
+
+Fetch review comments from unresolved threads only.
+
+Preferred helper:
 ```bash
-# Get PR details
-gh pr view <number> --repo <owner>/<repo>
-
-# List review comments
-gh api repos/<owner>/<repo>/pulls/<pr>/comments
-
-# Post comment reply
-gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments/<id>/replies \
-  -f body="text"
+bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number>
 ```
 
-### Session Management
-- **`ask_user`**: Get approvals and clarifications
-- **`update_todo`**: Track progress through 4 phases
-- **`create`**: Make plan document in session workspace
+This script filters out threads where `isResolved == true`, so we do not triage or address them.
 
-## Edge Cases
-
-### Stale/Invalid Comments
-If comment references non-existent files/lines:
-- Mark as INVALID in analysis
-- Response: "I don't see [X] in the current code - could you clarify?"
-
-### Conflicting Feedback
-If multiple reviewers disagree:
-- Mark as DISCUSS in analysis
-- Ask user which direction to take
-
-### Large Change Sets
-If >10 comments or >1 hour estimated effort:
-- Break into phases
-- Get approval for each phase separately
-
-### Test Failures
-If tests fail after changes:
-- **STOP immediately**
-- Report failure details
-- Do NOT post responses
-- Fix tests or revert changes
-
-## Example Session
-
-**User:** "Review PR #19 comments"
-
-**Agent Workflow:**
-
-1. **Fetch** (Phase 1)
-   - Get PR #19 from `g0ld2k/Zoner`
-   - Found 6 review comments
-   
-2. **Analyze** (Phase 1)
-   - Comment 1: WCAG claim - HIGH priority - FIX
-   - Comment 2: Weak test - MEDIUM priority - FIX
-   - Comment 3: Unused constants - LOW priority - REPLY (invalid)
-   - Comment 4: Implementation approach - HIGH priority - REPLY (design choice)
-   - Comment 5: Error handling - MEDIUM priority - FIX
-   - Comment 6: Alpha bug - MEDIUM priority - FIX
-
-3. **Present** (Phase 2)
-   - Show 4 code fixes + 2 replies
-   - Get user approval
-   - Confirm signature: "- GitHub Copilot CLI"
-
-4. **Implement** (Phase 3)
-   - Make 4 surgical changes
-   - Run tests: 110 passing ✓
-   - Commit and push
-
-5. **Respond** (Phase 4)
-   - Post 6 responses with signature
-   - Verify all posted successfully
-
-**Output Summary:**
-```
-✅ Addressed 6 PR comments
-✅ Made 4 code fixes
-✅ All 110 tests passing
-✅ Commit: abc1234
-✅ PR: https://github.com/owner/repo/pull/19
+Also fetch issue comments only for context (not as required actions):
+```bash
+gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
 ```
 
-## Common Pitfalls
+### Phase 2: Triage and Recommendation
 
-- ❌ Don't post responses before implementing fixes
-- ❌ Don't assume comment validity without checking code
-- ❌ Don't make changes without running tests
-- ❌ Don't use generic "will fix" responses
-- ❌ Don't forget signature on responses
-- ❌ Don't proceed if tests fail
+For each unresolved review comment, produce:
+- `comment_id`
+- `file:line`
+- `validity` (`valid`, `partial`, `invalid`)
+- `priority` (`high`, `medium`, `low`)
+- `decision` (`fix`, `reply`, `discuss`)
+- `planned_action`
+- `draft_reply`
 
-## Output Format
+Use rubric: [decision-rubric.md](references/decision-rubric.md)
+Use reply patterns: [reply-templates.md](references/reply-templates.md)
+
+Present grouped plan to user:
+- `fix` items
+- `reply-only` items
+- `discuss` items
+
+Get explicit approval before coding.
+
+### Phase 3: Implement Approved Fixes
+
+Apply minimal, targeted edits only for approved `fix` items.
+
+Validation policy:
+- Run targeted tests first.
+- Run broader suite if requested or if risk is high.
+- If tests fail, stop and report before any posting.
+
+Commit/push only with user approval.
+
+### Phase 4: Post Replies
+
+Before posting each reply:
+- Re-check the thread is still unresolved.
+- Skip and report if it became resolved during the session.
+
+Preferred helper (supports dry run):
+```bash
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path> --dry-run
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path>
+```
+
+Require explicit user approval before the non-dry-run step.
+
+## Output Contract
 
 Final summary must include:
-- ✅ Total comments addressed
-- ✅ Number of code fixes made
-- ✅ Test results (X tests passing)
-- ✅ Commit SHA and branch name
-- ✅ PR URL for verification
+- unresolved comments fetched
+- comments triaged
+- comments fixed vs reply-only vs discuss
+- tests run and result
+- replies posted
+- replies skipped because thread already resolved
+- commit SHA / branch (if code changed)
+
+## Quick Commands
+
+```bash
+# Fetch unresolved review comments
+bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number>
+
+# Build triage markdown template
+bash scripts/build_triage_template.sh --input unresolved-comments.json
+
+# Post replies from JSON (safe preview first)
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file replies.json --dry-run
+```
+
+## References
+
+- [github-api.md](references/github-api.md)
+- [decision-rubric.md](references/decision-rubric.md)
+- [reply-templates.md](references/reply-templates.md)
