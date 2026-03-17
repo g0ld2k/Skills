@@ -99,9 +99,8 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  # Re-check unresolved status immediately before posting each reply.
-  refresh_unresolved_ids
-
+  # Use the unresolved snapshot fetched at start to avoid one API fetch per
+  # reply. If state changes concurrently, rely on POST outcome and report it.
   if ! grep -qx "$comment_id" "$unresolved_ids"; then
     echo "Skipping comment $comment_id (resolved or not found in unresolved threads)"
     skipped=$((skipped + 1))
