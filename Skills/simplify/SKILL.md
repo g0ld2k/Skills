@@ -1,6 +1,6 @@
 ---
 name: simplify
-description: "Review changed code for reuse, quality, and efficiency, then fix any issues found. Use after making code changes to catch duplication, hacky patterns, and inefficiencies before committing."
+description: "Review changed code for reuse, quality, and efficiency, then fix selected issues. Use after code changes to catch duplication, hacky patterns, and inefficiencies before committing."
 tools:
   - Bash
   - Read
@@ -12,21 +12,36 @@ tools:
 
 # Simplify: Code Review and Cleanup
 
-Review all changed files for reuse, quality, and efficiency. Fix any issues found.
+Review changed files for reuse, quality, and efficiency. Present findings to the user, then fix only the selected items.
+
 
 ## Phase 1: Identify Changes
 
-Run `git diff` (or `git diff HEAD` if there are staged changes) to see what changed. If there are no git changes, review the most recently modified files that the user mentioned or that you edited earlier in this conversation.
+Find the exact scope to review.
+
+1. Check unstaged and staged changes.
+2. Prefer reviewing only changed files.
+3. If no git diff exists, review files the user referenced or files edited in this thread.
 
 ```bash
+# unstaged
 git --no-pager diff
-# or if staged:
-git --no-pager diff HEAD
+
+# staged
+git --no-pager diff --staged
 ```
+
+If both are empty, stop and report there is no diff to simplify.
 
 ## Phase 2: Launch Three Review Agents in Parallel
 
 Use the Agent tool to launch all three agents concurrently in a single message. Pass each agent the full diff so it has complete context.
+
+1. Reuse pass
+2. Quality pass
+3. Efficiency pass
+
+If sub-agents/parallel tools are available, run passes concurrently. Otherwise run sequentially. The finding format must be identical either way.
 
 ### Agent 1: Code Reuse Review
 
@@ -58,8 +73,52 @@ Review the same changes for efficiency:
 5. **Memory**: unbounded data structures, missing cleanup, event listener or observer leaks
 6. **Overly broad operations**: reading entire files when only a portion is needed, loading all items when filtering for one
 
-## Phase 3: Fix Issues
+### Required Findings Schema
+
+Normalize every finding before presenting:
+
+- `id`: integer, sequential from 1
+- `category`: `reuse` | `quality` | `efficiency`
+- `severity`: `high` | `medium` | `low`
+- `confidence`: `high` | `medium` | `low`
+- `location`: `path:line`
+- `summary`: one sentence
+- `proposed_fix`: one sentence
+
+Deduplicate overlapping findings and keep the clearest one.
+
+## Phase 3: Present Findings and Get User Selection
 
 Wait for all three agents to complete. Aggregate their findings and fix each issue directly using the Edit tool. If a finding is a false positive or not worth addressing, note it and move on — do not argue with the finding, just skip it.
 
-When done, briefly summarize what was fixed (or confirm the code was already clean).
+Do not edit code in this phase.
+
+1. Present findings as a numbered list with this display format:
+   - `[id] [severity] [category] path:line - summary`
+   - `Fix: proposed_fix`
+2. Ask the user:
+   - `Select items to address (e.g. 1,2,5,8), or reply all/none.`
+3. Parse selection:
+   - `all` -> select all findings
+   - `none` -> select none
+   - `1,2,5` -> select valid ids only
+4. If invalid ids are included, ignore invalid ids and proceed with valid ids. If no valid ids remain, ask once for clarification.
+
+## Phase 4: Apply Selected Fixes
+
+Apply only selected findings.
+
+Rules:
+
+1. Keep edits minimal and behavior-preserving unless user explicitly approves behavior changes.
+2. Skip low-confidence findings unless explicitly selected.
+3. If a selected finding is a false positive or not worth changing, skip it and record a one-line reason.
+4. Prefer existing abstractions/utilities over adding new ones.
+5. Run targeted validation for touched areas when possible (tests/lint/typecheck scoped to changed files).
+
+Final response must include:
+
+1. Applied findings (by id)
+2. Skipped selected findings (with reason)
+3. Unselected findings
+4. Validation run (or why validation was not run)
