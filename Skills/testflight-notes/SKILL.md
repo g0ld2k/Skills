@@ -38,8 +38,13 @@ git --no-pager log --oneline --since="<natural language date>"
 # From commit or tag
 git --no-pager log --oneline <START>..HEAD
 
-# Since latest tag fallback
-git --no-pager log --oneline "$(git describe --tags --abbrev=0)"..HEAD
+# Since latest tag fallback (with no-tags handling)
+latest_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [[ -n "$latest_tag" ]]; then
+  git --no-pager log --oneline "$latest_tag"..HEAD
+else
+  git --no-pager log --oneline --since="14 days ago"
+fi
 ```
 
 ### 2) Extract rich commit context

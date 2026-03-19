@@ -1,6 +1,6 @@
 ---
 name: pr-comment-review
-description: Review and address GitHub PR feedback with a deterministic workflow: fetch unresolved review threads, triage each comment, apply approved fixes, validate changes, and post precise replies. Use when asked to review PR comments, respond to review feedback, or close out PR review items in Codex or Copilot CLI.
+description: Review and address GitHub PR feedback with a deterministic workflow; fetch unresolved review threads, triage each comment, apply approved fixes, validate changes, and post precise replies. Use when asked to review PR comments, respond to review feedback, or close out PR review items in Codex or Copilot CLI.
 tools:
   - bash
   - view
@@ -60,11 +60,15 @@ Collect PR target from any of:
 Validate environment:
 ```bash
 git rev-parse --is-inside-work-tree
-gh --version
-gh auth status
+if command -v gh >/dev/null 2>&1; then
+  gh --version
+  gh auth status
+else
+  echo "gh not found; use GitHub MCP fallback for PR metadata/comments/replies."
+fi
 ```
 
-If `gh` is unavailable, use equivalent MCP tools when possible.
+If `gh` is unavailable, branch to MCP before running any `gh` commands.
 
 ### Phase 1: Fetch Unresolved Review Feedback
 
