@@ -68,18 +68,7 @@ git --no-pager log --oneline -- <path>
 git --no-pager blame -L <start>,<end> -- <path>
 ```
 
-Read `references/exploration-modes.md` when using this skill.
-
-Apply these depth limits (Depth guardrails):
-
-| Mode | Sampling limit |
-| --- | --- |
-| Architecture | Read top-level docs/config plus the smallest set of entry points and boundary files that explain ownership. |
-| Convention | Compare 2-4 nearby or analogous files before naming a convention. |
-| Feature Trace | Follow one primary happy path end to end, then mention important branches only if they affect comprehension. |
-| Syntax/API | Explain only constructs visible in the target area; do not teach the full language or framework. |
-| Testing | Inspect nearby tests and obvious test commands/config; do not run expensive test suites unless the user asks. |
-| History | Use focused `git log`/`git blame` or provided PR/issue history for relevant paths only; do not infer rationale from silence. |
+Read `references/exploration-modes.md` when using this skill. Treat that file as the canonical source for mode details, evidence examples, and depth guardrails.
 
 For narrower requests, emphasize the relevant modes and briefly note which modes were skipped or minimized.
 
