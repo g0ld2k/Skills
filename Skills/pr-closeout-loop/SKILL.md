@@ -1,20 +1,21 @@
 ---
 name: pr-closeout-loop
-description: Use when a GitHub pull request or branch already exists and the user wants unattended closeout for review feedback, CI failures, stale approval, or merge readiness.
+description: Use when an existing GitHub pull request, or the current branch's identifiable PR, needs unattended closeout for review feedback, CI failures, stale approval, or merge readiness.
 ---
 
 # PR Closeout Loop
 
 ## Goal
 
-Close out an existing PR or branch: fetch current feedback, fix only valid
+Close out an existing PR: fetch current feedback, fix only valid
 actionable items, validate locally, run quality review for meaningful changes,
 commit and push covered work, reply to review threads, monitor CI/review state,
 and merge only when authorized gates pass.
 
 This is the executor skill. If the user is still choosing branches, integration
-strategy, approval scope, or multi-PR orchestration, use
-`integration-branch-orchestrator` first.
+strategy, approval scope, PR creation, or multi-PR orchestration, use
+`integration-branch-orchestrator` first. If only a branch exists and no PR can be
+identified, create or retarget a PR first, or block for topology setup.
 
 ## Inputs
 
@@ -54,7 +55,8 @@ actions, or straightforward CI patches.
 1. Preflight.
    - Confirm repo, branch, PR, target branch, head SHA, working tree state, and
      PR body.
-   - Fetch latest remote state when the user asked for the latest PR state.
+   - Fetch latest remote PR state and sync the local checkout to the exact
+     current PR head before editing. Block if that cannot be done safely.
    - Do not stage, commit, overwrite, or discard unrelated local/user changes.
 
 2. Fetch current PR state.
@@ -91,7 +93,11 @@ actions, or straightforward CI patches.
 
 6. Commit and push.
    - Stage only intended files.
-   - Use `commit-message`.
+   - Use `commit-message` to generate the Conventional Commit message from the
+     staged diff.
+   - In unattended mode, treat loop authorization for commits as pre-approval to
+     use the generated message and commit, as long as the message is supported by
+     the staged diff and no companion skill explicitly blocks.
    - Commit and push only when the user's authorization for this loop covers it.
 
 7. Reply to and resolve review threads.
@@ -151,8 +157,10 @@ instead of relying on an older signal.
 ## Blocking Conditions
 
 Block instead of waiting or merging when:
-- approval is stale or absent;
-- required local or remote validation fails;
+- approval is stale or absent after the wait policy is exhausted;
+- required local validation fails;
+- required remote validation fails after CI triage/fix attempts or the wait
+  policy is exhausted;
 - CI/log artifacts are unavailable and no local reproduction is possible;
 - feedback is invalid, unclear, or conflicting and policy does not allow
   resolution;

@@ -37,6 +37,8 @@ Default strategy:
   default/protected branch as the autonomous landing branch.
 - For an existing integration branch, verify ancestry from the identified
   default/protected branch before retargeting PRs or delegating closeout work.
+- Ensure the integration branch exists on the remote before retargeting existing
+  PRs or creating new PRs against it.
 - Require each closeout item to have a PR targeting the integration branch
   before delegating to `pr-closeout-loop`.
 - Preserve branch history with normal merge commits unless the user or repo
@@ -56,6 +58,8 @@ confirm the authorization scope and merge gates first.
    - Identify the default/protected branch ref.
    - Create `integration/<feature-name>` from the default/protected branch ref,
      or verify an existing integration branch has that ancestry.
+   - Push the integration branch or verify the remote branch exists before
+     retargeting or creating integration-targeted PRs.
    - For each existing PR, verify its base branch is `integration/<feature-name>`
      before closeout delegation.
    - If an existing PR targets the default branch, retarget it to the integration
@@ -66,7 +70,7 @@ confirm the authorization scope and merge gates first.
 2. Define gates.
    - Approval must be fresh for each PR's current head SHA and PR body.
    - Approval must also cover each PR's current target/base branch.
-   - Required remote checks must be green for each current head.
+   - Required remote checks must be green for each current head before merge.
    - Local tests must pass before each merge into integration.
    - No unresolved actionable review feedback may remain.
    - No unrelated local/user changes may be staged, committed, overwritten, or
@@ -75,6 +79,8 @@ confirm the authorization scope and merge gates first.
 3. Dispatch closeout work.
    - For each concrete PR whose base is `integration/<feature-name>`, invoke
      `pr-closeout-loop` with target branch set to `integration/<feature-name>`.
+   - Dispatch PRs with failing, pending, or stale required checks so the closeout
+     loop can fix or wait on CI; do not merge them until checks are green.
    - Keep each loop scoped to its own PR.
    - If a loop finds conflicting feedback, stale authorization, or missing
      validation, mark that item blocked instead of widening scope.
@@ -97,7 +103,7 @@ confirm the authorization scope and merge gates first.
 Block orchestration when:
 - branch topology is ambiguous and a safe default is not obvious;
 - blanket approval scope is unclear;
-- any PR lacks fresh approval or required green checks;
+- any PR lacks a PR surface that can be delegated to the closeout loop;
 - integration validation fails and cannot be attributed safely;
 - promotion would touch the protected/default branch without explicit approval;
 - unrelated local/user changes would be affected.
