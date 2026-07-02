@@ -95,7 +95,8 @@ actions, or straightforward CI patches.
      selection policy.
    - Without pre-authorization, present findings for selection before editing.
    - Low findings are optional; mention notable deferred low findings.
-   - Re-run affected validation after simplify edits.
+   - After any simplify edit, re-run the repository's local test suite before
+     committing or merging. Treat any earlier suite result as stale.
 
 6. Commit and push.
    - Stage only intended files.

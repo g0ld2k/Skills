@@ -21,7 +21,8 @@ Establish:
 - feature or batch name for `integration/<feature-name>`;
 - source branches or PRs in scope;
 - default/protected branch name;
-- default/protected branch ref to use as the integration branch starting point;
+- current remote default/protected branch ref and SHA to use as the
+  integration branch starting point;
 - whether each source branch already has a PR, or needs an integration-targeted
   PR created before closeout;
 - approval signal and freshness requirements for each PR;
@@ -33,6 +34,8 @@ Establish:
 ## Orchestration Policy
 
 Default strategy:
+- Fetch and record the current remote default/protected branch SHA before
+  creating or verifying an integration branch.
 - Use or create `integration/<feature-name>` from the identified
   default/protected branch as the autonomous landing branch.
 - For an existing integration branch, verify ancestry from the identified
@@ -59,7 +62,7 @@ confirm the authorization scope and merge gates first.
 
 1. Define the branch topology.
    - Identify source branches or PRs.
-   - Identify the default/protected branch ref.
+   - Fetch the remote default/protected branch and record the current ref/SHA.
    - Create `integration/<feature-name>` from the default/protected branch ref,
      or verify an existing integration branch has that ancestry.
    - For an existing integration branch, verify its current commits and diff are
@@ -95,6 +98,9 @@ confirm the authorization scope and merge gates first.
    - Dispatch PRs with failing, pending, or stale required checks so the closeout
      loop can fix or wait on CI; do not merge them until checks are green.
    - Keep each loop scoped to its own PR.
+   - Run concurrent closeout loops in separate worktrees or clones. If only one
+     checkout is available, serialize the loops so branch, index, validation,
+     commit, and push state cannot overlap.
    - If a loop finds conflicting feedback, stale authorization, or missing
      validation, mark that item blocked instead of widening scope.
 
@@ -103,7 +109,8 @@ confirm the authorization scope and merge gates first.
    - Re-run integration-level validation after merges when the repository has a
      suitable suite or workflow.
    - If integration validation fails, triage whether the failure belongs to a
-     just-merged branch, branch interaction, or environment.
+     just-merged branch, branch interaction, or environment, but keep promotion
+     blocked until validation passes or the failure is explicitly waived.
 
 5. Prepare human checkpoint.
    - Summarize branches/PRs included, commits merged, review feedback resolved,
@@ -120,7 +127,7 @@ Block orchestration when:
   authorized;
 - PR creation or base-retargeting is needed but not authorized;
 - any PR lacks a PR surface that can be delegated to the closeout loop;
-- integration validation fails and cannot be attributed safely;
+- integration validation fails and has not been explicitly waived;
 - promotion would touch the protected/default branch without explicit approval;
 - unrelated local/user changes would be affected.
 
