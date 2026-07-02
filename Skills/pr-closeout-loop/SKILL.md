@@ -24,8 +24,8 @@ Establish before starting:
 - Approval signal, including which reviewer identity or reaction counts. Default
   Codex signal: the reaction on the PR description/body changes from eyes to
   thumbs-up. This is not a commit-specific reaction.
-- Approval surface: current head SHA, current PR body, and current target/base
-  branch.
+- Approval surface: current head SHA, current PR body, current target/base
+  branch, and current base ref, merge-base, or computed diff.
 - User authorization scope for committing, pushing, replying, resolving threads,
   and merging.
 - Merge target and method. Default method is a normal merge commit unless the
@@ -69,8 +69,12 @@ actions, or straightforward CI patches.
      actionable feedback.
 
 3. Triage feedback.
-   - Classify each unresolved review-thread comment and PR conversation comment
-     as valid, partial, invalid, unclear, or conflicting.
+   - Classify each unresolved review-thread comment, PR conversation comment,
+     and latest review body/state as valid, partial, invalid, unclear, or
+     conflicting.
+   - Treat `CHANGES_REQUESTED` as blocking until superseded by an eligible newer
+     approval, dismissed according to repository policy, or addressed through
+     the active feedback policy.
    - Decide fix, reply-only, or discuss.
    - Prefer the smallest safe in-scope fix. Stop for human input when feedback
      is unclear or conflicting.
@@ -100,9 +104,17 @@ actions, or straightforward CI patches.
      the staged diff and no companion skill explicitly blocks.
    - Commit and push only when the user's authorization for this loop covers it.
 
-7. Reply to and resolve review threads.
+7. Reply to feedback and resolve review threads.
+   - Re-fetch each target thread's current comments and replies before posting
+     or resolving. If contents changed since triage, restart at step 2.
    - Re-check each target thread is still unresolved before posting.
    - Reply with what changed and what validation ran.
+   - For actionable PR conversation comments, reply or acknowledge with the fix,
+     validation, or rationale. Treat a conversation comment as addressed only
+     when that acknowledgement appears after the latest actionable comment.
+   - For actionable review-level bodies without an inline thread, reply through
+     the appropriate PR review or conversation channel and treat the feedback as
+     addressed only when the acknowledgement follows the latest actionable review.
    - Default resolve mode is `after-fixed-reply`: after applying and validating
      a fix, reply to the thread and resolve it automatically.
    - Do not resolve invalid, unclear, conflicting, or declined feedback unless
@@ -110,10 +122,13 @@ actions, or straightforward CI patches.
 
 8. Monitor review, CI, and approval.
    - Approval is fresh only when it applies to the current head SHA, current PR
-     body, and current target/base branch. New commits, material PR-body edits,
-     or base-branch changes make approval stale.
+     body, current target/base branch, and current base ref, merge-base, or
+     computed diff. New commits, material PR-body edits, base-branch changes, or
+     base-ref changes make approval stale.
    - For the default Codex signal, poll PR description/body reactions for the
-     eyes-to-thumbs-up transition; do not look for a commit reaction.
+     eyes-to-thumbs-up transition after the latest surface-changing event; do
+     not treat an older thumbs-up as fresh approval, and do not look for a
+     commit reaction.
    - Required remote checks must be green for the current head.
    - If new actionable feedback appears, restart at step 2.
    - If checks fail, inspect logs/artifacts through available GitHub, CI
@@ -135,11 +150,15 @@ actions, or straightforward CI patches.
 
 All gates must pass before merging:
 - Fresh approval covers the current head SHA and current PR body.
-- Fresh approval covers the current target/base branch.
+- Fresh approval covers the current target/base branch and current base ref,
+  merge-base, or computed diff.
 - Required remote checks are green for the current head.
 - The repository's local test suite passed in this loop.
-- No unresolved actionable review-thread or PR conversation feedback remains.
-- Fixed review threads were replied to and resolved according to policy.
+- No unresolved actionable review-thread, review-level, or PR conversation
+  feedback remains.
+- Fixed review threads were replied to and resolved according to policy, and
+  fixed review-level and PR conversation comments were acknowledged according to
+  policy.
 - The branch is mergeable and up to date enough for the repository's rules.
 - No unrelated local/user changes are staged, committed, overwritten, or hidden.
 - The user's authorization covers this target branch and merge method.
@@ -147,12 +166,14 @@ All gates must pass before merging:
 ## Approval Freshness
 
 Approval covers a review surface, not just a PR number. The surface is the
-current head SHA plus the current PR body and target/base branch. Approval is
-stale after a new commit, a material PR-body edit, a base-branch change, or any
+current head SHA plus the current PR body, target/base branch, and current base
+ref, merge-base, or computed diff. Approval is stale after a new commit, a
+material PR-body edit, a base-branch change, a base-ref change, or any
 user-defined surface change.
 
-When freshness is unclear, fetch current PR metadata and wait for fresh approval
-instead of relying on an older signal.
+When freshness is unclear, fetch current PR metadata and wait for a fresh signal
+created after the latest surface-changing event instead of relying on an older
+signal.
 
 ## Blocking Conditions
 

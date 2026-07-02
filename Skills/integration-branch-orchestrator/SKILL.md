@@ -26,7 +26,7 @@ Establish:
   PR created before closeout;
 - approval signal and freshness requirements for each PR;
 - allowed unattended actions: fixes, commits, pushes, replies, thread
-  resolution, merges into integration;
+  resolution, PR creation, PR base-retargeting, merges into integration;
 - actions that still require human approval, especially integration-to-default
   promotion.
 
@@ -37,6 +37,9 @@ Default strategy:
   default/protected branch as the autonomous landing branch.
 - For an existing integration branch, verify ancestry from the identified
   default/protected branch before retargeting PRs or delegating closeout work.
+- For an existing integration branch, verify current branch commits and diff are
+  in scope for this run. If they are not, recreate it from the protected base or
+  block for human topology approval before delegation.
 - Ensure the integration branch exists on the remote before retargeting existing
   PRs or creating new PRs against it.
 - Require each closeout item to have a PR targeting the integration branch
@@ -44,7 +47,8 @@ Default strategy:
 - Preserve branch history with normal merge commits unless the user or repo
   requires another method.
 - Let blanket approval cover repeated valid fixes, commits, pushes, replies,
-  thread resolution, and gated merges into the integration branch.
+  thread resolution, PR topology edits, and gated merges into the integration
+  branch only when those action categories were explicitly authorized.
 - Require explicit human approval before merging the integration branch into the
   protected/default branch.
 
@@ -58,14 +62,19 @@ confirm the authorization scope and merge gates first.
    - Identify the default/protected branch ref.
    - Create `integration/<feature-name>` from the default/protected branch ref,
      or verify an existing integration branch has that ancestry.
+   - For an existing integration branch, verify its current commits and diff are
+     in scope for this run, or recreate it from the protected branch before
+     delegation when authorized.
    - Push the integration branch or verify the remote branch exists before
      retargeting or creating integration-targeted PRs.
    - For each existing PR, verify its base branch is `integration/<feature-name>`
      before closeout delegation.
    - If an existing PR targets the default branch, retarget it to the integration
-     branch or create a new integration-targeted PR before delegating.
-   - If a source branch has no PR, create an integration-targeted PR or block
-     until the user explicitly defines separate branch-only gates.
+     branch or create a new integration-targeted PR before delegating only when
+     PR topology edits are authorized.
+   - If a source branch has no PR, create an integration-targeted PR only when
+     PR topology edits are authorized, or block until the user explicitly defines
+     separate branch-only gates.
 
 2. Define gates.
    - Approval must be fresh for each PR's current head SHA and PR body.
@@ -103,6 +112,9 @@ confirm the authorization scope and merge gates first.
 Block orchestration when:
 - branch topology is ambiguous and a safe default is not obvious;
 - blanket approval scope is unclear;
+- existing integration branch contents are out of scope and recreation is not
+  authorized;
+- PR creation or base-retargeting is needed but not authorized;
 - any PR lacks a PR surface that can be delegated to the closeout loop;
 - integration validation fails and cannot be attributed safely;
 - promotion would touch the protected/default branch without explicit approval;
