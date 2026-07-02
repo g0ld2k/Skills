@@ -33,8 +33,9 @@ Establish before starting:
 ## Required Companions
 
 Use these skills when available:
-- `pr-comment-review` for fetching, triaging, fixing, validating, replying to,
-  and resolving PR review feedback.
+- `pr-comment-review` for fetching every comment and reply in unresolved review
+  threads, triaging, fixing, validating, replying to, and resolving PR review
+  feedback.
 - `simplify` after non-trivial changes before committing.
 - `commit-message` before creating commits.
 - CI-fix or debugging skills when required checks fail.
@@ -52,8 +53,11 @@ actions, or straightforward CI patches.
    - Do not stage, commit, overwrite, or discard unrelated local/user changes.
 
 2. Fetch current PR state.
-   - Fetch unresolved review threads, relevant issue comments, latest reviews,
+   - Fetch unresolved review threads, including all comments and replies in
+     each unresolved thread, plus relevant issue comments, latest reviews,
      check/status rollup, approval signal, and mergeability metadata.
+   - Do not rely on helpers that return only top-level review comments unless
+     another fetch covers replies in unresolved threads.
    - Treat already-replied old threads as context unless they contain fresh
      actionable feedback.
 
@@ -74,7 +78,9 @@ actions, or straightforward CI patches.
    - Non-trivial means logic, behavior, tests, CI, package, workflow, public
      contract, or meaningful docs/process changes.
    - In unattended loop runs, automatically address valid in-scope medium/high
-     findings.
+     findings only when the user or calling workflow pre-authorized that
+     selection policy.
+   - Without pre-authorization, present findings for selection before editing.
    - Low findings are optional; mention notable deferred low findings.
    - Re-run affected validation after simplify edits.
 

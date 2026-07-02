@@ -21,8 +21,8 @@ Establish:
 - feature or batch name for `integration/<feature-name>`;
 - source branches or PRs in scope;
 - default/protected branch name;
-- whether feature PRs target the integration branch, or completed branches merge
-  into the integration branch directly;
+- whether each source branch already has a PR, or needs an integration-targeted
+  PR created before closeout;
 - approval signal and freshness requirements for each PR;
 - allowed unattended actions: fixes, commits, pushes, replies, thread
   resolution, merges into integration;
@@ -33,6 +33,8 @@ Establish:
 
 Default strategy:
 - Use or create `integration/<feature-name>` as the autonomous landing branch.
+- Require each closeout item to have a PR targeting the integration branch
+  before delegating to `pr-closeout-loop`.
 - Preserve branch history with normal merge commits unless the user or repo
   requires another method.
 - Let blanket approval cover repeated valid fixes, commits, pushes, replies,
@@ -48,8 +50,12 @@ confirm the authorization scope and merge gates first.
 1. Define the branch topology.
    - Identify source branches or PRs.
    - Identify or create `integration/<feature-name>`.
-   - Decide whether each work branch targets integration through PRs or direct
-     branch merges.
+   - For each existing PR, verify its base branch is `integration/<feature-name>`
+     before closeout delegation.
+   - If an existing PR targets the default branch, retarget it to the integration
+     branch or create a new integration-targeted PR before delegating.
+   - If a source branch has no PR, create an integration-targeted PR or block
+     until the user explicitly defines separate branch-only gates.
 
 2. Define gates.
    - Approval must be fresh for each PR's current head SHA and PR body.
@@ -60,9 +66,9 @@ confirm the authorization scope and merge gates first.
      hidden.
 
 3. Dispatch closeout work.
-   - For each concrete PR or branch, invoke `pr-closeout-loop` with target
-     branch set to `integration/<feature-name>`.
-   - Keep each loop scoped to its own PR or branch.
+   - For each concrete PR whose base is `integration/<feature-name>`, invoke
+     `pr-closeout-loop` with target branch set to `integration/<feature-name>`.
+   - Keep each loop scoped to its own PR.
    - If a loop finds conflicting feedback, stale authorization, or missing
      validation, mark that item blocked instead of widening scope.
 
