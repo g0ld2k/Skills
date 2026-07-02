@@ -23,7 +23,8 @@ Establish before starting:
 - Approval signal, including which reviewer identity or reaction counts. Default
   Codex signal: the reaction on the PR description/body changes from eyes to
   thumbs-up. This is not a commit-specific reaction.
-- Approval surface: current head SHA plus current PR body.
+- Approval surface: current head SHA, current PR body, and current target/base
+  branch.
 - User authorization scope for committing, pushing, replying, resolving threads,
   and merging.
 - Merge target and method. Default method is a normal merge commit unless the
@@ -36,6 +37,10 @@ Use these skills when available:
 - `pr-comment-review` for fetching every comment and reply in unresolved review
   threads, triaging, fixing, validating, replying to, and resolving PR review
   feedback.
+  - In unattended mode, use it only when the user or calling workflow
+    pre-authorized the specific coding and reply-posting scope.
+  - Without pre-authorization, follow its normal approval gates before coding or
+    posting replies.
 - `simplify` after non-trivial changes before committing.
 - `commit-message` before creating commits.
 - CI-fix or debugging skills when required checks fail.
@@ -54,7 +59,7 @@ actions, or straightforward CI patches.
 
 2. Fetch current PR state.
    - Fetch unresolved review threads, including all comments and replies in
-     each unresolved thread, plus relevant issue comments, latest reviews,
+     each unresolved thread, plus PR conversation comments, latest reviews,
      check/status rollup, approval signal, and mergeability metadata.
    - Do not rely on helpers that return only top-level review comments unless
      another fetch covers replies in unresolved threads.
@@ -62,8 +67,8 @@ actions, or straightforward CI patches.
      actionable feedback.
 
 3. Triage feedback.
-   - Classify each unresolved comment as valid, partial, invalid, unclear, or
-     conflicting.
+   - Classify each unresolved review-thread comment and PR conversation comment
+     as valid, partial, invalid, unclear, or conflicting.
    - Decide fix, reply-only, or discuss.
    - Prefer the smallest safe in-scope fix. Stop for human input when feedback
      is unclear or conflicting.
@@ -98,8 +103,9 @@ actions, or straightforward CI patches.
      the reply explains why and the active policy allows resolution.
 
 8. Monitor review, CI, and approval.
-   - Approval is fresh only when it applies to the current head SHA and current
-     PR body. New commits or material PR-body edits make approval stale.
+   - Approval is fresh only when it applies to the current head SHA, current PR
+     body, and current target/base branch. New commits, material PR-body edits,
+     or base-branch changes make approval stale.
    - For the default Codex signal, poll PR description/body reactions for the
      eyes-to-thumbs-up transition; do not look for a commit reaction.
    - Required remote checks must be green for the current head.
@@ -123,9 +129,10 @@ actions, or straightforward CI patches.
 
 All gates must pass before merging:
 - Fresh approval covers the current head SHA and current PR body.
+- Fresh approval covers the current target/base branch.
 - Required remote checks are green for the current head.
 - The repository's local test suite passed in this loop.
-- No unresolved actionable review feedback remains.
+- No unresolved actionable review-thread or PR conversation feedback remains.
 - Fixed review threads were replied to and resolved according to policy.
 - The branch is mergeable and up to date enough for the repository's rules.
 - No unrelated local/user changes are staged, committed, overwritten, or hidden.
@@ -134,8 +141,9 @@ All gates must pass before merging:
 ## Approval Freshness
 
 Approval covers a review surface, not just a PR number. The surface is the
-current head SHA plus the current PR body. Approval is stale after a new commit,
-a material PR-body edit, or any user-defined surface change.
+current head SHA plus the current PR body and target/base branch. Approval is
+stale after a new commit, a material PR-body edit, a base-branch change, or any
+user-defined surface change.
 
 When freshness is unclear, fetch current PR metadata and wait for fresh approval
 instead of relying on an older signal.

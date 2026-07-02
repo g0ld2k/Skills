@@ -21,6 +21,7 @@ Establish:
 - feature or batch name for `integration/<feature-name>`;
 - source branches or PRs in scope;
 - default/protected branch name;
+- default/protected branch ref to use as the integration branch starting point;
 - whether each source branch already has a PR, or needs an integration-targeted
   PR created before closeout;
 - approval signal and freshness requirements for each PR;
@@ -32,7 +33,10 @@ Establish:
 ## Orchestration Policy
 
 Default strategy:
-- Use or create `integration/<feature-name>` as the autonomous landing branch.
+- Use or create `integration/<feature-name>` from the identified
+  default/protected branch as the autonomous landing branch.
+- For an existing integration branch, verify ancestry from the identified
+  default/protected branch before retargeting PRs or delegating closeout work.
 - Require each closeout item to have a PR targeting the integration branch
   before delegating to `pr-closeout-loop`.
 - Preserve branch history with normal merge commits unless the user or repo
@@ -49,7 +53,9 @@ confirm the authorization scope and merge gates first.
 
 1. Define the branch topology.
    - Identify source branches or PRs.
-   - Identify or create `integration/<feature-name>`.
+   - Identify the default/protected branch ref.
+   - Create `integration/<feature-name>` from the default/protected branch ref,
+     or verify an existing integration branch has that ancestry.
    - For each existing PR, verify its base branch is `integration/<feature-name>`
      before closeout delegation.
    - If an existing PR targets the default branch, retarget it to the integration
@@ -59,6 +65,7 @@ confirm the authorization scope and merge gates first.
 
 2. Define gates.
    - Approval must be fresh for each PR's current head SHA and PR body.
+   - Approval must also cover each PR's current target/base branch.
    - Required remote checks must be green for each current head.
    - Local tests must pass before each merge into integration.
    - No unresolved actionable review feedback may remain.
