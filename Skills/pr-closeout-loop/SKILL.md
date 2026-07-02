@@ -111,10 +111,12 @@ actions, or straightforward CI patches.
    - Reply with what changed and what validation ran.
    - For actionable PR conversation comments, reply or acknowledge with the fix,
      validation, or rationale. Treat a conversation comment as addressed only
-     when that acknowledgement appears after the latest actionable comment.
+     when the acknowledgement names the specific comment it addresses and appears
+     after re-fetching and triaging the latest PR conversation comments.
    - For actionable review-level bodies without an inline thread, reply through
      the appropriate PR review or conversation channel and treat the feedback as
-     addressed only when the acknowledgement follows the latest actionable review.
+     addressed only when the acknowledgement names the specific review it
+     addresses and appears after re-fetching and triaging the latest reviews.
    - Default resolve mode is `after-fixed-reply`: after applying and validating
      a fix, reply to the thread and resolve it automatically.
    - Do not resolve invalid, unclear, conflicting, or declined feedback unless
@@ -129,7 +131,9 @@ actions, or straightforward CI patches.
      eyes-to-thumbs-up transition after the latest surface-changing event; do
      not treat an older thumbs-up as fresh approval, and do not look for a
      commit reaction.
-   - Required remote checks must be green for the current head.
+   - Required remote checks must be green for the current head against the
+     current base or merge ref. After base-ref changes, require fresh checks,
+     a merge-ref validation, or an explicit rerun before merge.
    - If new actionable feedback appears, restart at step 2.
    - If checks fail, inspect logs/artifacts through available GitHub, CI
      provider, or MCP tools before editing.
@@ -152,7 +156,8 @@ All gates must pass before merging:
 - Fresh approval covers the current head SHA and current PR body.
 - Fresh approval covers the current target/base branch and current base ref,
   merge-base, or computed diff.
-- Required remote checks are green for the current head.
+- Required remote checks are green for the current head against the current base
+  or merge ref, including after base-ref changes.
 - The repository's local test suite passed in this loop.
 - No unresolved actionable review-thread, review-level, or PR conversation
   feedback remains.

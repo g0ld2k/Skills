@@ -72,6 +72,10 @@ confirm the authorization scope and merge gates first.
    - If an existing PR targets the default branch, retarget it to the integration
      branch or create a new integration-targeted PR before delegating only when
      PR topology edits are authorized.
+   - Prefer retargeting an existing PR over cloning it. If a new
+     integration-targeted PR is created from an existing PR, import and triage
+     the original PR's unresolved review feedback, review-level feedback, and PR
+     conversation comments before delegation.
    - If a source branch has no PR, create an integration-targeted PR only when
      PR topology edits are authorized, or block until the user explicitly defines
      separate branch-only gates.
