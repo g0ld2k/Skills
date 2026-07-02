@@ -20,7 +20,8 @@ identified, create or retarget a PR first, or block for topology setup.
 ## Inputs
 
 Establish before starting:
-- PR owner/repo/number, current branch, target branch, and current head SHA.
+- PR owner/repo/number, current branch, target branch, current head SHA, and PR
+  head repository/ref.
 - Approval signal, including which reviewer identity or reaction counts. Default
   Codex signal: the reaction on the PR description/body changes from eyes to
   thumbs-up. This is not a commit-specific reaction.
@@ -53,8 +54,8 @@ actions, or straightforward CI patches.
 ## Loop
 
 1. Preflight.
-   - Confirm repo, branch, PR, target branch, head SHA, working tree state, and
-     PR body.
+   - Confirm repo, branch, PR, target branch, head SHA, PR head repository/ref,
+     working tree state, and PR body.
    - Fetch latest remote PR state and sync the local checkout to the exact
      current PR head before editing. Block if that cannot be done safely.
    - Do not stage, commit, overwrite, or discard unrelated local/user changes.
@@ -65,8 +66,9 @@ actions, or straightforward CI patches.
      check/status rollup, approval signal, and mergeability metadata.
    - Do not rely on helpers that return only top-level review comments unless
      another fetch covers replies in unresolved threads.
-   - Treat already-replied old threads as context unless they contain fresh
-     actionable feedback.
+   - Triage every unresolved thread as fresh actionable feedback, already
+     addressed and eligible for resolution, or blocked according to the active
+     resolution policy.
 
 3. Triage feedback.
    - Classify each unresolved review-thread comment, PR conversation comment,
@@ -103,6 +105,8 @@ actions, or straightforward CI patches.
      use the generated message and commit, as long as the message is supported by
      the staged diff and no companion skill explicitly blocks.
    - Commit and push only when the user's authorization for this loop covers it.
+   - Push to the recorded PR head repository/ref, then verify the pushed commit
+     is the PR's current head before replying or merging.
 
 7. Reply to feedback and resolve review threads.
    - Re-fetch each target thread's current comments and replies before posting
@@ -141,6 +145,9 @@ actions, or straightforward CI patches.
      block and report the last observed state.
 
 9. Merge or block.
+   - Immediately before merging, fetch current PR state again and re-evaluate
+     feedback, approval freshness, required checks, base ref, mergeability, and
+     unrelated local/user changes.
    - Merge only when every merge gate below is satisfied.
    - If the user gave blanket approval to merge into the current target branch,
      merge there without asking again after gates pass.
@@ -165,6 +172,7 @@ All gates must pass before merging:
   fixed review-level and PR conversation comments were acknowledged according to
   policy.
 - The branch is mergeable and up to date enough for the repository's rules.
+- A final pre-merge refresh confirmed the gates still pass.
 - No unrelated local/user changes are staged, committed, overwritten, or hidden.
 - The user's authorization covers this target branch and merge method.
 
