@@ -15,11 +15,12 @@ replies.json format:
 ]
 
 "thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
-and it drives a fresh single-thread resolved-and-root-comment check
-immediately before each POST. An entry missing comment_id or thread_id is a
-hard failure (counted in "failed", exit code 2) — it is not silently
-skipped, since a missing required field means the entry can never be
-verified or posted correctly.
+and it drives a fresh check immediately before each POST that the thread
+belongs to the given --owner/--repo/--pr, is unresolved, and that
+comment_id is its root comment. An entry missing comment_id or thread_id,
+or one that fails any of those checks for a reason other than "already
+resolved", is a hard failure (counted in "failed", exit code 2) — it is
+not silently skipped.
 USAGE
 }
 
@@ -88,6 +89,7 @@ require_cmd jq
 #   20 - GraphQL lookup failed, or the node/isResolved shape was unexpected
 #   21 - comment_id is not in this thread, or is a reply rather than the
 #        thread's root comment
+#   22 - thread belongs to a different repo/PR than --owner/--repo/--pr
 thread_ok_to_post() {
   local thread_id="$1"
   local comment_id="$2"
@@ -98,6 +100,13 @@ thread_ok_to_post() {
       node(id: $id) {
         ... on PullRequestReviewThread {
           isResolved
+          pullRequest {
+            number
+            repository {
+              owner { login }
+              name
+            }
+          }
           comments(first: 100) {
             nodes { databaseId replyTo { id } }
           }
@@ -115,6 +124,21 @@ thread_ok_to_post() {
   if [[ "$is_resolved" != "true" && "$is_resolved" != "false" ]]; then
     # Missing/null node: bad thread_id or an unexpected API shape.
     return 20
+  fi
+
+  # Confirm the thread actually belongs to the requested --owner/--repo/--pr.
+  # thread_id is a global node ID with no inherent tie to the CLI args, so a
+  # replies file built for a different PR (or reused against the wrong one)
+  # would otherwise only surface as a late POST failure — or not at all in
+  # --dry-run, since dry-run never reaches the POST call.
+  # Downcase both sides in jq rather than bash: `${var,,}` needs bash 4+,
+  # but macOS ships bash 3.2 by default under `/usr/bin/env bash`.
+  if ! jq -e --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
+    (.data.node.pullRequest.repository.owner.login | ascii_downcase) == ($owner | ascii_downcase)
+    and (.data.node.pullRequest.repository.name | ascii_downcase) == ($repo | ascii_downcase)
+    and .data.node.pullRequest.number == $pr
+  ' <<<"$response" >/dev/null; then
+    return 22
   fi
 
   # Check root-comment membership before treating isResolved as a benign
@@ -172,7 +196,7 @@ while IFS= read -r reply_json; do
     skipped=$((skipped + 1))
     continue
   elif [[ $rc -ne 0 ]]; then
-    echo "Failing comment $comment_id (thread $thread_id lookup failed or comment_id is not its root comment)" >&2
+    echo "Failing comment $comment_id (thread $thread_id: lookup failed, wrong repo/PR, or comment_id is not its root comment)" >&2
     failed=$((failed + 1))
     continue
   fi
