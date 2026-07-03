@@ -86,6 +86,9 @@ actions, or straightforward CI patches.
    - Run targeted validation, then the repository's local test suite.
    - Local tests are required before merge in this workflow. If the suite cannot
      run or does not exist, block unless the user explicitly changes the gate.
+   - Treat a passed local suite result as stale if the target base ref advances
+     afterward; re-run the suite against the current base or merge ref before
+     merging.
 
 5. Run `simplify` for non-trivial changes.
    - Non-trivial means logic, behavior, tests, CI, package, workflow, public
@@ -166,7 +169,8 @@ All gates must pass before merging:
   merge-base, or computed diff.
 - Required remote checks are green for the current head against the current base
   or merge ref, including after base-ref changes.
-- The repository's local test suite passed in this loop.
+- The repository's local test suite passed in this loop against the current
+  base ref; re-run it if the base ref advanced since the last pass.
 - No unresolved actionable review-thread, review-level, or PR conversation
   feedback remains.
 - Fixed review threads were replied to and resolved according to policy, and

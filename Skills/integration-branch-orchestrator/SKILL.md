@@ -65,6 +65,9 @@ confirm the authorization scope and merge gates first.
    - Fetch the remote default/protected branch and record the current ref/SHA.
    - Create `integration/<feature-name>` from the default/protected branch ref,
      or verify an existing integration branch has that ancestry.
+   - For an existing integration branch, fetch its current remote ref before
+     verifying ancestry or scope; do not evaluate ancestry or in-scope commits
+     against a stale local copy.
    - For an existing integration branch, verify its current commits and diff are
      in scope for this run, or recreate it from the protected branch before
      delegation when authorized.
