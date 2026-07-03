@@ -24,6 +24,8 @@ Use this rubric for each unresolved top-level review comment.
 
 For consistency, output:
 - `comment_id`
+- `thread_id` (required by `post_pr_replies.sh` for the per-reply resolved
+  check; carry it through from the fetch step)
 - `file_line`
 - `validity`
 - `priority`

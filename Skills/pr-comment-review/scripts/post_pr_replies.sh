@@ -14,10 +14,10 @@ replies.json format:
   { "comment_id": 12345, "thread_id": "PRRT_xxx", "body": "Reply text" }
 ]
 
-"thread_id" is optional but strongly recommended: when present, each reply
-does a fresh single-thread resolved check immediately before posting. When
-absent, the entry falls back to the resolved-threads snapshot fetched once
-at start, which can go stale if a thread is resolved mid-run.
+"thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
+and it drives a fresh single-thread resolved-and-membership check immediately
+before each POST. Entries missing it are skipped rather than falling back to
+a batch snapshot that can go stale mid-run.
 USAGE
 }
 
@@ -72,21 +72,6 @@ fi
 require_cmd gh
 require_cmd jq
 
-fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
-
-if [[ ! -f "$fetch_script" || ! -r "$fetch_script" ]]; then
-  die "Missing readable helper: $fetch_script"
-fi
-
-unresolved_ids="$(mktemp)"
-tmp_unresolved="$(mktemp)"
-trap 'rm -f "$tmp_unresolved" "$unresolved_ids"' EXIT
-
-refresh_unresolved_ids() {
-  bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$tmp_unresolved"
-  jq -r '.[].comment_id' "$tmp_unresolved" | sed '/^null$/d' > "$unresolved_ids"
-}
-
 # Fresh, single-thread check so a reply posted late in a large batch can't
 # fire against a thread someone resolved after the batch snapshot was taken.
 # Fails closed: a lookup error, missing node, or a comment_id that does not
@@ -126,8 +111,6 @@ thread_ok_to_post() {
     <<<"$response" >/dev/null
 }
 
-refresh_unresolved_ids
-
 posted=0
 would_post=0
 skipped=0
@@ -144,23 +127,19 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  if [[ -n "$thread_id" ]]; then
-    # Authoritative, per-reply check: catches a thread resolved after the
-    # batch snapshot was taken, confirms comment_id actually belongs to
-    # thread_id, and fails closed on any lookup error.
-    if ! thread_ok_to_post "$thread_id" "$comment_id"; then
-      echo "Skipping comment $comment_id (thread $thread_id resolved, mismatched, or lookup failed)"
-      skipped=$((skipped + 1))
-      continue
-    fi
-  else
-    # No thread_id supplied: fall back to the batch snapshot fetched at
-    # start. This can go stale if the thread was resolved mid-run.
-    if ! grep -qx "$comment_id" "$unresolved_ids"; then
-      echo "Skipping comment $comment_id (resolved or not found in unresolved threads)"
-      skipped=$((skipped + 1))
-      continue
-    fi
+  if [[ -z "$thread_id" || "$thread_id" == "null" ]]; then
+    echo "Skipping comment $comment_id (missing required thread_id)" >&2
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  # Authoritative, per-reply check: catches a thread resolved after triage,
+  # confirms comment_id actually belongs to thread_id, and fails closed on
+  # any lookup error.
+  if ! thread_ok_to_post "$thread_id" "$comment_id"; then
+    echo "Skipping comment $comment_id (thread $thread_id resolved, mismatched, or lookup failed)"
+    skipped=$((skipped + 1))
+    continue
   fi
 
   if [[ "$dry_run" == true ]]; then
