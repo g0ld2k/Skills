@@ -112,21 +112,27 @@ thread_ok_to_post() {
   # `false` as falsy too, which would misclassify every unresolved thread
   # as a lookup failure. `tostring` keeps `false`/`true`/`null` distinct.
   is_resolved="$(jq -r '.data.node.isResolved | tostring' <<<"$response")"
-  if [[ "$is_resolved" == "true" ]]; then
-    return 10
-  fi
-  if [[ "$is_resolved" != "false" ]]; then
+  if [[ "$is_resolved" != "true" && "$is_resolved" != "false" ]]; then
     # Missing/null node: bad thread_id or an unexpected API shape.
     return 20
   fi
 
-  if jq -e --argjson cid "$comment_id" '
+  # Check root-comment membership before treating isResolved as a benign
+  # skip: a mismatched pairing (comment_id doesn't actually belong to
+  # thread_id) must fail even when thread_id happens to be resolved,
+  # otherwise the real, unresolved target comment silently never gets a
+  # reply while the batch reports a clean skip.
+  if ! jq -e --argjson cid "$comment_id" '
     (.data.node.comments.nodes | map(select(.databaseId == $cid))) as $m
     | ($m | length) == 1 and ($m[0].replyTo == null)
   ' <<<"$response" >/dev/null; then
-    return 0
+    return 21
   fi
-  return 21
+
+  if [[ "$is_resolved" == "true" ]]; then
+    return 10
+  fi
+  return 0
 }
 
 posted=0
