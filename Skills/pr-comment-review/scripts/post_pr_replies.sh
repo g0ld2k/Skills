@@ -89,16 +89,41 @@ refresh_unresolved_ids() {
 
 # Fresh, single-thread check so a reply posted late in a large batch can't
 # fire against a thread someone resolved after the batch snapshot was taken.
-thread_is_resolved() {
+# Fails closed: a lookup error, missing node, or a comment_id that does not
+# actually belong to thread_id all count as "not ok to post" rather than
+# silently falling through to "not resolved".
+thread_ok_to_post() {
   local thread_id="$1"
-  local is_resolved
-  is_resolved="$(gh api graphql -f query='
+  local comment_id="$2"
+  local response
+
+  if ! response="$(gh api graphql -f query='
     query($id: ID!) {
       node(id: $id) {
-        ... on PullRequestReviewThread { isResolved }
+        ... on PullRequestReviewThread {
+          isResolved
+          comments(first: 100) {
+            nodes { databaseId }
+          }
+        }
       }
-    }' -F id="$thread_id" --jq '.data.node.isResolved')"
-  [[ "$is_resolved" == "true" ]]
+    }' -F id="$thread_id")"; then
+    return 1
+  fi
+
+  local is_resolved
+  # Note: avoid `// empty` here — jq's alternative operator treats a real
+  # `false` as falsy too, which would misclassify every unresolved thread
+  # as a lookup failure. `tostring` keeps `false`/`true`/`null` distinct.
+  is_resolved="$(jq -r '.data.node.isResolved | tostring' <<<"$response")"
+  if [[ "$is_resolved" != "false" ]]; then
+    # Covers isResolved == true and a missing/null node (bad id, API error).
+    return 1
+  fi
+
+  jq -e --argjson cid "$comment_id" \
+    '.data.node.comments.nodes | map(.databaseId) | index($cid) != null' \
+    <<<"$response" >/dev/null
 }
 
 refresh_unresolved_ids
@@ -121,9 +146,10 @@ while IFS= read -r reply_json; do
 
   if [[ -n "$thread_id" ]]; then
     # Authoritative, per-reply check: catches a thread resolved after the
-    # batch snapshot was taken, which the snapshot-only path below cannot.
-    if thread_is_resolved "$thread_id"; then
-      echo "Skipping comment $comment_id (thread $thread_id resolved since snapshot)"
+    # batch snapshot was taken, confirms comment_id actually belongs to
+    # thread_id, and fails closed on any lookup error.
+    if ! thread_ok_to_post "$thread_id" "$comment_id"; then
+      echo "Skipping comment $comment_id (thread $thread_id resolved, mismatched, or lookup failed)"
       skipped=$((skipped + 1))
       continue
     fi
