@@ -113,7 +113,7 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  if gh api -X POST "repos/$owner/$repo/pulls/comments/$comment_id/replies" -f body="$body" >/dev/null; then
+  if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" -f body="$body" >/dev/null; then
     echo "Posted reply to comment $comment_id"
     posted=$((posted + 1))
   else

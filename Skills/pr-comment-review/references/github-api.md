@@ -53,7 +53,7 @@ Treat as contextual discussion, not required action items.
 ## 3) Post Reply to Review Comment (REST)
 
 ```bash
-gh api -X POST repos/<owner>/<repo>/pulls/comments/<comment_id>/replies \
+gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/replies \
   -f body='Thanks — addressed in <commit-or-explanation>'
 ```
 
