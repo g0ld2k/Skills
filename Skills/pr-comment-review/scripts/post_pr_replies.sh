@@ -11,8 +11,13 @@ Usage: $0 --owner <owner> --repo <repo> --pr <pr_number> --replies-file <replies
 
 replies.json format:
 [
-  { "comment_id": 12345, "body": "Reply text" }
+  { "comment_id": 12345, "thread_id": "PRRT_xxx", "body": "Reply text" }
 ]
+
+"thread_id" is optional but strongly recommended: when present, each reply
+does a fresh single-thread resolved check immediately before posting. When
+absent, the entry falls back to the resolved-threads snapshot fetched once
+at start, which can go stale if a thread is resolved mid-run.
 USAGE
 }
 
@@ -82,6 +87,20 @@ refresh_unresolved_ids() {
   jq -r '.[].comment_id' "$tmp_unresolved" | sed '/^null$/d' > "$unresolved_ids"
 }
 
+# Fresh, single-thread check so a reply posted late in a large batch can't
+# fire against a thread someone resolved after the batch snapshot was taken.
+thread_is_resolved() {
+  local thread_id="$1"
+  local is_resolved
+  is_resolved="$(gh api graphql -f query='
+    query($id: ID!) {
+      node(id: $id) {
+        ... on PullRequestReviewThread { isResolved }
+      }
+    }' -F id="$thread_id" --jq '.data.node.isResolved')"
+  [[ "$is_resolved" == "true" ]]
+}
+
 refresh_unresolved_ids
 
 posted=0
@@ -91,6 +110,7 @@ failed=0
 
 while IFS= read -r reply_json; do
   comment_id="$(jq -r '.comment_id // empty' <<<"$reply_json")"
+  thread_id="$(jq -r '.thread_id // empty' <<<"$reply_json")"
   body="$(jq -r '.body // ""' <<<"$reply_json")"
 
   if [[ -z "$comment_id" || "$comment_id" == "null" ]]; then
@@ -99,12 +119,22 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  # Use the unresolved snapshot fetched at start to avoid one API fetch per
-  # reply. If state changes concurrently, rely on POST outcome and report it.
-  if ! grep -qx "$comment_id" "$unresolved_ids"; then
-    echo "Skipping comment $comment_id (resolved or not found in unresolved threads)"
-    skipped=$((skipped + 1))
-    continue
+  if [[ -n "$thread_id" ]]; then
+    # Authoritative, per-reply check: catches a thread resolved after the
+    # batch snapshot was taken, which the snapshot-only path below cannot.
+    if thread_is_resolved "$thread_id"; then
+      echo "Skipping comment $comment_id (thread $thread_id resolved since snapshot)"
+      skipped=$((skipped + 1))
+      continue
+    fi
+  else
+    # No thread_id supplied: fall back to the batch snapshot fetched at
+    # start. This can go stale if the thread was resolved mid-run.
+    if ! grep -qx "$comment_id" "$unresolved_ids"; then
+      echo "Skipping comment $comment_id (resolved or not found in unresolved threads)"
+      skipped=$((skipped + 1))
+      continue
+    fi
   fi
 
   if [[ "$dry_run" == true ]]; then

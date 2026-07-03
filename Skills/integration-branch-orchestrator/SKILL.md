@@ -1,6 +1,12 @@
 ---
 name: integration-branch-orchestrator
 description: Use when planning or supervising a long-running autonomous GitHub PR workflow with integration branches, blanket approval scope, multiple PRs, or human promotion gates.
+tools:
+  - bash
+  - view
+  - edit
+  - grep
+  - glob
 ---
 
 # Integration Branch Orchestrator
