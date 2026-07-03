@@ -80,9 +80,10 @@ confirm the authorization scope and merge gates first.
    - For an existing integration branch, verify its current commits and diff are
      in scope for this run, or recreate it from the protected branch before
      delegation only when destructive integration-branch recreation is
-     explicitly authorized and no open PR still targets the existing
-     integration branch's current tip; otherwise block for human topology
-     approval.
+     explicitly authorized and no open PR targets the existing integration
+     branch (PRs target the branch by name, not a specific tip SHA, so any
+     open PR based on it is invalidated by a reset); otherwise block for
+     human topology approval.
    - Push the integration branch or verify the remote branch exists before
      retargeting or creating integration-targeted PRs.
    - For each existing PR, verify its base branch is `integration/<feature-name>`
@@ -156,8 +157,8 @@ Block orchestration when:
 - branch topology is ambiguous and a safe default is not obvious;
 - blanket approval scope is unclear;
 - existing integration branch contents are out of scope and destructive
-  recreation is not explicitly authorized, or an open PR still targets the
-  existing integration branch's current tip;
+  recreation is not explicitly authorized, or any open PR targets the
+  existing integration branch;
 - PR creation or base-retargeting is needed but not authorized;
 - any PR lacks a PR surface that can be delegated to the closeout loop;
 - integration validation fails and has not been explicitly waived;

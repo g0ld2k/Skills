@@ -15,9 +15,11 @@ replies.json format:
 ]
 
 "thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
-and it drives a fresh single-thread resolved-and-membership check immediately
-before each POST. Entries missing it are skipped rather than falling back to
-a batch snapshot that can go stale mid-run.
+and it drives a fresh single-thread resolved-and-root-comment check
+immediately before each POST. An entry missing comment_id or thread_id is a
+hard failure (counted in "failed", exit code 2) — it is not silently
+skipped, since a missing required field means the entry can never be
+verified or posted correctly.
 USAGE
 }
 
@@ -74,9 +76,18 @@ require_cmd jq
 
 # Fresh, single-thread check so a reply posted late in a large batch can't
 # fire against a thread someone resolved after the batch snapshot was taken.
-# Fails closed: a lookup error, missing node, or a comment_id that does not
-# actually belong to thread_id all count as "not ok to post" rather than
-# silently falling through to "not resolved".
+# Also confirms comment_id is the thread's root comment: GitHub's reply
+# endpoint only accepts the comment that started the thread, not a reply to
+# a reply (https://docs.github.com/en/rest/pulls/comments#create-a-reply-for-a-review-comment).
+#
+# Return codes distinguish a legitimate skip from a failure so a caller can
+# tell "thread already resolved" (fine) apart from "could not verify" or
+# "malformed input" (should fail the run, not be swallowed as a skip):
+#   0  - ok to post
+#   10 - thread is already resolved
+#   20 - GraphQL lookup failed, or the node/isResolved shape was unexpected
+#   21 - comment_id is not in this thread, or is a reply rather than the
+#        thread's root comment
 thread_ok_to_post() {
   local thread_id="$1"
   local comment_id="$2"
@@ -88,12 +99,12 @@ thread_ok_to_post() {
         ... on PullRequestReviewThread {
           isResolved
           comments(first: 100) {
-            nodes { databaseId }
+            nodes { databaseId replyTo { id } }
           }
         }
       }
     }' -F id="$thread_id")"; then
-    return 1
+    return 20
   fi
 
   local is_resolved
@@ -101,14 +112,21 @@ thread_ok_to_post() {
   # `false` as falsy too, which would misclassify every unresolved thread
   # as a lookup failure. `tostring` keeps `false`/`true`/`null` distinct.
   is_resolved="$(jq -r '.data.node.isResolved | tostring' <<<"$response")"
+  if [[ "$is_resolved" == "true" ]]; then
+    return 10
+  fi
   if [[ "$is_resolved" != "false" ]]; then
-    # Covers isResolved == true and a missing/null node (bad id, API error).
-    return 1
+    # Missing/null node: bad thread_id or an unexpected API shape.
+    return 20
   fi
 
-  jq -e --argjson cid "$comment_id" \
-    '.data.node.comments.nodes | map(.databaseId) | index($cid) != null' \
-    <<<"$response" >/dev/null
+  if jq -e --argjson cid "$comment_id" '
+    (.data.node.comments.nodes | map(select(.databaseId == $cid))) as $m
+    | ($m | length) == 1 and ($m[0].replyTo == null)
+  ' <<<"$response" >/dev/null; then
+    return 0
+  fi
+  return 21
 }
 
 posted=0
@@ -137,11 +155,19 @@ while IFS= read -r reply_json; do
   fi
 
   # Authoritative, per-reply check: catches a thread resolved after triage,
-  # confirms comment_id actually belongs to thread_id, and fails closed on
-  # any lookup error.
-  if ! thread_ok_to_post "$thread_id" "$comment_id"; then
-    echo "Skipping comment $comment_id (thread $thread_id resolved, mismatched, or lookup failed)"
+  # confirms comment_id is the thread's root comment, and distinguishes a
+  # legitimate skip (already resolved) from a failure (lookup error or
+  # malformed comment_id/thread_id pairing) so the latter can't be silently
+  # swallowed as "handled".
+  rc=0
+  thread_ok_to_post "$thread_id" "$comment_id" || rc=$?
+  if [[ $rc -eq 10 ]]; then
+    echo "Skipping comment $comment_id (thread $thread_id already resolved)"
     skipped=$((skipped + 1))
+    continue
+  elif [[ $rc -ne 0 ]]; then
+    echo "Failing comment $comment_id (thread $thread_id lookup failed or comment_id is not its root comment)" >&2
+    failed=$((failed + 1))
     continue
   fi
 

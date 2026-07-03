@@ -42,9 +42,13 @@ Establish before starting:
 ## Required Companions
 
 Use these skills when available:
-- `pr-comment-review` for fetching every comment and reply in unresolved review
-  threads, triaging, fixing, validating, replying to, and resolving PR review
-  feedback.
+- `pr-comment-review` for triaging, fixing, validating, replying to, and
+  resolving PR review feedback.
+  - Its `fetch_unresolved_review_comments.sh` helper returns only top-level
+    review comments, not replies within a thread. Do not rely on it alone to
+    satisfy step 2's requirement to fetch every comment and reply in each
+    unresolved thread; fetch replies yourself (e.g. a direct GraphQL query)
+    before triage.
   - In unattended mode, use it only when the user or calling workflow
     pre-authorized the specific coding and reply-posting scope.
   - Without pre-authorization, follow its normal approval gates before coding or
