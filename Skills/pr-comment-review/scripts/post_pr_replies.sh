@@ -121,15 +121,18 @@ while IFS= read -r reply_json; do
   thread_id="$(jq -r '.thread_id // empty' <<<"$reply_json")"
   body="$(jq -r '.body // ""' <<<"$reply_json")"
 
+  # Malformed input entries count as failed, not skipped: "skipped" is
+  # reserved for well-formed entries correctly declined because of live
+  # thread state, so a bad replies-file can't look like a clean run.
   if [[ -z "$comment_id" || "$comment_id" == "null" ]]; then
-    echo "Skipping entry without comment_id" >&2
-    skipped=$((skipped + 1))
+    echo "Failing entry without comment_id" >&2
+    failed=$((failed + 1))
     continue
   fi
 
   if [[ -z "$thread_id" || "$thread_id" == "null" ]]; then
-    echo "Skipping comment $comment_id (missing required thread_id)" >&2
-    skipped=$((skipped + 1))
+    echo "Failing comment $comment_id (missing required thread_id)" >&2
+    failed=$((failed + 1))
     continue
   fi
 

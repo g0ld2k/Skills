@@ -61,6 +61,7 @@ content="$({
       | (.value.line // "n/a") as $line
       | "## Comment #\(.value.comment_id) [\(.value.path):\($line)]\n"
         + "- URL: \(.value.url)\n"
+        + "- Thread ID: \(.value.thread_id)\n"
         + "- Validity: <valid|partial|invalid>\n"
         + "- Priority: <high|medium|low>\n"
         + "- Decision: <fix|reply|discuss>\n"

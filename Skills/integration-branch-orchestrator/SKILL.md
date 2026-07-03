@@ -35,7 +35,8 @@ Establish:
 - allowed unattended actions: fixes, commits, pushes, replies, thread
   resolution, PR creation, PR base-retargeting, merges into integration,
   destructive integration-branch recreation (recreating or resetting an
-  existing `integration/<feature-name>` from the protected base);
+  existing `integration/<feature-name>` from the protected base), closing or
+  superseding a cloned PR's original PR;
 - actions that still require human approval, especially integration-to-default
   promotion.
 
@@ -93,10 +94,11 @@ confirm the authorization scope and merge gates first.
      integration-targeted PR is created from an existing PR, import and triage
      the original PR's unresolved review feedback, review-level feedback, and PR
      conversation comments before delegation.
-   - If the original PR stays open after cloning, close or supersede it, or
-     keep polling it for new reviews, conversation comments, and unresolved
-     threads until the integration-targeted PR merges; a one-time feedback
-     import does not cover activity added to the original PR afterward.
+   - If the original PR stays open after cloning, close or supersede it only
+     when that action is explicitly authorized; otherwise keep polling it for
+     new reviews, conversation comments, and unresolved threads until the
+     integration-targeted PR merges. A one-time feedback import does not
+     cover activity added to the original PR afterward.
    - If a source branch has no PR, verify the source branch exists on a
      recorded remote, pushing it first when authorized, then create an
      integration-targeted PR only when PR topology edits are authorized, or
@@ -130,6 +132,12 @@ confirm the authorization scope and merge gates first.
      final pre-merge refresh) immediately before merging. Do not perform an
      independent merge here that bypasses those gates.
    - Once a delegated merge has landed, use normal merge commits by default.
+   - Fetch and check out the current remote `integration/<feature-name>` tip
+     before running integration-level validation. Delegated merges made
+     through GitHub or in separate worktrees/clones may not be reflected in
+     the orchestrator's own checkout, so validating a stale local copy can
+     report the branch ready for promotion when the merged result actually
+     fails.
    - Re-run integration-level validation after merges when the repository has a
      suitable suite or workflow.
    - If integration validation fails, triage whether the failure belongs to a
