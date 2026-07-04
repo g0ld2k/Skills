@@ -78,25 +78,39 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
     return data, None
 
 
-def parse_openai_yaml(path: Path) -> tuple[dict[str, str], str | None]:
+def parse_openai_yaml(path: Path) -> tuple[dict[str, str], dict[str, object], str | None]:
     if not path.exists():
-        return {}, "missing agents/openai.yaml"
+        return {}, {}, "missing agents/openai.yaml"
 
     lines = path.read_text(encoding="utf-8").splitlines()
-    data: dict[str, str] = {}
-    in_interface = False
+    interface: dict[str, str] = {}
+    policy: dict[str, object] = {}
+    section: str | None = None
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped == "interface:":
-            in_interface = True
+            section = "interface"
             continue
-        if in_interface and line.startswith("  ") and ":" in stripped:
+        if stripped == "policy:":
+            section = "policy"
+            continue
+        if section and line.startswith("  ") and ":" in stripped:
             key, _, value = stripped.partition(":")
-            data[key.strip()] = strip_quotes(value.strip())
+            parsed_value = strip_quotes(value.strip())
+            if parsed_value == "true":
+                value_object: object = True
+            elif parsed_value == "false":
+                value_object = False
+            else:
+                value_object = parsed_value
+            if section == "interface":
+                interface[key.strip()] = str(value_object)
+            elif section == "policy":
+                policy[key.strip()] = value_object
 
-    return data, None
+    return interface, policy, None
 
 
 def is_local_resource_link(target: str) -> bool:
@@ -196,7 +210,7 @@ def validate_skills(errors: list[str]) -> list[str]:
         if name not in EXPLICIT_ONLY_SKILLS and "disable-model-invocation" in frontmatter:
             errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be absent")
 
-        openai, openai_error = parse_openai_yaml(skill_dir / "agents" / "openai.yaml")
+        openai, policy, openai_error = parse_openai_yaml(skill_dir / "agents" / "openai.yaml")
         if openai_error:
             errors.append(f"skills/{name}/agents/openai.yaml: {openai_error}")
         else:
@@ -211,6 +225,14 @@ def validate_skills(errors: list[str]) -> list[str]:
             default_prompt = openai.get("default_prompt", "")
             if default_prompt and f"${name}" not in default_prompt:
                 errors.append(f"skills/{name}/agents/openai.yaml: default_prompt must include ${name}")
+            if name in EXPLICIT_ONLY_SKILLS and policy.get("allow_implicit_invocation") is not False:
+                errors.append(
+                    f"skills/{name}/agents/openai.yaml: policy.allow_implicit_invocation must be false"
+                )
+            if name not in EXPLICIT_ONLY_SKILLS and "allow_implicit_invocation" in policy:
+                errors.append(
+                    f"skills/{name}/agents/openai.yaml: policy.allow_implicit_invocation must be absent"
+                )
 
         validate_local_links(skill_dir, errors)
 

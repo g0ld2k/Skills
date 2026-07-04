@@ -35,11 +35,20 @@ jobs:
         run: python3 scripts/validate-skills-repo.py
 
       - name: Validate JSON manifests
-        run: find plugins .claude-plugin .agents .github -name '*.json' -print -exec python3 -m json.tool {} >/dev/null \;
+        run: |
+          find plugins .claude-plugin .agents .github -name '*.json' -print |
+            while IFS= read -r file; do
+              echo "$file"
+              python3 -m json.tool "$file" >/dev/null
+            done
 
       - name: Check shell scripts
         run: |
-          find skills plugins scripts -type f -name '*.sh' -print -exec bash -n {} \;
+          find skills plugins scripts -type f -name '*.sh' -print |
+            while IFS= read -r file; do
+              echo "$file"
+              bash -n "$file"
+            done
 
       - name: Validate Agent Skills publisher shape
         run: gh skill publish --dry-run

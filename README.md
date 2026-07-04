@@ -75,9 +75,13 @@ Run the same structural checks used by CI:
 ```bash
 python3 scripts/generate-plugin-packages.py
 git diff --exit-code
+status="$(git status --porcelain)"
+if [ -n "$status" ]; then echo "$status"; exit 1; fi
 python3 scripts/validate-skills-repo.py
-find plugins .claude-plugin .agents .github -name '*.json' -print -exec python3 -m json.tool {} >/dev/null \;
-find skills plugins scripts -type f -name '*.sh' -print -exec bash -n {} \;
+find plugins .claude-plugin .agents .github -name '*.json' -print |
+  while IFS= read -r file; do python3 -m json.tool "$file" >/dev/null; done
+find skills plugins scripts -type f -name '*.sh' -print |
+  while IFS= read -r file; do bash -n "$file"; done
 gh skill publish --dry-run
 ```
 

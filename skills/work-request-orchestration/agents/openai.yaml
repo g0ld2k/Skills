@@ -2,3 +2,5 @@ interface:
   display_name: "Work Request Orchestration"
   short_description: "Coordinate issue-to-PR workflows"
   default_prompt: "Use $work-request-orchestration to turn this request into a validated branch, PR, and review workflow."
+policy:
+  allow_implicit_invocation: false
