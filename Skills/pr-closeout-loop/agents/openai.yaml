@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Closeout Loop"
+  short_description: "Close out PR reviews and CI"
+  default_prompt: "Use $pr-closeout-loop to close out this PR review and CI loop until it is merged or blocked."
