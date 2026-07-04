@@ -1,11 +1,7 @@
 ---
 name: catch-me-up
-description: "Use when the user asks to get oriented, catch up, understand unfamiliar code, trace a feature, explain architecture, identify conventions, inspect tests, or understand code history."
-tools:
-  - bash
-  - view
-  - grep
-  - glob
+description: Use when the user asks to get oriented, catch up, understand unfamiliar code, trace a feature, explain architecture, inspect tests, or understand code history.
+license: MIT
 ---
 
 # Catch Me Up
