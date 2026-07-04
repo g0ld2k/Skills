@@ -283,6 +283,8 @@ def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> N
         if not isinstance(plugins, list) or not plugins:
             errors.append(f"{path.relative_to(ROOT)}: plugins must be a non-empty array")
             continue
+        if path.parts[-3:-1] == (".github", "plugin") and not isinstance(marketplace.get("owner"), dict):
+            errors.append(f"{path.relative_to(ROOT)}: owner must be an object")
         first = plugins[0]
         if not isinstance(first, dict):
             errors.append(f"{path.relative_to(ROOT)}: first plugin entry must be an object")

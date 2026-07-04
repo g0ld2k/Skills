@@ -143,7 +143,9 @@ def main() -> None:
 
     copilot_marketplace = {
         "name": config["name"],
-        "owner": "g0ld2k",
+        "owner": {
+            "name": "g0ld2k"
+        },
         "metadata": {
             "description": "Marketplace for g0ld2k reusable agent skills."
         },

@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -22,6 +25,11 @@ jobs:
         run: |
           python3 scripts/generate-plugin-packages.py
           git diff --exit-code
+          status="$(git status --porcelain)"
+          if [ -n "$status" ]; then
+            echo "$status"
+            exit 1
+          fi
 
       - name: Validate repository structure
         run: python3 scripts/validate-skills-repo.py
@@ -35,3 +43,5 @@ jobs:
 
       - name: Validate Agent Skills publisher shape
         run: gh skill publish --dry-run
+        env:
+          GH_TOKEN: ${{ github.token }}

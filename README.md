@@ -27,13 +27,17 @@ release notes, and work orchestration.
 
 ## Direct Agent Skills Install
 
-Install directly from the repository with `gh skill`:
+Install a canonical skill directly from the repository with `gh skill`:
 
 ```bash
-gh skill install g0ld2k/Skills --all --agent codex --scope user
-gh skill install g0ld2k/Skills --all --agent claude-code --scope user
-gh skill install g0ld2k/Skills --all --agent github-copilot --scope project
+gh skill install g0ld2k/Skills skills/commit-message/SKILL.md --agent codex --scope user
+gh skill install g0ld2k/Skills skills/pr-generator/SKILL.md --agent claude-code --scope user
+gh skill install g0ld2k/Skills skills/pr-comment-review/SKILL.md --agent github-copilot --scope project
 ```
+
+Use exact `skills/<skill-name>/SKILL.md` paths for direct installs so `gh skill`
+does not also install the generated plugin bundle under
+`plugins/g0ld2k-skills/skills/`.
 
 Validate the direct publisher shape:
 
@@ -47,13 +51,14 @@ Codex:
 
 ```bash
 codex plugin marketplace add g0ld2k/Skills --ref main
+codex plugin add g0ld2k-skills@g0ld2k-skills
 ```
 
 GitHub Copilot CLI:
 
 ```bash
 copilot plugin marketplace add g0ld2k/Skills
-copilot plugin install g0ld2k-skills
+copilot plugin install g0ld2k-skills@g0ld2k-skills
 ```
 
 Claude Code:
@@ -86,6 +91,7 @@ Optional local checks:
 claude plugin validate . --strict
 copilot plugin install ./plugins/g0ld2k-skills
 codex plugin marketplace add ./.
+codex plugin add g0ld2k-skills@g0ld2k-skills
 ```
 
 ## Security
