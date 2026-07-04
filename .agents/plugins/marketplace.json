@@ -1,0 +1,20 @@
+{
+  "name": "g0ld2k-skills",
+  "interface": {
+    "displayName": "g0ld2k Skills"
+  },
+  "plugins": [
+    {
+      "name": "g0ld2k-skills",
+      "source": {
+        "source": "local",
+        "path": "./plugins/g0ld2k-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

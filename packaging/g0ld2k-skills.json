@@ -1,0 +1,30 @@
+{
+  "name": "g0ld2k-skills",
+  "version": "0.1.0",
+  "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
+  "author": {
+    "name": "Chris Golding"
+  },
+  "homepage": "https://github.com/g0ld2k/Skills",
+  "repository": "https://github.com/g0ld2k/Skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "pull-requests",
+    "commit-messages",
+    "release-notes",
+    "workflow"
+  ],
+  "category": "Developer Tools",
+  "skills": [
+    "commit-message",
+    "integration-branch-orchestrator",
+    "pr-closeout-loop",
+    "pr-comment-review",
+    "pr-generator",
+    "simplify",
+    "testflight-notes",
+    "work-request-orchestration"
+  ]
+}

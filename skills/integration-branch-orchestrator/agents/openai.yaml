@@ -1,0 +1,6 @@
+interface:
+  display_name: "Integration Branch Orchestrator"
+  short_description: "Plan autonomous PR integration"
+  default_prompt: "Use $integration-branch-orchestrator to plan an autonomous PR run through an integration branch."
+policy:
+  allow_implicit_invocation: false

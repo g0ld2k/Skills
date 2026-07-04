@@ -1,0 +1,4 @@
+interface:
+  display_name: "TestFlight Notes"
+  short_description: "Draft tester-facing release notes"
+  default_prompt: "Use $testflight-notes to draft TestFlight notes from the selected git history range."
