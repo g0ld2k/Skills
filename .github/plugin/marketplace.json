@@ -1,0 +1,15 @@
+{
+  "name": "g0ld2k-skills",
+  "owner": "g0ld2k",
+  "metadata": {
+    "description": "Marketplace for g0ld2k reusable agent skills."
+  },
+  "plugins": [
+    {
+      "name": "g0ld2k-skills",
+      "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
+      "version": "0.1.0",
+      "source": "./plugins/g0ld2k-skills"
+    }
+  ]
+}

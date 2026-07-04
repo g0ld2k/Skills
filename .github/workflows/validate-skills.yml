@@ -1,0 +1,37 @@
+name: Validate Skills
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show tool versions
+        run: |
+          python3 --version
+          gh --version
+
+      - name: Validate generated packaging is current
+        run: |
+          python3 scripts/generate-plugin-packages.py
+          git diff --exit-code
+
+      - name: Validate repository structure
+        run: python3 scripts/validate-skills-repo.py
+
+      - name: Validate JSON manifests
+        run: find plugins .claude-plugin .agents .github -name '*.json' -print -exec python3 -m json.tool {} >/dev/null \;
+
+      - name: Check shell scripts
+        run: |
+          find skills plugins scripts -type f -name '*.sh' -print -exec bash -n {} \;
+
+      - name: Validate Agent Skills publisher shape
+        run: gh skill publish --dry-run
