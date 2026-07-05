@@ -41,6 +41,7 @@
 - Modify: `skills/work-request-orchestration/references/validation-scenarios.md:24`
 - Modify: `README.md` (Skill Catalog table)
 - Modify: `skills/commit-message/SKILL.md:128-134`
+- Modify: `skills/pr-generator/SKILL.md` (Phase 7 body-file snippet)
 - Regenerate: `plugins/g0ld2k-skills/**`
 
 **Interfaces:**
@@ -72,13 +73,15 @@ git commit -F /tmp/commit-msg.txt
 with:
 
 ```bash
-commit_msg_file="$(mktemp "${TMPDIR:-/tmp}/commit-msg.XXXXXX.txt")"
+commit_msg_file="$(mktemp "${TMPDIR:-/tmp}/commit-msg.XXXXXX")"
 cat > "$commit_msg_file" <<'MSG'
 <full commit message>
 MSG
 git commit -F "$commit_msg_file"
 rm -f "$commit_msg_file"
 ```
+
+Keep the `XXXXXX` at the very end of the template — BSD/macOS `mktemp` only substitutes trailing `X`s, so a `.txt` suffix would leave the placeholder literal or collide. Apply the same fix to `skills/pr-generator/SKILL.md` Phase 7, which has the identical defect: `pr-body.XXXXXX.md` → `pr-body.XXXXXX`.
 
 - [ ] **Step 4: Regenerate and validate**
 
@@ -124,6 +127,11 @@ NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
 SKILL_REF_CONTEXT_RE = re.compile(
     r"(?:[Uu]se|invoke|delegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
 )
+# Companion-list bullets like: - `pr-comment-review` for triaging...
+COMPANION_REF_RE = re.compile(
+    r"^\s*-\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`\s+(?:for|to|when|before|after)\b",
+    re.MULTILINE,
+)
 ```
 
 And the function:
@@ -139,8 +147,9 @@ def validate_cross_skill_references(canonical_names: list[str], errors: list[str
         for retired in RETIRED_SKILL_NAMES:
             if retired in text:
                 errors.append(f"{rel}: references retired skill name: {retired}")
-        for match in SKILL_REF_CONTEXT_RE.finditer(text):
-            token = match.group(1)
+        tokens = [m.group(1) for m in SKILL_REF_CONTEXT_RE.finditer(text)]
+        tokens += [m.group(1) for m in COMPANION_REF_RE.finditer(text)]
+        for token in tokens:
             if token in known:
                 continue
             if token.startswith(EXTERNAL_SKILL_PREFIXES):
@@ -160,7 +169,7 @@ Note: single-word canonical skills like `simplify` pass via `known` and stay pro
 
 - [ ] **Step 2: Verify it fails on a planted regression**
 
-Temporarily re-add `codex-pr-approval-loop` to any SKILL.md, run `python3 scripts/validate-skills-repo.py`, confirm the error line appears, then revert the plant.
+Temporarily re-add `codex-pr-approval-loop` to any SKILL.md, run `python3 scripts/validate-skills-repo.py`, confirm the error line appears, then revert the plant. Also temporarily change one Required Companions bullet in `skills/pr-closeout-loop/SKILL.md` to a bogus name (e.g. `` `pr-comment-reviews` ``), confirm the companion-bullet regex flags it, then revert.
 
 - [ ] **Step 3: Extend the drift guard to every file**
 
@@ -332,8 +341,9 @@ git commit -m "feat(simplify): define severity/confidence rubric and subagent di
 
 **Files:**
 - Modify: `skills/pr-comment-review/scripts/fetch_unresolved_review_comments.sh` (jq filter)
-- Modify: `skills/pr-comment-review/scripts/build_triage_template.sh` (render replies)
+- Modify: `skills/pr-comment-review/scripts/build_triage_template.sh` (render root body + replies; validity placeholder)
 - Modify: `skills/pr-comment-review/references/decision-rubric.md`
+- Modify: `skills/pr-comment-review/SKILL.md` (Phase 2 validity states)
 - Modify: `skills/pr-closeout-loop/SKILL.md` (Required Companions + step 2)
 - Create: `skills/pr-comment-review/references/validation-scenarios.md`
 - Regenerate: both skills' `plugins/` mirrors
@@ -394,6 +404,7 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
       body: $root.body,
       url: $root.url,
       created_at: $root.createdAt,
+      replies_truncated: ($thread.comments.pageInfo.hasNextPage // false),
       replies: [ $comments[]
         | select(.replyTo != null)
         | { comment_id: .databaseId,
@@ -406,13 +417,16 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
   | sort_by(.path, .line, .comment_id)
 ```
 
+Also add `pageInfo { hasNextPage }` to the `comments(first:100)` selection in the GraphQL query. `gh api --paginate` only follows the top-level `reviewThreads` cursor, so a thread with more than 100 comments silently drops later replies; the emitted `replies_truncated` flag marks those threads, and the skill must re-fetch a flagged thread individually (by node id) before triaging it.
+
 Update the script's usage text from "Fetch top-level review comments" to "Fetch unresolved review threads (root comment plus replies)".
 
 - [ ] **Step 3: Render replies in the triage template**
 
-In `build_triage_template.sh`, extend the per-comment jq template so the reviewer sees each thread's final state, not just the root comment. After the `- Thread ID: ...` line, insert:
+In `build_triage_template.sh`, extend the per-comment jq template so the reviewer sees the root comment body and each thread's final state — the current template renders neither. After the `- Thread ID: ...` line, insert:
 
 ```jq
++ "- Body: \(.value.body | gsub("\n"; " ") | .[0:300])\n"
 + (if ((.value.replies // []) | length) > 0 then
     "- Replies:\n"
     + ([ .value.replies[]
@@ -424,7 +438,7 @@ In `build_triage_template.sh`, extend the per-comment jq template so the reviewe
 
 - [ ] **Step 4: Verify against a real PR**
 
-Run the fetch script against any repo PR with a replied-to thread (or create one on a scratch PR). Expected: each output object contains `replies: [...]`, and `build_triage_template.sh --input <output>` renders each reply (author + first 200 chars) under its comment.
+Run the fetch script against any repo PR with a replied-to thread (or create one on a scratch PR). Expected: each output object contains `replies: [...]` and `replies_truncated: false`, and `build_triage_template.sh --input <output>` renders the root body (first 300 chars) and each reply (author + first 200 chars) under its comment.
 
 - [ ] **Step 5: Fold `unclear`/`conflicting` into the shared rubric**
 
@@ -436,6 +450,8 @@ In `references/decision-rubric.md`, extend Validity:
 ```
 
 And add one line under Required Triage Fields: `Triage the thread's final state: read replies, not just the root comment.`
+
+Update the two enumerations that still list only three states so agents actually emit the new ones: `skills/pr-comment-review/SKILL.md` Phase 2's `validity` field becomes `valid`, `partial`, `invalid`, `unclear`, `conflicting`, and `build_triage_template.sh`'s placeholder line becomes `- Validity: <valid|partial|invalid|unclear|conflicting>`.
 
 - [ ] **Step 6: Retire the caveat in pr-closeout-loop**
 
@@ -462,7 +478,7 @@ git commit -m "feat(pr-comment-review): fetch full unresolved threads with repli
 
 **Interfaces:**
 - Consumes: Task 4's rubric reference.
-- Produces: gate IDs G1–G5 and the Blocked Report shape; Tasks 6–7 reference both by name.
+- Produces: gate IDs G1–G7 and the Blocked Report shape; Tasks 6–7 reference both by name.
 
 - [ ] **Step 1: Write validation scenarios (RED)**
 
@@ -516,9 +532,11 @@ Maintain a ledger file in a temp directory (`mktemp -d`) for the whole loop:
 
     pr: <owner>/<repo>#<number>
     head_sha: <sha the local checkout matches>
+    target_branch: <current PR base branch>
+    pr_body_fingerprint: <sha256 of the current PR body>
     base_ref_sha: <base sha the last suite run used>
     suite_result: pass|fail|not-run @ <head_sha> vs <base_ref_sha>
-    approval: fresh|stale|absent @ <event timestamp> for <head_sha>
+    approval: fresh|stale|absent @ <event timestamp> for <head_sha>+<pr_body_fingerprint>+<target_branch>
     threads: <id>: fixed|replied|resolved|blocked
     polls_without_progress: <n>/3
 
@@ -539,8 +557,10 @@ In step 9, replace the bullet list with: "Merge only when every gate in Merge Ga
 | G3 Local suite | ledger `suite_result` | pass recorded at current `head_sha` AND current `base_ref_sha` |
 | G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy |
 | G5 Authorization | recorded user scope | covers this exact target branch and merge method; protected-branch promotion needs explicit approval |
+| G6 Mergeable | live PR mergeability/up-to-date status | branch is mergeable and up to date enough for the repository's rules |
+| G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated changes staged, committed, overwritten, or hidden by the loop |
 
-Immediately before merging, re-fetch live PR state and re-evaluate G1–G5 from
+Immediately before merging, re-fetch live PR state and re-evaluate G1–G7 from
 that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
 
     BLOCKED: <gate id> — <one-line observation>
@@ -548,7 +568,7 @@ that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
     Would unblock: <specific event or human decision>
 ```
 
-Keep the existing "no unrelated local/user changes" and mergeability bullets as G4/G5 sub-conditions rather than a parallel list. In step 8, delete sentences now covered by G1–G3 and point to the table.
+The former "no unrelated local/user changes" and mergeability bullets are now G7 and G6 — do not keep them as a parallel prose list. In step 8, delete sentences now covered by G1–G3 and point to the table.
 
 - [ ] **Step 5: Re-run Scenario 1 (GREEN)**
 
@@ -572,7 +592,7 @@ git commit -m "feat(pr-closeout-loop): merge-gate table, state ledger, and max-w
 - Regenerate: `plugins/g0ld2k-skills/skills/integration-branch-orchestrator/**`
 
 **Interfaces:**
-- Consumes: G1–G5 and Blocked Report from Task 5 (reference by name, do not restate).
+- Consumes: G1–G7 and Blocked Report from Task 5 (reference by name, do not restate).
 
 - [ ] **Step 1: Write validation scenarios (RED)**
 
@@ -618,7 +638,8 @@ Replace the entire "1. Define the branch topology." bullet list with:
    - T2. Fetch the remote default/protected branch; record its ref and SHA.
    - T3. Resolve the integration branch:
      - Missing → create `integration/<feature-name>` from the recorded SHA and
-       push it.
+       push it, ONLY IF branch creation and pushing are within the authorized
+       scope for this run; otherwise Block for topology approval.
      - Exists → fetch its current remote ref (never evaluate a stale local
        copy), then pass gates E1–E3:
 
@@ -631,7 +652,8 @@ Replace the entire "1. Define the branch topology." bullet list with:
    - T4. For each existing source PR: if its base is not the integration
      branch, retarget it (requires PR-topology authorization); prefer
      retargeting over cloning. If a clone is created anyway, import and triage
-     the original PR's unresolved feedback first, and either close/supersede
+     the original PR's unresolved review threads, review-level feedback, and PR
+     conversation comments first, and either close/supersede
      the original (only if authorized) or keep polling it for new activity
      until the clone merges.
    - T5. For each source branch without a PR: verify the branch exists on a
@@ -648,7 +670,7 @@ Then delete the sentences in "Orchestration Policy" that duplicate T2–T6 (the 
 
 - [ ] **Step 3: Point gate language at Task 5's definitions**
 
-In section "2. Define gates.", replace the first two bullets with: "Each PR's merge is gated by `pr-closeout-loop`'s G1–G5; the orchestrator does not merge PRs itself." Keep the integration-level bullets (local validation, unrelated-changes protection) unchanged.
+In section "2. Define gates.", replace the first two bullets with: "Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator does not merge PRs itself." Keep the integration-level bullets (local validation, unrelated-changes protection) unchanged.
 
 - [ ] **Step 4: Re-run Scenario 1 (GREEN)**
 
@@ -672,7 +694,7 @@ git commit -m "refactor(integration-branch-orchestrator): topology gates T1-T7/E
 - Regenerate: `plugins/g0ld2k-skills/skills/work-request-orchestration/**`
 
 **Interfaces:**
-- Consumes: Blocked Report + G1–G5 names from Task 5.
+- Consumes: Blocked Report + G1–G7 names from Task 5.
 
 - [ ] **Step 1: Append the handoff scenario (RED)**
 
@@ -699,8 +721,10 @@ Replace the last four REQUIRED bullets with:
 - **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes
   (non-trivial per `pr-closeout-loop`'s definition: logic, behavior, tests, CI,
   package, workflow, or public-contract changes).
-  Pass: nothing (it reads the diff). Expect back: numbered findings; address
-  valid in-scope medium/high per the active approval policy.
+  Pass: the recorded unattended selection policy when blanket approval is
+  active (default: auto-address valid in-scope medium/high findings without
+  re-prompting). Expect back: numbered findings applied per that policy, or
+  presented for user selection in attended runs.
 - **REQUIRED FOR COMMITS:** Use `commit-message`.
   Pass: staged diff only. Expect back: message + rationale; commit only within
   the recorded approval scope.
@@ -711,7 +735,7 @@ Replace the last four REQUIRED bullets with:
   monitor/address/merge or grants merge authority for the run.
   Pass: owner/repo/PR number, target branch, the authorization scope recorded
   in Phase 0 verbatim, and the max-wait policy. Expect back: merged (SHA) or a
-  Blocked Report naming the failing gate (G1–G5). Do not merge on its behalf.
+  Blocked Report naming the failing gate (G1–G7). Do not merge on its behalf.
 ```
 
 - [ ] **Step 3: Align Phase 5**
@@ -881,13 +905,13 @@ git commit -m "feat(shared): vendored conventions with sync script and drift val
 
 - [ ] **Step 1: Write the template**
 
-Create `docs/skill-template.md` containing, in order, with one-line guidance under each heading: frontmatter block (`name`, `description` starting "Use when" with triggers only — never workflow summary, `license: MIT`, optional `disable-model-invocation`); `# Title`; `## When to Use` (+ when NOT); `## Definitions` (operationalize every judgment word — "if a rule needs 'material' or 'significant', define it here or delete the rule"; cite catch-me-up's mode-trigger table as the house pattern); `## Inputs and Defaults` (table: input / source / default-or-block); `## Guardrails` (never-invent, approval gates, external-text rule); `## Workflow` (phases with observable exit conditions); `## State Ledger` (loops only); `## Gate Table` (publish/merge skills only, G-numbered rows); `## Output Contract`; `## Blocked Report` (reference conventions.md shape); `## Validation Scenarios` (pointer to references/validation-scenarios.md, 3 minimum: happy/edge/adversarial, RED before GREEN per superpowers:writing-skills).
+Create `docs/skill-template.md` containing, in order, with one-line guidance under each heading: frontmatter block (`name`, `description` starting "Use when" with triggers only — never workflow summary, `license: MIT`, optional `disable-model-invocation`); `# Title`; `## When to Use` (+ when NOT); `## Definitions` (operationalize every judgment word — "if a rule needs 'material' or 'significant', define it here or delete the rule"; cite catch-me-up's mode-trigger table as the house pattern); `## Inputs and Defaults` (table: input / source / default-or-block); `## Guardrails` (never-invent, approval gates, external-text rule); `## Workflow` (phases with observable exit conditions); `## State Ledger` (loops only); `## Gate Table` (publish/merge skills only, G-numbered rows); `## Output Contract`; `## Blocked Report` (reference conventions.md shape); `## Validation Scenarios` (pointer to references/validation-scenarios.md, 3 minimum: happy/edge/adversarial, RED before GREEN per superpowers:writing-skills). End the template with an `agents/openai.yaml` stub the author copies alongside SKILL.md — `interface:` with `display_name`, `short_description` (25–64 characters), and `default_prompt` containing `$<skill-name>` — since the validator rejects any skill without it.
 
 Note in the template header: this file lives in `docs/` deliberately — `skills/_template/` is forbidden by the validator because it would publish as an installable skill.
 
 - [ ] **Step 2: Update README**
 
-Replace the removed scaffold instructions with: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, add the skill to `packaging/g0ld2k-skills.json`, run the sync + generate + validate commands.
+Replace the removed scaffold instructions with: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, create `skills/<name>/agents/openai.yaml` from the template's stub, add the skill to `packaging/g0ld2k-skills.json`, run the sync + generate + validate commands.
 
 - [ ] **Step 3: Validate and commit**
 
@@ -964,5 +988,5 @@ git commit -m "feat(eval): deterministic fixture repo and smoke-eval protocol"
 ## Self-Review Notes
 
 - Spec coverage: all ten backlog items from the library review map to Tasks 1–10; the two validator gaps found post-restructure (cross-refs, partial drift guard) are Task 2; the README catalog gap is Task 1.
-- Type consistency: gate IDs G1–G5 defined once (Task 5) and referenced by Tasks 6–7; E1–E3/T1–T7 defined in Task 6 only; Blocked Report defined in Task 5 and canonicalized in Task 8's conventions file with identical shape.
+- Type consistency: gate IDs G1–G7 defined once (Task 5) and referenced by Tasks 6–7; E1–E3/T1–T7 defined in Task 6 only; Blocked Report defined in Task 5 and canonicalized in Task 8's conventions file with identical shape.
 - Ordering: Tasks 3 and 4 are independent of each other; 4 → 5, then 5 → 6 and 5 → 7; 8 depends on 2 and 5 (Blocked Report shape); 9 on 8; 10 only on 2. The Task ↔ Issue Map encodes the same edges.
