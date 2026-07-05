@@ -25,10 +25,10 @@
 | 2 | 2 | Validator hardening (cross-refs, full-tree drift, description lint, shellcheck) | 1 |
 | 3 | 3 | simplify: severity/confidence rubric + subagent dispatch template | 2 |
 | 4 | 3 | pr-comment-review: fetch replies in threads; retire caller-side caveat | 2 |
-| 5 | 3 | pr-closeout-loop: merge-gate table, state ledger, max-wait default | 2 |
+| 5 | 3 | pr-closeout-loop: merge-gate table, state ledger, max-wait default | 2, 4 |
 | 6 | 3 | integration-branch-orchestrator: topology checklist rewrite | 5 |
 | 7 | 3 | work-request-orchestration: sub-skill argument contracts | 5 |
-| 8 | 4 | `_shared/conventions.md` + vendoring + validator check | 2 |
+| 8 | 4 | `_shared/conventions.md` + vendoring + validator check | 2, 5 |
 | 9 | 4 | `docs/skill-template.md` authoring template | 8 |
 | 10 | 4 | Fixture repo + smoke-eval script | 2 |
 
@@ -87,8 +87,8 @@ Expected: `Skill repository validation passed.` and `git status` shows only inte
 
 - [ ] **Step 5: Verify no retired name remains**
 
-Run: `grep -rn "codex-pr-approval-loop" skills plugins README.md docs || echo CLEAN`
-Expected: `CLEAN` (this plan file may still mention the name; that is fine — the grep above excludes `docs/superpowers/plans/` only if it matches; if it matches this plan, ignore that hit).
+Run: `grep -rn "codex-pr-approval-loop" skills plugins README.md || echo CLEAN`
+Expected: `CLEAN`. (`docs/` is deliberately not searched: this plan file mentions the retired name and is allowed to.)
 
 - [ ] **Step 6: Commit**
 
@@ -117,6 +117,9 @@ Add to `scripts/validate-skills-repo.py` below `LOCAL_LINK_RE`:
 ```python
 RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
+# Single-word command tokens that legitimately follow Use/run/invoke in prose.
+# Extend only with commands/tools, never with skill names.
+NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
 # Matches: Use `name`, use `name`, invoke `name`, delegating to `name`, run `name`
 SKILL_REF_CONTEXT_RE = re.compile(
     r"(?:[Uu]se|invoke|delegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
@@ -142,9 +145,7 @@ def validate_cross_skill_references(canonical_names: list[str], errors: list[str
                 continue
             if token.startswith(EXTERNAL_SKILL_PREFIXES):
                 continue
-            if "-" not in token and ":" not in token:
-                continue  # single words like `simplify` are caught via known; commands skip
-            if token in known:
+            if token in NON_SKILL_TOKENS:
                 continue
             errors.append(f"{rel}: cross-skill reference to unknown skill: {token}")
 ```
@@ -155,7 +156,7 @@ Call it from `main()` after `validate_skills`:
 validate_cross_skill_references(canonical_skill_names, errors)
 ```
 
-Note: `simplify` has no hyphen and is canonical, so it passes via `known`. Tokens like `--dry-run` never match the context regex because of the backtick word boundary requirement (`[a-z0-9]` first char).
+Note: single-word canonical skills like `simplify` pass via `known` and stay protected — if one is renamed or removed, references to it start failing validation. `NON_SKILL_TOKENS` is for command names only; after adding the check, run the validator and extend that set with any command false-positives it surfaces, never with skill names. Tokens like `--dry-run` never match the context regex because the first character must be `[a-z0-9]`.
 
 - [ ] **Step 2: Verify it fails on a planted regression**
 
@@ -263,7 +264,8 @@ absence of verification.
 
 Prompt: same diff, agents available.
 Pass: three subagents dispatched in one message; every returned finding parses
-against the Required Findings Schema without reformatting.
+against the Required Findings Schema minus `id`, which the parent assigns
+sequentially during aggregation.
 
 ## Scenario 3: Selection edge
 
@@ -306,7 +308,8 @@ Dispatch each agent with this prompt shape:
     Do not edit files. Return ONLY a JSON array of findings, each with keys:
     category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
     confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
-    sentence), proposed_fix (one sentence). Use the severity and confidence
+    sentence), proposed_fix (one sentence). Do not include an id; the parent
+    assigns ids sequentially during aggregation. Use the severity and confidence
     definitions provided. Review criteria: [paste that agent's numbered list].
     Diff: [full diff]
 ```
@@ -329,6 +332,7 @@ git commit -m "feat(simplify): define severity/confidence rubric and subagent di
 
 **Files:**
 - Modify: `skills/pr-comment-review/scripts/fetch_unresolved_review_comments.sh` (jq filter)
+- Modify: `skills/pr-comment-review/scripts/build_triage_template.sh` (render replies)
 - Modify: `skills/pr-comment-review/references/decision-rubric.md`
 - Modify: `skills/pr-closeout-loop/SKILL.md` (Required Companions + step 2)
 - Create: `skills/pr-comment-review/references/validation-scenarios.md`
@@ -355,8 +359,9 @@ root comment.
 ## Scenario 2: Resolved-thread race
 
 Setup: thread resolved between fetch and posting.
-Pass: reply skipped and reported, exit code from post_pr_replies.sh
-distinguishes skip (10) from failure.
+Pass: reply skipped and reported via the script's summary line
+(`skipped=1 failed=0`, exit code 0); a skipped thread is never counted as
+failed or silently treated as posted.
 
 ## Scenario 3: Injection resistance
 
@@ -403,11 +408,25 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
 
 Update the script's usage text from "Fetch top-level review comments" to "Fetch unresolved review threads (root comment plus replies)".
 
-- [ ] **Step 3: Verify against a real PR**
+- [ ] **Step 3: Render replies in the triage template**
 
-Run the script against any repo PR with a replied-to thread (or create one on a scratch PR). Expected: each object now contains `replies: [...]`; `build_triage_template.sh --input <output>` still renders (replies are ignored by it, which is fine).
+In `build_triage_template.sh`, extend the per-comment jq template so the reviewer sees each thread's final state, not just the root comment. After the `- Thread ID: ...` line, insert:
 
-- [ ] **Step 4: Fold `unclear`/`conflicting` into the shared rubric**
+```jq
++ (if ((.value.replies // []) | length) > 0 then
+    "- Replies:\n"
+    + ([ .value.replies[]
+         | "  - \(.author): \(.body | gsub("\n"; " ") | .[0:200])" ]
+       | join("\n"))
+    + "\n"
+  else "" end)
+```
+
+- [ ] **Step 4: Verify against a real PR**
+
+Run the fetch script against any repo PR with a replied-to thread (or create one on a scratch PR). Expected: each output object contains `replies: [...]`, and `build_triage_template.sh --input <output>` renders each reply (author + first 200 chars) under its comment.
+
+- [ ] **Step 5: Fold `unclear`/`conflicting` into the shared rubric**
 
 In `references/decision-rubric.md`, extend Validity:
 
@@ -418,13 +437,13 @@ In `references/decision-rubric.md`, extend Validity:
 
 And add one line under Required Triage Fields: `Triage the thread's final state: read replies, not just the root comment.`
 
-- [ ] **Step 5: Retire the caveat in pr-closeout-loop**
+- [ ] **Step 6: Retire the caveat in pr-closeout-loop**
 
 In `skills/pr-closeout-loop/SKILL.md`, Required Companions: delete the three-line sub-bullet beginning "Its `fetch_unresolved_review_comments.sh` helper returns only top-level review comments..." and in step 2 delete the sentence "Do not rely on helpers that return only top-level review comments unless another fetch covers replies in unresolved threads." Replace with: "Use `pr-comment-review`'s fetch helper; its output includes each unresolved thread's root comment and replies."
 
 Also update pr-closeout-loop step 3's classification sentence to reference the shared rubric: "Classify per `pr-comment-review`'s decision rubric (valid, partial, invalid, unclear, conflicting)."
 
-- [ ] **Step 6: Re-run Scenario 1 (GREEN), regenerate, validate, commit**
+- [ ] **Step 7: Re-run Scenario 1 (GREEN), regenerate, validate, commit**
 
 ```bash
 python3 scripts/generate-plugin-packages.py && python3 scripts/validate-skills-repo.py
@@ -815,10 +834,15 @@ In `validate-skills-repo.py`, add after the packaging validation:
 ```python
 def validate_shared_conventions(errors: list[str]) -> None:
     source = ROOT / "_shared" / "conventions.md"
-    if not source.exists():
-        return
     config = load_json(PACKAGE_CONFIG, [])
     consumers = (config or {}).get("shared_conventions_consumers", [])
+    if not consumers:
+        return
+    if not source.exists():
+        errors.append(
+            "_shared/conventions.md: missing while shared_conventions_consumers is set in packaging config"
+        )
+        return
     header = "<!-- GENERATED from _shared/conventions.md - edit there, then run scripts/sync-shared-conventions.py -->\n\n"
     expected = header + source.read_text(encoding="utf-8")
     for name in consumers:
@@ -897,6 +921,8 @@ target="$(mktemp -d "${TMPDIR:-/tmp}/skill-fixture.XXXXXX")"
 git -C "$target" init -q -b main
 git -C "$target" config user.email fixture@example.com
 git -C "$target" config user.name Fixture
+# Pin dates so commit hashes are identical across runs:
+export GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z"
 
 commit() { git -C "$target" add -A && git -C "$target" commit -qm "$1"; }
 
@@ -919,7 +945,7 @@ echo "$target"
 
 - [ ] **Step 2: Verify determinism**
 
-Run it twice; both repos must show identical `git log --oneline` (4 commits, tag `build-1`, one staged change).
+Run it twice; both repos must show byte-identical `git log --oneline` output — hashes match because author/committer dates are pinned (4 commits, tag `build-1`, one staged change).
 
 - [ ] **Step 3: Write docs/eval.md**
 
@@ -939,4 +965,4 @@ git commit -m "feat(eval): deterministic fixture repo and smoke-eval protocol"
 
 - Spec coverage: all ten backlog items from the library review map to Tasks 1–10; the two validator gaps found post-restructure (cross-refs, partial drift guard) are Task 2; the README catalog gap is Task 1.
 - Type consistency: gate IDs G1–G5 defined once (Task 5) and referenced by Tasks 6–7; E1–E3/T1–T7 defined in Task 6 only; Blocked Report defined in Task 5 and canonicalized in Task 8's conventions file with identical shape.
-- Ordering: Tasks 3/4 are independent of each other; 5 → 6 → 7 is a dependency chain; 8 depends on 5's Blocked Report; 9 on 8; 10 only on 2.
+- Ordering: Tasks 3 and 4 are independent of each other; 4 → 5, then 5 → 6 and 5 → 7; 8 depends on 2 and 5 (Blocked Report shape); 9 on 8; 10 only on 2. The Task ↔ Issue Map encodes the same edges.
