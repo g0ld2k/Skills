@@ -173,7 +173,7 @@ gh pr view "$BRANCH" --json number,url,title,baseRefName 2>/dev/null
 2) Write body to a temp file (portable, quote-safe, and usable across steps):
 
 ```bash
-pr_body_file="$(mktemp "${TMPDIR:-/tmp}/pr-body.XXXXXX.md")"
+pr_body_file="$(mktemp "${TMPDIR:-/tmp}/pr-body.XXXXXX")"
 cat > "$pr_body_file" <<'MD'
 <generated markdown body>
 MD
