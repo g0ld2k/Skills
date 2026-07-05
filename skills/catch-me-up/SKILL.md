@@ -1,6 +1,6 @@
 ---
 name: catch-me-up
-description: Use when the user asks to get oriented, catch up, understand unfamiliar code, trace a feature, explain architecture, inspect tests, or understand code history.
+description: Use when the user asks to get oriented, catch up, understand unfamiliar code, trace a feature, explain architecture, understand conventions, patterns, or idioms, inspect tests, or understand code history.
 license: MIT
 ---
 
