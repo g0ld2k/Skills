@@ -318,8 +318,9 @@ Dispatch each agent with this prompt shape:
     category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
     confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
     sentence), proposed_fix (one sentence). Do not include an id; the parent
-    assigns ids sequentially during aggregation. Use the severity and confidence
-    definitions provided. Review criteria: [paste that agent's numbered list].
+    assigns ids sequentially during aggregation. Severity and confidence
+    definitions: [paste the Severity definitions and Confidence definitions
+    blocks verbatim]. Review criteria: [paste that agent's numbered list].
     Diff: [full diff]
 ```
 
@@ -555,7 +556,7 @@ In step 9, replace the bullet list with: "Merge only when every gate in Merge Ga
 | G1 Approval fresh | approval event vs ledger surface (head SHA, PR body, base branch, base ref) | approval event created after the latest surface-changing event |
 | G2 Checks green | required check rollup for current head vs current base/merge ref | all required checks SUCCESS; base-ref change since the run requires fresh checks or an explicit rerun |
 | G3 Local suite | ledger `suite_result` | pass recorded at current `head_sha` AND current `base_ref_sha` |
-| G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy |
+| G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no unresolved unclear, conflicting, or discuss-classified feedback (these block — they are not "non-actionable"); no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy |
 | G5 Authorization | recorded user scope | covers this exact target branch and merge method; protected-branch promotion needs explicit approval |
 | G6 Mergeable | live PR mergeability/up-to-date status | branch is mergeable and up to date enough for the repository's rules |
 | G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated changes staged, committed, overwritten, or hidden by the loop |
@@ -650,8 +651,8 @@ Replace the entire "1. Define the branch topology." bullet list with:
        | E3 Remote | branch exists on the remote | Push it if pushing is authorized; otherwise Block |
 
    - T4. For each existing source PR: if its base is not the integration
-     branch, retarget it (requires PR-topology authorization); prefer
-     retargeting over cloning. If a clone is created anyway, import and triage
+     branch, retarget it if PR-topology edits are authorized; otherwise Block
+     that item for topology approval. Prefer retargeting over cloning. If a clone is created anyway, import and triage
      the original PR's unresolved review threads, review-level feedback, and PR
      conversation comments first, and either close/supersede
      the original (only if authorized) or keep polling it for new activity
@@ -726,11 +727,15 @@ Replace the last four REQUIRED bullets with:
   re-prompting). Expect back: numbered findings applied per that policy, or
   presented for user selection in attended runs.
 - **REQUIRED FOR COMMITS:** Use `commit-message`.
-  Pass: staged diff only. Expect back: message + rationale; commit only within
-  the recorded approval scope.
+  Pass: staged diff plus the recorded approval scope (blanket commit approval
+  means commit with the generated message once it is grounded in the staged
+  diff, without re-prompting). Expect back: message + rationale, then the
+  commit SHA.
 - **REQUIRED FOR PRS:** Use `pr-generator`.
   Pass: base branch if already detected this run; exact test commands actually
-  run. Expect back: title/body draft, then create/update within approval scope.
+  run; the recorded approval scope covering PR creation/update. Expect back:
+  title/body draft, then the created/updated PR URL — publish without
+  re-prompting when the scope covers it.
 - **REQUIRED AFTER PR OPEN:** Use `pr-closeout-loop` when the user asks to
   monitor/address/merge or grants merge authority for the run.
   Pass: owner/repo/PR number, target branch, the authorization scope recorded
@@ -881,7 +886,7 @@ Call it from `main()`. In the CI workflow's "Validate generated packaging is cur
 
 - [ ] **Step 4: Reference the file from each consumer**
 
-In each consumer's SKILL.md References section (or Guardrails if no References section), add: `- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.` Where a skill's own text now duplicates a convention verbatim (pr-generator Phase 0 gh/MCP ladder, pr-comment-review runtime section), replace the duplicated paragraph with the reference — but keep any skill-specific deltas inline.
+In each consumer's SKILL.md, add to its `## References` section: `- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.` If the skill has no `## References` section (currently commit-message, pr-closeout-loop, and integration-branch-orchestrator), create one at the end of the file. Where a skill's own text now duplicates a convention verbatim (pr-generator Phase 0 gh/MCP ladder, pr-comment-review runtime section), replace the duplicated paragraph with the reference — but keep any skill-specific deltas inline.
 
 - [ ] **Step 5: Sync, regenerate, validate, commit**
 
@@ -945,6 +950,7 @@ target="$(mktemp -d "${TMPDIR:-/tmp}/skill-fixture.XXXXXX")"
 git -C "$target" init -q -b main
 git -C "$target" config user.email fixture@example.com
 git -C "$target" config user.name Fixture
+git -C "$target" config commit.gpgsign false
 # Pin dates so commit hashes are identical across runs:
 export GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z"
 
