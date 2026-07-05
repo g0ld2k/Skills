@@ -1,0 +1,4 @@
+interface:
+  display_name: "Catch Me Up"
+  short_description: "Orient unfamiliar code quickly"
+  default_prompt: "Use $catch-me-up to orient me to this code area with grounded evidence."
