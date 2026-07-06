@@ -33,7 +33,9 @@ Establish before starting:
   and merging.
 - Merge target and method. Default method is a normal merge commit unless the
   user or repository requires another method.
-- Max wait policy for repeated no-progress polling states.
+- Max wait policy for repeated no-progress polling states. Default when the
+  user does not specify: 3 polls, 10 minutes apart; after the third
+  no-progress poll, stop and emit a Blocked Report.
 
 ## Required Companions
 
@@ -53,6 +55,25 @@ Use these skills when available:
 Use Superpowers planning only for ambiguous or multi-step implementation work.
 Do not require full planning artifacts for small PR comment fixes, reply-only
 actions, or straightforward CI patches.
+
+## State Ledger
+
+Maintain a ledger file in a temp directory (`mktemp -d "${TMPDIR:-/tmp}/pr-closeout.XXXXXX"` — BSD/macOS mktemp needs the template) for the whole loop:
+
+    pr: <owner>/<repo>#<number>
+    head_sha: <sha the local checkout matches>
+    target_branch: <current PR base branch>
+    pr_body_fingerprint: <sha256 of the current PR body>
+    base_ref_sha: <base sha the last suite run used>
+    suite_result: pass|fail|not-run @ <head_sha> vs <base_ref_sha>
+    approval: fresh|stale|absent @ <event timestamp> covering head=<sha> body=<fingerprint> target=<branch> base=<base ref sha at approval time>
+    threads: <id>: fixed|replied|resolved|blocked
+    max_wait_policy: <N polls> @ <interval> (default 3 @ 10m)
+    polls_without_progress: <n> of <N>
+
+Update the ledger after every state-changing step. On any restart at step 2,
+re-read the ledger first; any recorded value that predates a surface change
+(new commit, PR-body edit, base change) is stale and must be re-derived.
 
 ## Loop
 
@@ -135,17 +156,11 @@ actions, or straightforward CI patches.
      the reply explains why and the active policy allows resolution.
 
 8. Monitor review, CI, and approval.
-   - Approval is fresh only when it applies to the current head SHA, current PR
-     body, current target/base branch, and current base ref, merge-base, or
-     computed diff. New commits, material PR-body edits, base-branch changes, or
-     base-ref changes make approval stale.
    - For the default Codex signal, poll PR description/body reactions for the
      eyes-to-thumbs-up transition after the latest surface-changing event; do
      not treat an older thumbs-up as fresh approval, and do not look for a
-     commit reaction.
-   - Required remote checks must be green for the current head against the
-     current base or merge ref. After base-ref changes, require fresh checks,
-     a merge-ref validation, or an explicit rerun before merge.
+     commit reaction. See Merge Gates (G1) for what makes approval fresh.
+   - See Merge Gates (G2) for required-check freshness after base-ref changes.
    - If new actionable feedback appears, restart at step 2.
    - If checks fail, inspect logs/artifacts through available GitHub, CI
      provider, or MCP tools before editing.
@@ -156,7 +171,8 @@ actions, or straightforward CI patches.
    - Immediately before merging, fetch current PR state again and re-evaluate
      feedback, approval freshness, required checks, base ref, mergeability, and
      unrelated local/user changes.
-   - Merge only when every merge gate below is satisfied.
+   - Merge only when every gate in Merge Gates passes; otherwise emit a Blocked
+     Report.
    - If the user gave blanket approval to merge into the current target branch,
      merge there without asking again after gates pass.
    - If merge authorization is absent or ambiguous, ask before merging.
@@ -167,24 +183,22 @@ actions, or straightforward CI patches.
 
 ## Merge Gates
 
-All gates must pass before merging:
-- Fresh approval covers the current head SHA and current PR body.
-- Fresh approval covers the current target/base branch and current base ref,
-  merge-base, or computed diff.
-- Required remote checks are green for the current head against the current base
-  or merge ref, including after base-ref changes.
-- The repository's local test suite passed in this loop against the current
-  base ref. A pass recorded before the base ref last advanced does not
-  satisfy this gate.
-- No unresolved actionable review-thread, review-level, or PR conversation
-  feedback remains.
-- Fixed review threads were replied to and resolved according to policy, and
-  fixed review-level and PR conversation comments were acknowledged according to
-  policy.
-- The branch is mergeable and up to date enough for the repository's rules.
-- A final pre-merge refresh confirmed the gates still pass.
-- No unrelated local/user changes are staged, committed, overwritten, or hidden.
-- The user's authorization covers this target branch and merge method.
+| Gate | Check | Pass condition |
+| --- | --- | --- |
+| G1 Approval fresh | approval event vs ledger surface (head SHA, PR body, base branch, base ref) | approval event created after the latest surface-changing event |
+| G2 Checks green | required check rollup for current head vs current base/merge ref | all required checks SUCCESS; base-ref change since the run requires fresh checks or an explicit rerun |
+| G3 Local suite | ledger `suite_result` | pass recorded at current `head_sha` AND current `base_ref_sha` |
+| G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no unresolved unclear, conflicting, or discuss-classified feedback (these block — they are not "non-actionable"); no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy |
+| G5 Authorization | recorded user scope | covers this exact target branch and merge method; protected-branch promotion needs explicit approval |
+| G6 Mergeable | live PR mergeability/up-to-date status | branch is mergeable and up to date enough for the repository's rules |
+| G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated changes staged, committed, overwritten, or hidden by the loop |
+
+Immediately before merging, re-fetch live PR state and re-evaluate G1–G7 from
+that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
+
+    BLOCKED: <gate id> — <one-line observation>
+    Last completed step: <n>
+    Would unblock: <specific event or human decision>
 
 ## Approval Freshness
 
