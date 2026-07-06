@@ -130,9 +130,11 @@ re-read the ledger first; any recorded value that predates a surface change
    - Stage only intended files.
    - Use `commit-message` to generate the Conventional Commit message from the
      staged diff.
-   - In unattended mode, treat loop authorization for commits as pre-approval to
-     use the generated message and commit, as long as the message is supported by
-     the staged diff and no companion skill explicitly blocks.
+   - In unattended mode, invoke `commit-message` in `message+commit` mode,
+     passing the loop's recorded commit authorization as the caller-provided
+     scope (that skill only commits when the mode is requested AND the scope
+     covers it), as long as the message is supported by the staged diff and no
+     companion skill explicitly blocks.
    - Commit and push only when the user's authorization for this loop covers it.
    - Push to the recorded PR head repository/ref, then verify the pushed commit
      is the PR's current head before replying or merging.

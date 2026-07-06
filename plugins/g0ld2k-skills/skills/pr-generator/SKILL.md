@@ -27,7 +27,9 @@ Capability strategy:
 
 ## Non-Negotiable Guardrails
 
-- Never create or update a PR without explicit user approval.
+- Never create or update a PR without explicit user approval, or a
+  caller-provided recorded approval scope that explicitly covers PR
+  creation/update (and pushing, for new PRs) per Phase 6.
 - Never invent test execution, issue links, or validation results.
 - Never claim "tests passed" unless commands were actually run and succeeded.
 - Never use destructive git commands unless explicitly requested.
