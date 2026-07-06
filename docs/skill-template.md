@@ -1,3 +1,10 @@
+---
+name: <kebab-case-skill-name>
+description: Use when <trigger 1>, <trigger 2>, or <trigger 3>.
+license: MIT
+# disable-model-invocation: true   # only after updating EXPLICIT_ONLY_SKILLS
+---
+
 # Skill Authoring Template
 
 > This file lives in `docs/` deliberately, not `skills/_template/`. A directory
@@ -13,25 +20,23 @@ See `## Add a New Skill` in README.md for the full scaffold-to-validate steps.
 
 ## Frontmatter
 
-```yaml
----
-name: <kebab-case-skill-name>
-description: Use when <trigger 1>, <trigger 2>, or <trigger 3>.
-license: MIT
-# disable-model-invocation: true   # only for explicit-only skills; see below
----
-```
+The template starts with real YAML frontmatter so copying it directly to
+`skills/<name>/SKILL.md` gives the validator the required first line (`---`).
+Fill in the placeholder values before validating.
 
 - `name` must match the containing directory exactly, kebab-case.
 - `description` must start with the literal words "Use when" and list
   *triggers only* — situations that summon the skill. Never summarize the
   workflow here; that belongs in the body.
 - `license: MIT` is required verbatim.
-- Do not add a `tools:` key — the validator rejects it.
+- Do not add `tools:`, `allowed-tools`, or `user-invocable` — the validator
+  rejects those frontmatter keys.
 - Add `disable-model-invocation: true` only if this skill must never be
-  auto-invoked by the model (explicit-only, user-must-name-it skills). If
-  present, the matching `agents/openai.yaml` needs
-  `policy.allow_implicit_invocation: false` (see the stub below).
+  auto-invoked by the model (explicit-only, user-must-name-it skills). Before
+  adding it, add the skill name to `EXPLICIT_ONLY_SKILLS` in
+  `scripts/validate-skills-repo.py`. If present, the matching
+  `agents/openai.yaml` needs `policy.allow_implicit_invocation: false` in the
+  block form shown in the stub below.
 
 ## `# Title`
 
@@ -42,7 +47,8 @@ statement: what this skill produces and why it exists.
 
 State the situations that trigger this skill, and explicitly state what it is
 NOT for (the adjacent skill or workflow that handles the rest). Example:
-"Use this for X. If the user is still choosing Y, use `other-skill` first."
+"Use this for X. If the user is still choosing Y, use `pr-closeout-loop`
+first."
 
 ## `## Definitions`
 
@@ -113,7 +119,7 @@ open) so output is comparable across runs.
 
 Reference the vendored shape rather than restating it:
 
-    References/conventions.md for the exact Blocked Report format, capability
+    references/conventions.md for the exact Blocked Report format, capability
     ladder, temp-file rule, and external-text rule.
 
 > If this skill keeps the `references/conventions.md` link, add its name to
@@ -153,5 +159,11 @@ interface:
 - `default_prompt` must contain the literal token `$<skill-name>` (e.g.
   `$commit-message`) — the validator checks for this exact substring.
 - If SKILL.md sets `disable-model-invocation: true`, add
-  `policy: { allow_implicit_invocation: false }` here too; otherwise omit
-  `policy:` entirely.
+  the skill name to `EXPLICIT_ONLY_SKILLS` and use this block form here:
+
+```yaml
+policy:
+  allow_implicit_invocation: false
+```
+
+  Otherwise omit `policy:` entirely.

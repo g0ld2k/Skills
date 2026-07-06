@@ -28,8 +28,8 @@ release notes, and work orchestration.
 
 ## Add a New Skill
 
-1. Copy `docs/skill-template.md` into `skills/<name>/SKILL.md` and fill in
-   every section.
+1. Copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, then fill in
+   the real YAML frontmatter at the top and every section below it.
 2. Create `skills/<name>/agents/openai.yaml` from the template's stub.
 3. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
    the `shared_conventions_consumers` array too if the skill keeps the
