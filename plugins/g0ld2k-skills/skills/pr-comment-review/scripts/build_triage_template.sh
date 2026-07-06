@@ -63,6 +63,9 @@ content="$({
         + "- URL: \(.value.url)\n"
         + "- Thread ID: \(.value.thread_id)\n"
         + "- Body: \(.value.body | gsub("\n"; " ") | .[0:300])\n"
+        + (if .value.replies_truncated == true then
+            "- Warning: replies_truncated is true; do not triage until full replies are fetched.\n"
+          else "" end)
         + (if ((.value.replies // []) | length) > 0 then
             "- Replies:\n"
             + ([ .value.replies[]
