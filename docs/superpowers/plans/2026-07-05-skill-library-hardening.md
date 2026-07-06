@@ -244,7 +244,7 @@ git commit -m "feat(validate): add cross-skill reference check, full-tree drift 
 ### Task 3: simplify — severity/confidence rubric and dispatch template
 
 **Files:**
-- Modify: `skills/simplify/SKILL.md` (Phase 2 section)
+- Modify: `skills/simplify/SKILL.md` (Phase 2 and Phase 3 sections)
 - Create: `skills/simplify/references/validation-scenarios.md`
 - Regenerate: `plugins/g0ld2k-skills/skills/simplify/**`
 
@@ -313,8 +313,10 @@ In Phase 2, after "Pass each agent the full diff so it has complete context.", a
 ```markdown
 Dispatch each agent with this prompt shape:
 
-    You are the [reuse|quality|efficiency] reviewer. Review ONLY the diff below.
-    Do not edit files. Return ONLY a JSON array of findings, each with keys:
+    You are the [reuse|quality|efficiency] reviewer. Scope findings to the
+    changes in the diff below, but you may search the repository read-only to
+    locate existing utilities or duplicates and cite their file paths. Do not
+    edit files. Return ONLY a JSON array of findings, each with keys:
     category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
     confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
     sentence), proposed_fix (one sentence). Do not include an id; the parent
@@ -323,6 +325,8 @@ Dispatch each agent with this prompt shape:
     blocks verbatim]. Review criteria: [paste that agent's numbered list].
     Diff: [full diff]
 ```
+
+Also update Phase 3's selection-parsing rule so ignored ids are visible (Scenario 3 asserts this): replace "If invalid ids are included, ignore invalid ids and proceed with valid ids. If no valid ids remain, ask once for clarification." with "If invalid ids are included, ignore them, proceed with the valid ids, and name the ignored ids in the response. If no valid ids remain, ask once for clarification."
 
 - [ ] **Step 4: Re-run Scenario 1 (GREEN)**
 
@@ -406,7 +410,7 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
       body: $root.body,
       url: $root.url,
       created_at: $root.createdAt,
-      replies_truncated: ($thread.comments.pageInfo.hasNextPage // false),
+      replies_truncated: ($thread.fetch_failed // false),
       replies: [ $comments[]
         | select(.replyTo != null)
         | { comment_id: .databaseId,
@@ -419,7 +423,7 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
   | sort_by(.path, .line, .comment_id)
 ```
 
-Also add `pageInfo { hasNextPage endCursor }` to the `comments(first:100)` selection. `gh api --paginate` only follows the top-level `reviewThreads` cursor, so the script must complete long threads itself: after the main query, for every thread whose comments report `hasNextPage: true`, loop a follow-up query — `node(id: $thread_id) { ... on PullRequestReviewThread { comments(first: 100, after: $cursor) { nodes { ...same fields... } pageInfo { hasNextPage endCursor } } } }` — until exhausted, merging the fetched comments into that thread before the jq transform. Keep `replies_truncated` in the output: it is `true` only when a follow-up fetch itself failed, and SKILL.md must instruct agents not to triage a truncated thread.
+Also add `pageInfo { hasNextPage endCursor }` to the `comments(first:100)` selection. `gh api --paginate` only follows the top-level `reviewThreads` cursor, so the script must complete long threads itself: after the main query, for every thread whose comments report `hasNextPage: true`, loop a follow-up query — `node(id: $thread_id) { ... on PullRequestReviewThread { comments(first: 100, after: $cursor) { nodes { ...same fields... } pageInfo { hasNextPage endCursor } } } }` — until exhausted, merging the fetched comments into that thread before the jq transform, and setting `fetch_failed: true` on the thread object only when a follow-up query errors. The jq `replies_truncated` field derives from that marker — never from the original page's `hasNextPage`, which remains true even after a successful follow-up merge. SKILL.md must instruct agents not to triage a truncated thread.
 
 Update the script's usage text from "Fetch top-level review comments" to "Fetch unresolved review threads (root comment plus replies)".
 
@@ -922,7 +926,7 @@ Note in the template header: this file lives in `docs/` deliberately — `skills
 
 - [ ] **Step 2: Update README**
 
-Replace the removed scaffold instructions with: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, create `skills/<name>/agents/openai.yaml` from the template's stub, add the skill to `packaging/g0ld2k-skills.json` — both the `skills` array and, if the skill keeps the template's `references/conventions.md` link, the `shared_conventions_consumers` array — then run the sync + generate + validate commands.
+README.md currently has no authoring section (the restructure removed the old scaffold instructions), so add a new `## Add a New Skill` section immediately after `## Repository Shape`: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, create `skills/<name>/agents/openai.yaml` from the template's stub, add the skill to `packaging/g0ld2k-skills.json` — both the `skills` array and, if the skill keeps the template's `references/conventions.md` link, the `shared_conventions_consumers` array — then run the sync + generate + validate commands.
 
 - [ ] **Step 3: Validate and commit**
 
@@ -957,10 +961,11 @@ git -C "$target" init -q -b main
 git -C "$target" config user.email fixture@example.com
 git -C "$target" config user.name Fixture
 git -C "$target" config commit.gpgsign false
+git -C "$target" config core.hooksPath /dev/null
 # Pin dates so commit hashes are identical across runs:
 export GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z"
 
-commit() { git -C "$target" add -A && git -C "$target" commit -qm "$1"; }
+commit() { git -C "$target" add -A && git -C "$target" commit -q --no-verify -m "$1"; }
 
 mkdir -p "$target/Sources/App" "$target/Tests/AppTests"
 echo 'struct Session {}' > "$target/Sources/App/Session.swift"
