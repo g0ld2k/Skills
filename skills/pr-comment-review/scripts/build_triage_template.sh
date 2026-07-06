@@ -69,7 +69,7 @@ content="$({
         + (if ((.value.replies // []) | length) > 0 then
             "- Replies:\n"
             + ([ .value.replies[]
-                 | "  - \(.author): \(.body | gsub("\n"; " ") | .[0:200])" ]
+                 | "  - \(.author): \(.body | gsub("\n"; " "))" ]
                | join("\n"))
             + "\n"
           else "" end)

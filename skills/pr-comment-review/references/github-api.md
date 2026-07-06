@@ -8,8 +8,15 @@ Minimal API surface for fetching unresolved review feedback and posting replies.
 
 Use GraphQL because REST review comment endpoints do not include thread-level `isResolved`.
 
+Do NOT use `gh api graphql --paginate` with this query: `--paginate` follows
+the FIRST `pageInfo` it finds, which is the nested `comments.pageInfo` here,
+so outer thread pagination silently breaks past 100 threads. Loop manually:
+pass `-F endCursor=<cursor>` from `reviewThreads.pageInfo.endCursor` until
+`hasNextPage` is false, and complete any thread whose `comments.pageInfo`
+reports more pages with follow-up `node(id:)` queries.
+
 ```bash
-gh api graphql --paginate \
+gh api graphql \
   -f query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){

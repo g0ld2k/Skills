@@ -106,7 +106,9 @@ while [[ "$outer_has_next" == "true" ]]; do
   outer_cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // "null"' <<<"$page_result")"
 done
 
-threads_json="$(cat "$threads_file")"
+# Drop resolved threads before the per-thread reply pagination below so we
+# never spend follow-up queries completing threads the transform will discard.
+threads_json="$(jq -c '[ .[] | select(.isResolved == false) ]' "$threads_file")"
 
 # `gh api graphql --paginate` only follows the top-level reviewThreads cursor;
 # it does not paginate each thread's nested comments connection. Any thread
