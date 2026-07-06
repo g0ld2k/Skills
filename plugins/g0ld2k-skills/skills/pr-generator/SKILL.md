@@ -158,9 +158,12 @@ Always show:
 - detected base branch
 - whether this will create a new PR or update an existing PR
 
-Ask for explicit approval before publish/update.
+Ask for explicit approval before publish/update unless the caller provided a
+recorded approval scope that explicitly covers PR creation or update for this
+branch/base. In preauthorized mode, state the scope being used and continue to
+publish without another prompt.
 
-### Phase 7: Create or Update PR (Post-Approval Only)
+### Phase 7: Create or Update PR (Post-Approval Or Preauthorized Only)
 
 1) Check whether an open PR already exists for this branch:
 
@@ -180,6 +183,8 @@ MD
 ```
 
 3) Publish action:
+
+Proceed only after explicit approval or recorded-scope verification.
 
 - If PR exists: update it
 ```bash
