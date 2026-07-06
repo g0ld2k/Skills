@@ -127,10 +127,12 @@ Only if user explicitly approves (for example: "commit it", "looks good, commit"
 
 Use safe file-based commit message flow (preferred across CLIs):
 ```bash
-cat > /tmp/commit-msg.txt <<'MSG'
+commit_msg_file="$(mktemp "${TMPDIR:-/tmp}/commit-msg.XXXXXX")"
+cat > "$commit_msg_file" <<'MSG'
 <full commit message>
 MSG
-git commit -F /tmp/commit-msg.txt
+git commit -F "$commit_msg_file"
+rm -f "$commit_msg_file"
 ```
 
 Alternative (subject only):

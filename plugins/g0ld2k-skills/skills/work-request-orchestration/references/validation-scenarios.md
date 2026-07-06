@@ -21,7 +21,7 @@ Prompt:
 Review and address GitHub issues 58, 59, 61, and 63 in the current repo. You
 may commit, create PRs, and merge. Use simplify before committing non-trivial
 changes, use commit-message for commits, pr-generator for PRs, and after a PR
-is open use codex-pr-approval-loop until approved.
+is open use pr-closeout-loop until approved.
 ```
 
 Expected behavior:
