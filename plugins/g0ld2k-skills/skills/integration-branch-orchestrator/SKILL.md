@@ -101,7 +101,7 @@ confirm the authorization scope and merge gates first.
    - For each concrete PR whose base is `integration/<feature-name>`, invoke
      `pr-closeout-loop` with target branch set to `integration/<feature-name>`.
    - Dispatch PRs with failing, pending, or stale required checks so the closeout
-     loop can fix or wait on CI; do not merge them until checks are green.
+     loop can fix or wait on CI.
    - Keep each loop scoped to its own PR.
    - Run concurrent closeout loops in separate worktrees or clones. If only one
      checkout is available, serialize the loops so branch, index, validation,

@@ -26,7 +26,9 @@ update the PR, stop and report the missing capability.
 
 ## Non-Negotiable Guardrails
 
-- Never create or update a PR without explicit user approval.
+- Never create or update a PR without explicit user approval, or a
+  caller-provided recorded approval scope that explicitly covers PR
+  creation/update (and pushing, for new PRs) per Phase 6.
 - Never invent test execution, issue links, or validation results.
 - Never claim "tests passed" unless commands were actually run and succeeded.
 - Never use destructive git commands unless explicitly requested.
@@ -63,7 +65,9 @@ If `gh` is unavailable but GitHub MCP is available:
 
 ### Phase 1: Detect Base Branch Deterministically
 
-Detect base branch once and reuse it for all later steps.
+If the caller passed a base branch for this run (stacked PRs or an
+integration branch), use it verbatim, state that it was caller-provided, and
+skip detection. Otherwise detect it once and reuse it for all later steps.
 
 ```bash
 BASE_BRANCH="$(bash scripts/detect_base_branch.sh)"
@@ -160,7 +164,10 @@ Always show:
 
 Ask for explicit approval before publish/update unless the caller provided a
 recorded approval scope that explicitly covers PR creation or update for this
-branch/base. In preauthorized mode, state the scope being used and continue to
+branch/base. Creating a new PR also runs `git push -u origin <branch>`, so the
+preauthorized path additionally requires the scope to cover pushing this
+branch; if it covers PR creation but not pushing, stop and ask before the
+push. In preauthorized mode, state the scope being used and continue to
 publish without another prompt.
 
 ### Phase 7: Create or Update PR (Post-Approval Or Preauthorized Only)

@@ -35,21 +35,24 @@ commit, PR, review/CI, and merge.
   the task.
 - **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes
   (non-trivial per `pr-closeout-loop`'s definition: logic, behavior, tests, CI,
-  package, workflow, or public-contract changes).
+  package, workflow, public-contract, or meaningful docs/process changes).
   Pass: the recorded unattended selection policy when blanket approval is
   active (default: auto-address valid in-scope medium/high findings without
   re-prompting). Expect back: numbered findings applied per that policy, or
   presented for user selection in attended runs.
 - **REQUIRED FOR COMMITS:** Use `commit-message`.
-  Pass: staged diff plus the recorded approval scope (blanket commit approval
-  means commit with the generated message once it is grounded in the staged
-  diff, without re-prompting). Expect back: message + rationale, then the
-  commit SHA.
+  Pass: staged diff, an explicit `message+commit` mode request, plus the
+  recorded approval scope (blanket commit approval means commit with the
+  generated message once it is grounded in the staged diff, without
+  re-prompting; the scope alone does not switch it out of its default
+  message-only mode). Expect back: message + rationale, then the commit SHA.
 - **REQUIRED FOR PRS:** Use `pr-generator`.
-  Pass: base branch if already detected this run; exact test commands actually
-  run; the recorded approval scope covering PR creation/update. Expect back:
-  title/body draft, then the created/updated PR URL — publish without
-  re-prompting when the scope covers it.
+  Pass: the base branch when this run already selected one (stacked or
+  integration-branch units — the generator uses it instead of detecting);
+  exact test commands actually run; the recorded approval scope covering PR
+  creation/update AND pushing the branch (creating a PR runs `git push`).
+  Expect back: title/body draft, then the created/updated PR URL — publish
+  without re-prompting when the scope covers it.
 - **REQUIRED AFTER PR OPEN:** Use `pr-closeout-loop` when the user asks to
   monitor/address/merge or grants merge authority for the run.
   Pass: owner/repo/PR number, target branch, the authorization scope recorded
