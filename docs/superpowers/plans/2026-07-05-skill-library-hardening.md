@@ -538,7 +538,7 @@ Insert after Required Companions:
 ```markdown
 ## State Ledger
 
-Maintain a ledger file in a temp directory (`mktemp -d`) for the whole loop:
+Maintain a ledger file in a temp directory (`mktemp -d "${TMPDIR:-/tmp}/pr-closeout.XXXXXX"` — BSD/macOS mktemp needs the template) for the whole loop:
 
     pr: <owner>/<repo>#<number>
     head_sha: <sha the local checkout matches>
@@ -681,7 +681,7 @@ Then delete the sentences in "Orchestration Policy" that duplicate T2–T6 (the 
 
 - [ ] **Step 3: Point gate language at Task 5's definitions**
 
-In section "2. Define gates.", replace the first two bullets with: "Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator does not merge PRs itself." Keep the integration-level bullets (local validation, unrelated-changes protection) unchanged.
+In section "2. Define gates.", replace every PR-level gate bullet — approval freshness (both approval bullets), required remote checks, per-PR local tests, and unresolved actionable feedback — with the single bullet: "Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator does not evaluate per-PR gates or merge PRs itself." Keep only the integration-level gates: integration validation after merges into the integration branch, and no unrelated local/user changes staged, committed, overwritten, or hidden.
 
 - [ ] **Step 4: Re-run Scenario 1 (GREEN)**
 
@@ -797,7 +797,9 @@ stop and report the missing capability.
 ## Temp Files
 
 Never use fixed paths under /tmp. Create files with
-`mktemp "${TMPDIR:-/tmp}/<purpose>.XXXXXX"` and directories with `mktemp -d`.
+`mktemp "${TMPDIR:-/tmp}/<purpose>.XXXXXX"` and directories with
+`mktemp -d "${TMPDIR:-/tmp}/<purpose>.XXXXXX"` — always a template ending in
+`XXXXXX`, which BSD/macOS mktemp requires.
 Working artifacts (fetched JSON, triage files, ledgers) live in a temp
 directory, never in the repository working tree.
 
@@ -962,6 +964,7 @@ git -C "$target" config user.email fixture@example.com
 git -C "$target" config user.name Fixture
 git -C "$target" config commit.gpgsign false
 git -C "$target" config core.hooksPath /dev/null
+git -C "$target" config tag.gpgSign false
 # Pin dates so commit hashes are identical across runs:
 export GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z"
 
