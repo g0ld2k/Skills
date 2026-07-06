@@ -28,13 +28,20 @@ release notes, and work orchestration.
 
 ## Add a New Skill
 
-1. Copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, then fill in
-   the real YAML frontmatter at the top and every section below it.
+1. Copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, fill in the
+   real YAML frontmatter at the top and every section below it, and delete the
+   two blocks marked `DOCS-ONLY` (the template intro and the trailing
+   `agents/openai.yaml` stub section) — they belong to the template, not to a
+   skill.
 2. Create `skills/<name>/agents/openai.yaml` from the template's stub.
-3. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
+3. Create `skills/<name>/references/validation-scenarios.md` with at least 3
+   scenarios (happy path, edge case, adversarial) — the template's Validation
+   Scenarios section points at it.
+4. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
    the `shared_conventions_consumers` array too if the skill keeps the
    template's `references/conventions.md` link.
-4. Run the sync + generate + validate commands:
+5. Add a row for the skill to the `## Skill Catalog` table above.
+6. Run the sync + generate + validate commands:
 
 ```bash
 python3 scripts/sync-shared-conventions.py

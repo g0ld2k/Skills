@@ -5,6 +5,9 @@ license: MIT
 # disable-model-invocation: true   # only after updating EXPLICIT_ONLY_SKILLS
 ---
 
+<!-- DOCS-ONLY: delete this intro block (through the "Fill in every section"
+     line below) after copying this file into skills/<name>/SKILL.md. -->
+
 # Skill Authoring Template
 
 > This file lives in `docs/` deliberately, not `skills/_template/`. A directory
@@ -142,6 +145,10 @@ write each scenario RED first — confirm it fails without the skill's guardrail
 ---
 
 ## `agents/openai.yaml` stub
+
+<!-- DOCS-ONLY: this whole section describes a SEPARATE file. Copy the stub
+     into skills/<name>/agents/openai.yaml, then delete this section from
+     your SKILL.md. -->
 
 Every skill needs this file alongside `SKILL.md`, or the validator rejects it.
 
