@@ -188,10 +188,10 @@ re-read the ledger first; any recorded value that predates a surface change
 | G1 Approval fresh | approval event vs ledger surface (head SHA, PR body, base branch, base ref) | approval event created after the latest surface-changing event |
 | G2 Checks green | required check rollup for current head vs current base/merge ref | all required checks SUCCESS; base-ref change since the run requires fresh checks or an explicit rerun |
 | G3 Local suite | ledger `suite_result` | pass recorded at current `head_sha` AND current `base_ref_sha` |
-| G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no unresolved unclear, conflicting, or discuss-classified feedback (these block — they are not "non-actionable"); no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy |
+| G4 Feedback clear | unresolved-thread fetch (root + replies) + latest reviews + conversation | zero actionable items; no unresolved unclear, conflicting, or discuss-classified feedback (these block — they are not "non-actionable"); no effective CHANGES_REQUESTED; fixed threads replied/resolved per policy; fixed review-level and conversation feedback acknowledged |
 | G5 Authorization | recorded user scope | covers this exact target branch and merge method; protected-branch promotion needs explicit approval |
 | G6 Mergeable | live PR mergeability/up-to-date status | branch is mergeable and up to date enough for the repository's rules |
-| G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated changes staged, committed, overwritten, or hidden by the loop |
+| G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated local/user changes present; none staged, committed, overwritten, or hidden |
 
 Immediately before merging, re-fetch live PR state and re-evaluate G1–G7 from
 that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
