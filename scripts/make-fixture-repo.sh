@@ -18,9 +18,9 @@ echo 'struct Session {}' > "$target/Sources/App/Session.swift"
 commit "feat(auth): add session model"
 echo 'final class SessionTests {}' > "$target/Tests/AppTests/SessionTests.swift"
 commit "test: add session tests"
-git -C "$target" tag build-1
 echo '// retry on 401' >> "$target/Sources/App/Session.swift"
 commit "fix(auth): retry token refresh on 401"
+git -C "$target" tag build-1
 echo 'let cache: [String: String] = [:]' > "$target/Sources/App/Cache.swift"
 commit "chore: update dependencies and snapshot tests"
 # Leave one staged, uncommitted change for commit-message scenarios:

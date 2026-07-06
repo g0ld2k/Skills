@@ -8,7 +8,7 @@ The smoke evaluation protocol validates skills before deployment by running prim
 
 ## Scope
 
-For each skill that includes a `references/validation-scenarios.md` file, run the primary scenario with a fresh subagent (weakest available model) inside a fixture repo.
+For each skill that includes a `references/validation-scenarios.md` file, run the primary scenario with a fresh subagent (weakest available model). Use the fixture repo for scenarios that need deterministic local git history. If the primary scenario depends on live repository state such as GitHub issues, PRs, comments, or milestones, run it from the source repository that owns that state instead and use the fixture only for any local-git subtask the scenario explicitly needs.
 
 ## Fixture Repository
 
@@ -25,8 +25,8 @@ This fixture is suitable for scenarios involving commit messages, code review, d
 For each skill with validation scenarios:
 
 1. **Read the validation scenarios.** Identify the primary scenario (typically Scenario 1 or marked as such).
-2. **Create a fixture repo** by running `scripts/make-fixture-repo.sh` and capturing its path.
-3. **Spawn a subagent** with the weakest available model (e.g., Haiku) to run the skill with the primary scenario prompt inside the fixture repo.
+2. **Choose the execution repo.** Use `scripts/make-fixture-repo.sh` for local-only scenarios; use the source repo when the scenario references live issues, PRs, comments, or milestones.
+3. **Spawn a subagent** with the weakest available model (e.g., Haiku) to run the skill with the primary scenario prompt inside the chosen repo.
 4. **Check Output Contract.** Verify that all required fields from the skill's output contract are present in the response.
 5. **Check gated actions.** Verify that no gated action (as defined in the skill's gate schema) fired without its gate condition being satisfied.
 6. **Record results.** Document pass/fail and any issues in the PR that modifies the skill.
