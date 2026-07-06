@@ -20,10 +20,9 @@ This skill is designed for:
 - Codex Desktop
 - GitHub Copilot CLI
 
-Capability strategy:
-1. Prefer `gh` + `git` CLI.
-2. If `gh` is unavailable but GitHub MCP is available, use MCP equivalents.
-3. If neither path can create/update PRs, stop and report the missing capability.
+See `references/conventions.md` for the capability ladder. For this skill, "the
+step" is creating/updating PRs: if neither `gh` nor GitHub MCP can create or
+update the PR, stop and report the missing capability.
 
 ## Non-Negotiable Guardrails
 
@@ -222,3 +221,4 @@ When done, provide:
 - [title-heuristics.md](references/title-heuristics.md)
 - [testing-language.md](references/testing-language.md)
 - [failure-handling.md](references/failure-handling.md)
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.

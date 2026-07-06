@@ -20,10 +20,9 @@ This skill is designed for:
 - Codex Desktop
 - GitHub Copilot CLI
 
-Use a capability-first strategy:
-1. Prefer GitHub MCP tools if available.
-2. Otherwise use `gh api` / `gh pr` commands.
-3. If neither is available, stop and report the missing capability.
+This skill inverts the general capability ladder in `references/conventions.md`:
+prefer GitHub MCP tools if available, otherwise use `gh api` / `gh pr`
+commands. If neither is available, stop and report the missing capability.
 
 ### MCP Fallback (No `gh`)
 
@@ -165,3 +164,4 @@ bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> -
 - [github-api.md](references/github-api.md)
 - [decision-rubric.md](references/decision-rubric.md)
 - [reply-templates.md](references/reply-templates.md)
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.

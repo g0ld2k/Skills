@@ -235,3 +235,7 @@ Report:
 - commits pushed;
 - replies posted and threads resolved or intentionally left unresolved;
 - current approval, CI, mergeability, and merge result or blocker.
+
+## References
+
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.

@@ -17,6 +17,14 @@
     "workflow"
   ],
   "category": "Developer Tools",
+  "shared_conventions_consumers": [
+    "commit-message",
+    "pr-generator",
+    "pr-comment-review",
+    "pr-closeout-loop",
+    "integration-branch-orchestrator",
+    "work-request-orchestration"
+  ],
   "skills": [
     "catch-me-up",
     "commit-message",
