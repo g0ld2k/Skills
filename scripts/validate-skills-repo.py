@@ -23,6 +23,20 @@ EXPLICIT_ONLY_SKILLS = {
 }
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
+EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
+# Single-word command tokens that legitimately follow Use/run/invoke in prose.
+# Extend only with commands/tools, never with skill names.
+NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
+# Matches: Use `name`, use `name`, Invoke `name`, delegating to `name`, Run `name`
+SKILL_REF_CONTEXT_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
+)
+# Companion-list bullets like: - `pr-comment-review` for triaging...
+COMPANION_REF_RE = re.compile(
+    r"^\s*-\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`\s+(?:for|to|when|before|after)\b",
+    re.MULTILINE,
+)
 
 
 def has_exact_child(parent: Path, name: str) -> bool:
@@ -51,7 +65,11 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
 
     data: dict[str, object] = {}
     current_key: str | None = None
-    for line in lines[1:end]:
+    frontmatter_lines = lines[1:end]
+    index = 0
+    while index < len(frontmatter_lines):
+        line = frontmatter_lines[index]
+        index += 1
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if line.startswith((" ", "\t")):
@@ -70,6 +88,18 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
             data[current_key] = True
         elif parsed_value == "false":
             data[current_key] = False
+        elif parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
+            block_lines: list[str] = []
+            while index < len(frontmatter_lines):
+                block_line = frontmatter_lines[index]
+                if block_line.strip() and not block_line.startswith((" ", "\t")):
+                    break
+                if block_line.strip():
+                    block_lines.append(block_line.strip())
+                index += 1
+            data[current_key] = (
+                " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
+            )
         elif parsed_value:
             data[current_key] = parsed_value
         else:
@@ -190,6 +220,10 @@ def validate_skills(errors: list[str]) -> list[str]:
             if key not in frontmatter or not frontmatter[key]:
                 errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
 
+        description = str(frontmatter.get("description", ""))
+        if description and not description.startswith("Use when"):
+            errors.append(f"skills/{name}/SKILL.md: description must start with 'Use when'")
+
         declared_name = frontmatter.get("name")
         if declared_name != name:
             errors.append(f"skills/{name}/SKILL.md: name must match directory")
@@ -239,6 +273,28 @@ def validate_skills(errors: list[str]) -> list[str]:
     return names
 
 
+def validate_cross_skill_references(canonical_names: list[str], errors: list[str]) -> None:
+    known = set(canonical_names)
+    for markdown_file in sorted(SKILLS_DIR.glob("*/SKILL.md")) + sorted(
+        SKILLS_DIR.glob("*/references/**/*.md")
+    ):
+        text = markdown_file.read_text(encoding="utf-8")
+        rel = markdown_file.relative_to(ROOT)
+        for retired in RETIRED_SKILL_NAMES:
+            if retired in text:
+                errors.append(f"{rel}: references retired skill name: {retired}")
+        tokens = [m.group(1) for m in SKILL_REF_CONTEXT_RE.finditer(text)]
+        tokens += [m.group(1) for m in COMPANION_REF_RE.finditer(text)]
+        for token in tokens:
+            if token in known:
+                continue
+            if token.startswith(EXTERNAL_SKILL_PREFIXES):
+                continue
+            if token in NON_SKILL_TOKENS:
+                continue
+            errors.append(f"{rel}: cross-skill reference to unknown skill: {token}")
+
+
 def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> None:
     config = load_json(PACKAGE_CONFIG, errors)
     if not config:
@@ -281,16 +337,28 @@ def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> N
             errors.append("plugins/g0ld2k-skills/skills/: generated skills must match package config")
 
     for skill in package_skills:
-        generated_skill_dir = generated_skills_dir / skill
-        if not generated_skill_dir.exists():
-            errors.append(f"{generated_skill_dir.relative_to(ROOT)}: missing")
+        canonical_dir = SKILLS_DIR / skill
+        generated_dir = generated_skills_dir / skill
+        if not generated_dir.exists():
+            errors.append(f"{generated_dir.relative_to(ROOT)}: missing")
             continue
-        canonical_skill_file = SKILLS_DIR / skill / "SKILL.md"
-        generated_skill_file = generated_skill_dir / "SKILL.md"
-        if not generated_skill_file.exists():
-            errors.append(f"{generated_skill_file.relative_to(ROOT)}: missing")
-        elif canonical_skill_file.read_bytes() != generated_skill_file.read_bytes():
-            errors.append(f"{generated_skill_file.relative_to(ROOT)}: must match canonical SKILL.md")
+        canonical_files = {
+            p.relative_to(canonical_dir) for p in canonical_dir.rglob("*") if p.is_file()
+        }
+        generated_files = {
+            p.relative_to(generated_dir) for p in generated_dir.rglob("*") if p.is_file()
+        }
+        for missing in sorted(str(p) for p in canonical_files - generated_files):
+            errors.append(f"{generated_dir.relative_to(ROOT)}/{missing}: missing from bundle")
+        for extra in sorted(str(p) for p in generated_files - canonical_files):
+            errors.append(f"{generated_dir.relative_to(ROOT)}/{extra}: not in canonical skill")
+        for rel in sorted(canonical_files & generated_files, key=str):
+            if (canonical_dir / rel).read_bytes() != (generated_dir / rel).read_bytes():
+                errors.append(f"{generated_dir.relative_to(ROOT)}/{rel}: must match canonical file")
+            canonical_mode = (canonical_dir / rel).stat().st_mode & 0o111
+            generated_mode = (generated_dir / rel).stat().st_mode & 0o111
+            if canonical_mode != generated_mode:
+                errors.append(f"{generated_dir.relative_to(ROOT)}/{rel}: file mode must match canonical file")
 
     marketplace_paths = [
         ROOT / ".claude-plugin" / "marketplace.json",
@@ -327,6 +395,7 @@ def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> N
 def main() -> int:
     errors: list[str] = []
     canonical_skill_names = validate_skills(errors)
+    validate_cross_skill_references(canonical_skill_names, errors)
     validate_packaging(canonical_skill_names, errors)
 
     if errors:

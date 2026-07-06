@@ -44,10 +44,12 @@ jobs:
 
       - name: Check shell scripts
         run: |
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
           find skills plugins scripts -type f -name '*.sh' -print |
             while IFS= read -r file; do
               echo "$file"
               bash -n "$file"
+              shellcheck -S warning "$file"
             done
 
       - name: Validate Agent Skills publisher shape
