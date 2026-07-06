@@ -69,3 +69,12 @@ Expected behavior:
 - Re-slice work if the plan is stale or bundles unrelated changes.
 - Keep tests with the PR that changes behavior.
 - Commit and merge only within the active approval and freshness gates.
+
+## Scenario 4: Sub-Skill Handoff Fidelity
+
+Prompt: single issue, blanket approval for commit/push/PR/merge granted in
+Phase 0.
+Pass: each sub-skill invocation passes the recorded authorization scope
+explicitly; `pr-closeout-loop` receives PR ref, target branch, scope, and
+max-wait; no sub-skill re-prompts for an approval already granted, and none
+skips its own gates because "the orchestrator approved".

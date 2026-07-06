@@ -33,11 +33,28 @@ commit, PR, review/CI, and merge.
 - **REQUIRED:** Use `superpowers:test-driven-development` for bug fixes,
   features, refactors, and behavior changes unless the user explicitly exempts
   the task.
-- **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes.
+- **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes
+  (non-trivial per `pr-closeout-loop`'s definition: logic, behavior, tests, CI,
+  package, workflow, or public-contract changes).
+  Pass: the recorded unattended selection policy when blanket approval is
+  active (default: auto-address valid in-scope medium/high findings without
+  re-prompting). Expect back: numbered findings applied per that policy, or
+  presented for user selection in attended runs.
 - **REQUIRED FOR COMMITS:** Use `commit-message`.
+  Pass: staged diff plus the recorded approval scope (blanket commit approval
+  means commit with the generated message once it is grounded in the staged
+  diff, without re-prompting). Expect back: message + rationale, then the
+  commit SHA.
 - **REQUIRED FOR PRS:** Use `pr-generator`.
+  Pass: base branch if already detected this run; exact test commands actually
+  run; the recorded approval scope covering PR creation/update. Expect back:
+  title/body draft, then the created/updated PR URL — publish without
+  re-prompting when the scope covers it.
 - **REQUIRED AFTER PR OPEN:** Use `pr-closeout-loop` when the user asks to
   monitor/address/merge or grants merge authority for the run.
+  Pass: owner/repo/PR number, target branch, the authorization scope recorded
+  in Phase 0 verbatim, and the max-wait policy. Expect back: merged (SHA) or a
+  Blocked Report naming the failing gate (G1–G7). Do not merge on its behalf.
 
 ## Workflow
 
@@ -113,20 +130,18 @@ For mechanical-only work, define a measurable guard first: test inventory,
 
 1. Use `pr-generator` for PR title/body. Include exact tests actually run.
 2. Push and create/update the PR when approval covers the publish step.
-3. Run `pr-closeout-loop` for review comments, CI failures, fresh Codex
-   approval, and merge readiness.
-4. Treat approval as fresh only for the current head SHA and current PR body.
-5. Merge only when required checks are green, actionable feedback is handled,
-   approval is fresh, branch protection allows it, and no human-gated decision
-   remains.
-6. After merge, fetch the default branch before starting the next unit.
+3. Hand off to `pr-closeout-loop` with the contract above; treat its Blocked
+   Report as this workflow's blocker, not as license to merge manually.
+4. Merge gating is owned by `pr-closeout-loop` (G1–G7); this workflow does not
+   evaluate its own reduced gate set or merge manually.
+5. After merge, fetch the default branch before starting the next unit.
 
 ## Guardrails
 
 - Do not invent issue details, test results, approvals, or remote state.
 - Do not bundle unrelated fixes because they are nearby.
-- Do not merge on old approval after pushing new commits or materially editing
-  the PR body.
+- Do not merge manually or re-evaluate merge gates; defer to
+  `pr-closeout-loop`'s G1–G7 and act only on its Blocked Report.
 - Do not silently perform repo-admin, release, credential, billing, or policy
   decisions; document or ask.
 - Do not let a reusable-skill request default to an install-only location when
@@ -142,8 +157,8 @@ Stop and re-check the workflow when you think:
 - "These issues are close enough to combine."
 - "The tests can come after the fix."
 - "This unrelated dirty file is probably mine."
-- "The old approval still counts after this push."
-- "The user said merge, so CI/review freshness does not matter."
+- "The user said merge, so I can check gates myself instead of deferring to
+  `pr-closeout-loop`."
 
 ## Output Contract
 
