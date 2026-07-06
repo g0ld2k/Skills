@@ -34,8 +34,10 @@ Use the Agent tool to launch all three agents concurrently in a single message. 
 
 Dispatch each agent with this prompt shape:
 
-    You are the [reuse|quality|efficiency] reviewer. Review ONLY the diff below.
-    Do not edit files. Return ONLY a JSON array of findings, each with keys:
+    You are the [reuse|quality|efficiency] reviewer. Scope findings to the
+    changes in the diff below, but you may search the repository read-only to
+    locate existing utilities or duplicates and cite their file paths. Do not
+    edit files. Return ONLY a JSON array of findings, each with keys:
     category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
     confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
     sentence), proposed_fix (one sentence). Do not include an id; the parent
@@ -128,7 +130,7 @@ Do not edit code in this phase.
    - `all` -> select all findings
    - `none` -> select none
    - `1,2,5` -> select valid ids only
-4. If invalid ids are included, ignore invalid ids and proceed with valid ids. If no valid ids remain, ask once for clarification.
+4. If invalid ids are included, ignore them, proceed with the valid ids, and name the ignored ids in the response. If no valid ids remain, ask once for clarification.
 
 ## Phase 4: Apply Selected Fixes
 
