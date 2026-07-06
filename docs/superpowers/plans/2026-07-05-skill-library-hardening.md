@@ -344,7 +344,8 @@ git commit -m "feat(simplify): define severity/confidence rubric and subagent di
 - Modify: `skills/pr-comment-review/scripts/fetch_unresolved_review_comments.sh` (jq filter)
 - Modify: `skills/pr-comment-review/scripts/build_triage_template.sh` (render root body + replies; validity placeholder)
 - Modify: `skills/pr-comment-review/references/decision-rubric.md`
-- Modify: `skills/pr-comment-review/SKILL.md` (Phase 2 validity states)
+- Modify: `skills/pr-comment-review/references/github-api.md` (reply-aware query)
+- Modify: `skills/pr-comment-review/SKILL.md` (Phase 2 validity states; truncated-thread rule)
 - Modify: `skills/pr-closeout-loop/SKILL.md` (Required Companions + step 2)
 - Create: `skills/pr-comment-review/references/validation-scenarios.md`
 - Regenerate: both skills' `plugins/` mirrors
@@ -418,7 +419,7 @@ In `fetch_unresolved_review_comments.sh`, replace the jq program (the block pipe
   | sort_by(.path, .line, .comment_id)
 ```
 
-Also add `pageInfo { hasNextPage }` to the `comments(first:100)` selection in the GraphQL query. `gh api --paginate` only follows the top-level `reviewThreads` cursor, so a thread with more than 100 comments silently drops later replies; the emitted `replies_truncated` flag marks those threads, and the skill must re-fetch a flagged thread individually (by node id) before triaging it.
+Also add `pageInfo { hasNextPage endCursor }` to the `comments(first:100)` selection. `gh api --paginate` only follows the top-level `reviewThreads` cursor, so the script must complete long threads itself: after the main query, for every thread whose comments report `hasNextPage: true`, loop a follow-up query — `node(id: $thread_id) { ... on PullRequestReviewThread { comments(first: 100, after: $cursor) { nodes { ...same fields... } pageInfo { hasNextPage endCursor } } } }` — until exhausted, merging the fetched comments into that thread before the jq transform. Keep `replies_truncated` in the output: it is `true` only when a follow-up fetch itself failed, and SKILL.md must instruct agents not to triage a truncated thread.
 
 Update the script's usage text from "Fetch top-level review comments" to "Fetch unresolved review threads (root comment plus replies)".
 
@@ -453,6 +454,10 @@ In `references/decision-rubric.md`, extend Validity:
 And add one line under Required Triage Fields: `Triage the thread's final state: read replies, not just the root comment.`
 
 Update the two enumerations that still list only three states so agents actually emit the new ones: `skills/pr-comment-review/SKILL.md` Phase 2's `validity` field becomes `valid`, `partial`, `invalid`, `unclear`, `conflicting`, and `build_triage_template.sh`'s placeholder line becomes `- Validity: <valid|partial|invalid|unclear|conflicting>`.
+
+Replace the rubric's opening line "Use this rubric for each unresolved top-level review comment." with "Use this rubric for each unresolved review thread, judged on its final state (root comment plus all replies)."
+
+Update `references/github-api.md` to match the helper so MCP/manual fallback paths don't regress: add `pageInfo { hasNextPage endCursor }` to the documented comments selection, and replace the instruction "Filter to unresolved threads and top-level review comments (`replyTo == null`)" with "Filter to unresolved threads; emit each thread's root comment plus its replies, paginating a thread's comments (follow-up `node(id:)` queries) when `hasNextPage` is true."
 
 - [ ] **Step 6: Retire the caveat in pr-closeout-loop**
 
@@ -537,9 +542,10 @@ Maintain a ledger file in a temp directory (`mktemp -d`) for the whole loop:
     pr_body_fingerprint: <sha256 of the current PR body>
     base_ref_sha: <base sha the last suite run used>
     suite_result: pass|fail|not-run @ <head_sha> vs <base_ref_sha>
-    approval: fresh|stale|absent @ <event timestamp> for <head_sha>+<pr_body_fingerprint>+<target_branch>
+    approval: fresh|stale|absent @ <event timestamp> covering head=<sha> body=<fingerprint> target=<branch> base=<base ref sha at approval time>
     threads: <id>: fixed|replied|resolved|blocked
-    polls_without_progress: <n>/3
+    max_wait_policy: <N polls> @ <interval> (default 3 @ 10m)
+    polls_without_progress: <n> of <N>
 
 Update the ledger after every state-changing step. On any restart at step 2,
 re-read the ledger first; any recorded value that predates a surface change
@@ -745,7 +751,7 @@ Replace the last four REQUIRED bullets with:
 
 - [ ] **Step 3: Align Phase 5**
 
-In Phase 5 item 3, replace "Run `pr-closeout-loop` for review comments, CI failures, fresh Codex approval, and merge readiness." with "Hand off to `pr-closeout-loop` with the contract above; treat its Blocked Report as this workflow's blocker, not as license to merge manually."
+In Phase 5 item 3, replace "Run `pr-closeout-loop` for review comments, CI failures, fresh Codex approval, and merge readiness." with "Hand off to `pr-closeout-loop` with the contract above; treat its Blocked Report as this workflow's blocker, not as license to merge manually." Then replace Phase 5 items 4–5 (the reduced approval-freshness and merge-gate bullets) with a single bullet: "Merge gating is owned by `pr-closeout-loop` (G1–G7); this workflow does not evaluate its own reduced gate set or merge manually." Renumber the remaining item.
 
 - [ ] **Step 4: Re-run Scenario 4 (GREEN), regenerate, validate, commit**
 
@@ -886,7 +892,7 @@ Call it from `main()`. In the CI workflow's "Validate generated packaging is cur
 
 - [ ] **Step 4: Reference the file from each consumer**
 
-In each consumer's SKILL.md, add to its `## References` section: `- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.` If the skill has no `## References` section (currently commit-message, pr-closeout-loop, and integration-branch-orchestrator), create one at the end of the file. Where a skill's own text now duplicates a convention verbatim (pr-generator Phase 0 gh/MCP ladder, pr-comment-review runtime section), replace the duplicated paragraph with the reference — but keep any skill-specific deltas inline.
+In each consumer's SKILL.md, add to its `## References` section: `- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.` If the skill has no `## References` section (currently commit-message, pr-closeout-loop, integration-branch-orchestrator, and work-request-orchestration), create one at the end of the file. Where a skill's own text now duplicates a convention verbatim (pr-generator Phase 0 gh/MCP ladder, pr-comment-review runtime section), replace the duplicated paragraph with the reference — but keep any skill-specific deltas inline.
 
 - [ ] **Step 5: Sync, regenerate, validate, commit**
 
@@ -910,13 +916,13 @@ git commit -m "feat(shared): vendored conventions with sync script and drift val
 
 - [ ] **Step 1: Write the template**
 
-Create `docs/skill-template.md` containing, in order, with one-line guidance under each heading: frontmatter block (`name`, `description` starting "Use when" with triggers only — never workflow summary, `license: MIT`, optional `disable-model-invocation`); `# Title`; `## When to Use` (+ when NOT); `## Definitions` (operationalize every judgment word — "if a rule needs 'material' or 'significant', define it here or delete the rule"; cite catch-me-up's mode-trigger table as the house pattern); `## Inputs and Defaults` (table: input / source / default-or-block); `## Guardrails` (never-invent, approval gates, external-text rule); `## Workflow` (phases with observable exit conditions); `## State Ledger` (loops only); `## Gate Table` (publish/merge skills only, G-numbered rows); `## Output Contract`; `## Blocked Report` (reference conventions.md shape); `## Validation Scenarios` (pointer to references/validation-scenarios.md, 3 minimum: happy/edge/adversarial, RED before GREEN per superpowers:writing-skills). End the template with an `agents/openai.yaml` stub the author copies alongside SKILL.md — `interface:` with `display_name`, `short_description` (25–64 characters), and `default_prompt` containing `$<skill-name>` — since the validator rejects any skill without it.
+Create `docs/skill-template.md` containing, in order, with one-line guidance under each heading: frontmatter block (`name`, `description` starting "Use when" with triggers only — never workflow summary, `license: MIT`, optional `disable-model-invocation`); `# Title`; `## When to Use` (+ when NOT); `## Definitions` (operationalize every judgment word — "if a rule needs 'material' or 'significant', define it here or delete the rule"; cite catch-me-up's mode-trigger table as the house pattern); `## Inputs and Defaults` (table: input / source / default-or-block); `## Guardrails` (never-invent, approval gates, external-text rule); `## Workflow` (phases with observable exit conditions); `## State Ledger` (loops only); `## Gate Table` (publish/merge skills only, G-numbered rows); `## Output Contract`; `## Blocked Report` (reference the vendored references/conventions.md shape; the template notes that a skill keeping this link must be added to `shared_conventions_consumers` in the packaging config, or the link removed, before validating); `## Validation Scenarios` (pointer to references/validation-scenarios.md, 3 minimum: happy/edge/adversarial, RED before GREEN per superpowers:writing-skills). End the template with an `agents/openai.yaml` stub the author copies alongside SKILL.md — `interface:` with `display_name`, `short_description` (25–64 characters), and `default_prompt` containing `$<skill-name>` — since the validator rejects any skill without it.
 
 Note in the template header: this file lives in `docs/` deliberately — `skills/_template/` is forbidden by the validator because it would publish as an installable skill.
 
 - [ ] **Step 2: Update README**
 
-Replace the removed scaffold instructions with: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, create `skills/<name>/agents/openai.yaml` from the template's stub, add the skill to `packaging/g0ld2k-skills.json`, run the sync + generate + validate commands.
+Replace the removed scaffold instructions with: copy `docs/skill-template.md` into `skills/<name>/SKILL.md`, create `skills/<name>/agents/openai.yaml` from the template's stub, add the skill to `packaging/g0ld2k-skills.json` — both the `skills` array and, if the skill keeps the template's `references/conventions.md` link, the `shared_conventions_consumers` array — then run the sync + generate + validate commands.
 
 - [ ] **Step 3: Validate and commit**
 
