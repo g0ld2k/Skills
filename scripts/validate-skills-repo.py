@@ -376,6 +376,16 @@ def validate_shared_conventions(errors: list[str]) -> None:
     source = ROOT / "_shared" / "conventions.md"
     config = load_json(PACKAGE_CONFIG, [])
     consumers = (config or {}).get("shared_conventions_consumers", [])
+    configured = set(consumers)
+    # Config drift must fail loudly: a vendored copy in a skill that is not
+    # listed would be neither synced nor drift-checked. This scan runs even
+    # when the config key is missing entirely.
+    for skill_dir in skill_dirs():
+        vendored = skill_dir / "references" / "conventions.md"
+        if vendored.exists() and skill_dir.name not in configured:
+            errors.append(
+                f"skills/{skill_dir.name}/references/conventions.md: exists but the skill is not listed in shared_conventions_consumers"
+            )
     if not consumers:
         return
     if not source.exists():
