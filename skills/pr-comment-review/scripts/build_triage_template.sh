@@ -55,14 +55,25 @@ content="$({
   echo
   jq -r '
     if length == 0 then
-      "No unresolved top-level review comments found."
+      "No unresolved review threads found."
     else
       to_entries[]
       | (.value.line // "n/a") as $line
       | "## Comment #\(.value.comment_id) [\(.value.path):\($line)]\n"
         + "- URL: \(.value.url)\n"
         + "- Thread ID: \(.value.thread_id)\n"
-        + "- Validity: <valid|partial|invalid>\n"
+        + (if (.value.replies_truncated // false) then
+            "- WARNING: replies truncated (fetch failed); re-fetch this thread before triage\n"
+          else "" end)
+        + "- Body: \(.value.body | gsub("\n"; " "))\n"
+        + (if ((.value.replies // []) | length) > 0 then
+            "- Replies:\n"
+            + ([ .value.replies[]
+                 | "  - \(.author): \(.body | gsub("\n"; " "))" ]
+               | join("\n"))
+            + "\n"
+          else "" end)
+        + "- Validity: <valid|partial|invalid|unclear|conflicting>\n"
         + "- Priority: <high|medium|low>\n"
         + "- Decision: <fix|reply|discuss>\n"
         + "- Planned action: <fill>\n"

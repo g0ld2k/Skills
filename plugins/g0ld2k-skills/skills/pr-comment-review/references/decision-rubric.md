@@ -1,12 +1,14 @@
 # Decision Rubric
 
-Use this rubric for each unresolved top-level review comment.
+Use this rubric for each unresolved review thread, judged on its final state (root comment plus all replies).
 
 ## Validity
 
 - `valid`: Comment is correct and should be addressed.
 - `partial`: Concern is directionally right but details/solution need adjustment.
 - `invalid`: Concern is not applicable, stale, already addressed, or technically incorrect.
+- `unclear`: intent cannot be determined from the thread; decision must be `discuss`.
+- `conflicting`: contradicts another active comment or review; decision must be `discuss`.
 
 ## Priority
 
@@ -21,6 +23,8 @@ Use this rubric for each unresolved top-level review comment.
 - `discuss`: requires product/architectural decision or conflicting feedback resolution.
 
 ## Required Triage Fields
+
+Triage the thread's final state: read replies, not just the root comment.
 
 For consistency, output:
 - `comment_id`
