@@ -36,7 +36,7 @@ commit, PR, review/CI, and merge.
 - **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes.
 - **REQUIRED FOR COMMITS:** Use `commit-message`.
 - **REQUIRED FOR PRS:** Use `pr-generator`.
-- **REQUIRED AFTER PR OPEN:** Use `codex-pr-approval-loop` when the user asks to
+- **REQUIRED AFTER PR OPEN:** Use `pr-closeout-loop` when the user asks to
   monitor/address/merge or grants merge authority for the run.
 
 ## Workflow
@@ -113,7 +113,7 @@ For mechanical-only work, define a measurable guard first: test inventory,
 
 1. Use `pr-generator` for PR title/body. Include exact tests actually run.
 2. Push and create/update the PR when approval covers the publish step.
-3. Run `codex-pr-approval-loop` for review comments, CI failures, fresh Codex
+3. Run `pr-closeout-loop` for review comments, CI failures, fresh Codex
    approval, and merge readiness.
 4. Treat approval as fresh only for the current head SHA and current PR body.
 5. Merge only when required checks are green, actionable feedback is handled,

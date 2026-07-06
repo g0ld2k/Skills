@@ -7,6 +7,7 @@ release notes, and work orchestration.
 
 | Skill | Purpose |
 | --- | --- |
+| `catch-me-up` | Build a mental model of unfamiliar code, architecture, or history via evidence-backed exploration. |
 | `commit-message` | Draft evidence-based Conventional Commit messages from staged changes. |
 | `integration-branch-orchestrator` | Plan autonomous PR work through integration branches and human promotion gates. |
 | `pr-closeout-loop` | Close out existing PRs through review feedback, CI, approval, and merge readiness. |

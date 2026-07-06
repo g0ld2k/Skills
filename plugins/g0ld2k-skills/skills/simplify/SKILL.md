@@ -32,6 +32,20 @@ If both are empty, stop and report there is no diff to simplify.
 
 Use the Agent tool to launch all three agents concurrently in a single message. Pass each agent the full diff so it has complete context.
 
+Dispatch each agent with this prompt shape:
+
+    You are the [reuse|quality|efficiency] reviewer. Scope findings to the
+    changes in the diff below, but you may search the repository read-only to
+    locate existing utilities or duplicates and cite their file paths. Do not
+    edit files. Return ONLY a JSON array of findings, each with keys:
+    category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
+    confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
+    sentence), proposed_fix (one sentence). Do not include an id; the parent
+    assigns ids sequentially during aggregation. Severity and confidence
+    definitions: [paste the Severity definitions and Confidence definitions
+    blocks verbatim]. Review criteria: [paste that agent's numbered list].
+    Diff: [full diff]
+
 1. Reuse pass
 2. Quality pass
 3. Efficiency pass
@@ -82,6 +96,25 @@ Normalize every finding before presenting:
 
 Deduplicate overlapping findings and keep the clearest one.
 
+Severity definitions:
+
+- `high`: correctness-bug risk, security exposure, unbounded resource growth,
+  or a measurable performance regression on a hot path introduced by this diff
+- `medium`: duplication of an existing utility, leaky abstraction, or redundant
+  work that compounds as the code grows — this is `medium` even when
+  confidence is `high` (an exact, confidently-identified duplicate is still a
+  duplication finding, not a correctness/security/growth finding, unless the
+  duplicated code itself independently meets the `high` bar above)
+- `low`: naming, style, or an optional refactor with no behavioral stakes
+
+Confidence definitions:
+
+- `high`: you located the existing utility, duplicate, or hot path and can name
+  its file path
+- `medium`: the pattern strongly suggests an issue but you did not verify the
+  alternative exists
+- `low`: heuristic match only
+
 ## Phase 3: Present Findings and Get User Selection
 
 Wait for all three agents to complete. Aggregate their findings for presentation. If a finding is a false positive or not worth addressing, note it and move on — do not argue with the finding, just skip it.
@@ -97,7 +130,7 @@ Do not edit code in this phase.
    - `all` -> select all findings
    - `none` -> select none
    - `1,2,5` -> select valid ids only
-4. If invalid ids are included, ignore invalid ids and proceed with valid ids. If no valid ids remain, ask once for clarification.
+4. If invalid ids are included, ignore them, proceed with the valid ids, and name the ignored ids in the response. If no valid ids remain, ask once for clarification.
 
 ## Phase 4: Apply Selected Fixes
 
