@@ -30,7 +30,7 @@ EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
 NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
 # Matches: Use `name`, use `name`, Invoke `name`, delegating to `name`, Run `name`
 SKILL_REF_CONTEXT_RE = re.compile(
-    r"(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
+    r"(?<![A-Za-z0-9_])(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
 )
 # Companion-list bullets like: - `pr-comment-review` for triaging...
 COMPANION_REF_RE = re.compile(
@@ -65,7 +65,11 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
 
     data: dict[str, object] = {}
     current_key: str | None = None
-    for line in lines[1:end]:
+    frontmatter_lines = lines[1:end]
+    index = 0
+    while index < len(frontmatter_lines):
+        line = frontmatter_lines[index]
+        index += 1
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if line.startswith((" ", "\t")):
@@ -84,6 +88,18 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
             data[current_key] = True
         elif parsed_value == "false":
             data[current_key] = False
+        elif parsed_value in {">", "|"}:
+            block_lines: list[str] = []
+            while index < len(frontmatter_lines):
+                block_line = frontmatter_lines[index]
+                if block_line.strip() and not block_line.startswith((" ", "\t")):
+                    break
+                if block_line.strip():
+                    block_lines.append(block_line.strip())
+                index += 1
+            data[current_key] = (
+                " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
+            )
         elif parsed_value:
             data[current_key] = parsed_value
         else:
