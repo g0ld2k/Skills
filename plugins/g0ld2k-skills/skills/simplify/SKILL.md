@@ -88,6 +88,12 @@ Wait for all three agents to complete. Aggregate their findings for presentation
 
 Do not edit code in this phase.
 
+If the caller passed a recorded unattended selection policy, use it as the
+selection instead of asking again. The default unattended policy is: select
+valid, in-scope medium/high findings; leave low findings unselected unless the
+policy explicitly includes them. Report the policy and selected finding ids
+before applying fixes.
+
 1. Present findings as a numbered list with this display format:
    - `[id] [severity] [category] path:line - summary`
    - `Fix: proposed_fix`
@@ -117,3 +123,4 @@ Final response must include:
 2. Skipped selected findings (with reason)
 3. Unselected findings
 4. Validation run (or why validation was not run)
+5. Whether selection came from user choice or a recorded unattended policy
