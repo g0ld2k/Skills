@@ -159,14 +159,17 @@ Final summary must include:
 ## Quick Commands
 
 ```bash
+# Write artifacts to a temp dir (per the Temp Files convention)
+out_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-review.XXXXXX")"
+
 # Fetch unresolved review comments
-bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number>
+bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number> --output "$out_dir/unresolved-comments.json"
 
 # Build triage markdown template
-bash scripts/build_triage_template.sh --input unresolved-comments.json
+bash scripts/build_triage_template.sh --input "$out_dir/unresolved-comments.json"
 
 # Post replies from JSON (safe preview first)
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file replies.json --dry-run
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --dry-run
 ```
 
 ## References
