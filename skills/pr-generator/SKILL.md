@@ -161,7 +161,10 @@ Always show:
 
 Ask for explicit approval before publish/update unless the caller provided a
 recorded approval scope that explicitly covers PR creation or update for this
-branch/base. In preauthorized mode, state the scope being used and continue to
+branch/base. Creating a new PR also runs `git push -u origin <branch>`, so the
+preauthorized path additionally requires the scope to cover pushing this
+branch; if it covers PR creation but not pushing, stop and ask before the
+push. In preauthorized mode, state the scope being used and continue to
 publish without another prompt.
 
 ### Phase 7: Create or Update PR (Post-Approval Or Preauthorized Only)

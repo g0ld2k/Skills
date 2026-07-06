@@ -123,9 +123,11 @@ Here's a suggested commit message:
 Ready to commit when you confirm.
 ```
 
-If the caller provided a recorded approval scope that explicitly covers
-committing staged changes, state that the commit is preauthorized and continue
-to Phase 6 without another prompt.
+If the caller requested `message+commit` mode AND provided a recorded approval
+scope that explicitly covers committing staged changes, state that the commit
+is preauthorized and continue to Phase 6 without another prompt. In the default
+`message-only` mode, never commit — a recorded scope alone does not switch
+modes; the caller must ask for the commit.
 
 ### 6) Commit only with explicit approval
 

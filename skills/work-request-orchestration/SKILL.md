@@ -35,7 +35,7 @@ commit, PR, review/CI, and merge.
   the task.
 - **REQUIRED BEFORE COMMIT:** Use `simplify` for non-trivial code changes
   (non-trivial per `pr-closeout-loop`'s definition: logic, behavior, tests, CI,
-  package, workflow, or public-contract changes).
+  package, workflow, public-contract, or meaningful docs/process changes).
   Pass: the recorded unattended selection policy when blanket approval is
   active (default: auto-address valid in-scope medium/high findings without
   re-prompting). Expect back: numbered findings applied per that policy, or
