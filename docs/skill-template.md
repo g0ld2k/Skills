@@ -5,8 +5,12 @@ license: MIT
 # disable-model-invocation: true   # only after updating EXPLICIT_ONLY_SKILLS
 ---
 
-<!-- DOCS-ONLY: delete this intro block (through the "Fill in every section"
-     line below) after copying this file into skills/<name>/SKILL.md. -->
+<!-- DOCS-ONLY: this file is a blueprint, not content to keep. The quoted
+     "## `## Section`" headings below prescribe the real sections your
+     SKILL.md gets; their guidance prose is replaced by your content. Delete
+     this intro block, the "## Frontmatter" rules section, and the trailing
+     agents/openai.yaml stub section — none of them appear in a finished
+     skill. -->
 
 # Skill Authoring Template
 
