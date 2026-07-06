@@ -30,6 +30,7 @@ gh api graphql --paginate \
                 author{ login }
                 replyTo{ id }
               }
+              pageInfo{ hasNextPage endCursor }
             }
           }
           pageInfo{ hasNextPage endCursor }
@@ -40,7 +41,9 @@ gh api graphql --paginate \
   -F owner=<owner> -F repo=<repo> -F pr=<pr_number>
 ```
 
-Filter to unresolved threads and top-level review comments (`replyTo == null`).
+Filter to unresolved threads; emit each thread's root comment plus its
+replies, paginating a thread's comments (follow-up `node(id:)` queries) when
+`hasNextPage` is true.
 
 ## 2) Optional Context: PR Issue Comments (REST)
 

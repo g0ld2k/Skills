@@ -62,7 +62,15 @@ content="$({
       | "## Comment #\(.value.comment_id) [\(.value.path):\($line)]\n"
         + "- URL: \(.value.url)\n"
         + "- Thread ID: \(.value.thread_id)\n"
-        + "- Validity: <valid|partial|invalid>\n"
+        + "- Body: \(.value.body | gsub("\n"; " ") | .[0:300])\n"
+        + (if ((.value.replies // []) | length) > 0 then
+            "- Replies:\n"
+            + ([ .value.replies[]
+                 | "  - \(.author): \(.body | gsub("\n"; " ") | .[0:200])" ]
+               | join("\n"))
+            + "\n"
+          else "" end)
+        + "- Validity: <valid|partial|invalid|unclear|conflicting>\n"
         + "- Priority: <high|medium|low>\n"
         + "- Decision: <fix|reply|discuss>\n"
         + "- Planned action: <fill>\n"

@@ -86,14 +86,20 @@ gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
 
 ### Phase 2: Triage and Recommendation
 
-For each unresolved review comment, produce:
+For each unresolved review thread, produce:
 - `comment_id`
 - `file:line`
-- `validity` (`valid`, `partial`, `invalid`)
+- `validity` (`valid`, `partial`, `invalid`, `unclear`, `conflicting`)
 - `priority` (`high`, `medium`, `low`)
 - `decision` (`fix`, `reply`, `discuss`)
 - `planned_action`
 - `draft_reply`
+
+Judge each thread on its final state (root comment plus all replies), not
+just the root comment. If a thread's `replies_truncated` is `true`, its
+replies could not be fully fetched: do not triage that thread yet — retry
+the fetch (or fall back to a manual/MCP query) until `replies_truncated` is
+`false` before deciding validity or priority for it.
 
 Use rubric: [decision-rubric.md](references/decision-rubric.md)
 Use reply patterns: [reply-templates.md](references/reply-templates.md)
