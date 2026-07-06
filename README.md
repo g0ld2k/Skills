@@ -26,6 +26,22 @@ release notes, and work orchestration.
 - `plugins/g0ld2k-skills/` is generated packaging for Claude, Codex, and GitHub Copilot.
 - `.claude-plugin/`, `.agents/plugins/`, and `.github/plugin/` expose marketplace metadata.
 
+## Add a New Skill
+
+1. Copy `docs/skill-template.md` into `skills/<name>/SKILL.md` and fill in
+   every section.
+2. Create `skills/<name>/agents/openai.yaml` from the template's stub.
+3. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
+   the `shared_conventions_consumers` array too if the skill keeps the
+   template's `references/conventions.md` link.
+4. Run the sync + generate + validate commands:
+
+```bash
+python3 scripts/sync-shared-conventions.py
+python3 scripts/generate-plugin-packages.py
+python3 scripts/validate-skills-repo.py
+```
+
 ## Direct Agent Skills Install
 
 Install a canonical skill directly from the repository with `gh skill`:
