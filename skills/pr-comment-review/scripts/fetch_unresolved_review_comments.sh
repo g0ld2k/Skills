@@ -85,7 +85,9 @@ query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
 # PRs. Paginate the outer reviewThreads connection manually instead,
 # accumulating thread nodes across pages until hasNextPage is false.
 threads_file="$(mktemp "${TMPDIR:-/tmp}/fetch-threads.XXXXXX")"
-trap 'rm -f "$threads_file"' EXIT
+page_file="$(mktemp "${TMPDIR:-/tmp}/fetch-page.XXXXXX")"
+merge_file="$(mktemp "${TMPDIR:-/tmp}/fetch-merge.XXXXXX")"
+trap 'rm -f "$threads_file" "$page_file" "$merge_file"' EXIT
 printf '%s' "[]" > "$threads_file"
 
 outer_cursor="null"
@@ -99,9 +101,11 @@ while [[ "$outer_has_next" == "true" ]]; do
     -F pr="$pr_number" \
     -F endCursor="$outer_cursor")"
 
-  page_nodes="$(jq -c '.data.repository.pullRequest.reviewThreads.nodes // []' <<<"$page_result")"
-  merged="$(jq -c --argjson b "$page_nodes" '. + $b' "$threads_file")"
-  printf '%s' "$merged" > "$threads_file"
+  # Merge via files, never argv: a single 100-thread page with large comment
+  # bodies can exceed the OS argument-size limit as an --argjson value.
+  jq -c '.data.repository.pullRequest.reviewThreads.nodes // []' <<<"$page_result" > "$page_file"
+  jq -c -s '.[0] + .[1]' "$threads_file" "$page_file" > "$merge_file"
+  mv "$merge_file" "$threads_file"
   outer_has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' <<<"$page_result")"
   outer_cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // "null"' <<<"$page_result")"
 done
@@ -137,7 +141,10 @@ for ((i = 0; i < thread_count; i++)); do
   cursor="$(jq -r ".[$i].comments.pageInfo.endCursor" <<<"$threads_json")"
 
   fetch_failed=false
-  extra_comments="[]"
+  # Accumulate reply pages via files for the same argv-limit reason as the
+  # outer merge: --argjson values ride on the command line.
+  extra_file="$(mktemp "${TMPDIR:-/tmp}/fetch-extra.XXXXXX")"
+  printf '%s' "[]" > "$extra_file"
 
   while [[ "$has_next" == "true" ]]; do
     if ! follow_up_result="$(gh api graphql \
@@ -148,16 +155,18 @@ for ((i = 0; i < thread_count; i++)); do
       break
     fi
 
-    page_nodes="$(jq -c '.data.node.comments.nodes // []' <<<"$follow_up_result")"
-    extra_comments="$(jq -c --argjson a "$extra_comments" --argjson b "$page_nodes" -n '$a + $b')"
+    jq -c '.data.node.comments.nodes // []' <<<"$follow_up_result" > "$page_file"
+    jq -c -s '.[0] + .[1]' "$extra_file" "$page_file" > "$merge_file"
+    mv "$merge_file" "$extra_file"
     has_next="$(jq -r '.data.node.comments.pageInfo.hasNextPage // false' <<<"$follow_up_result")"
     cursor="$(jq -r '.data.node.comments.pageInfo.endCursor // empty' <<<"$follow_up_result")"
   done
 
-  threads_json="$(jq --argjson idx "$i" --argjson extra "$extra_comments" --argjson failed "$fetch_failed" '
-    .[$idx].comments.nodes += $extra
+  threads_json="$(printf '%s' "$threads_json" | jq --argjson idx "$i" --slurpfile extra "$extra_file" --argjson failed "$fetch_failed" '
+    .[$idx].comments.nodes += $extra[0]
     | .[$idx].fetch_failed = $failed
-  ' <<<"$threads_json")"
+  ')"
+  rm -f "$extra_file"
 done
 
 # threads_json can exceed OS arg-size limits on PRs with many threads/replies,
