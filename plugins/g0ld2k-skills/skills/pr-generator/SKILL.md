@@ -64,7 +64,9 @@ If `gh` is unavailable but GitHub MCP is available:
 
 ### Phase 1: Detect Base Branch Deterministically
 
-Detect base branch once and reuse it for all later steps.
+If the caller passed a base branch for this run (stacked PRs or an
+integration branch), use it verbatim, state that it was caller-provided, and
+skip detection. Otherwise detect it once and reuse it for all later steps.
 
 ```bash
 BASE_BRANCH="$(bash scripts/detect_base_branch.sh)"
