@@ -80,27 +80,39 @@ query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
 }'
 
 pages_file="$(mktemp)"
-trap 'rm -f "$pages_file"' EXIT
+threads_file="$(mktemp)"
+next_file="$(mktemp)"
+extra_file="$(mktemp)"
+page_nodes_file="$(mktemp)"
+trap 'rm -f "$pages_file" "$threads_file" "$next_file" "$extra_file" "$page_nodes_file"' EXIT
 
-gh api graphql --paginate \
-  -f query="$query" \
-  -F owner="$owner" \
-  -F repo="$repo" \
-  -F pr="$pr_number" > "$pages_file"
+has_next=true
+end_cursor=""
+while [[ "$has_next" == "true" ]]; do
+  query_args=(-f query="$query" -F owner="$owner" -F repo="$repo" -F pr="$pr_number")
+  if [[ -n "$end_cursor" ]]; then
+    query_args+=(-F endCursor="$end_cursor")
+  fi
+
+  page_result="$(gh api graphql "${query_args[@]}")"
+  printf '%s\n' "$page_result" >> "$pages_file"
+  has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' <<<"$page_result")"
+  end_cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // empty' <<<"$page_result")"
+done
 
 # Merge every page's reviewThreads.nodes into a single flat array so the
 # per-thread pagination loop below (and the final jq transform) can treat the
 # whole PR as one list of threads regardless of how many top-level pages
-# `--paginate` fetched.
-threads_json="$(jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[]?]' "$pages_file")"
+# were fetched.
+jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[]?]' "$pages_file" > "$threads_file"
 
-# `gh api graphql --paginate` only follows the top-level reviewThreads cursor;
-# it does not paginate each thread's nested comments connection. Any thread
-# whose first 100 comments aren't the whole thread needs its own follow-up
-# node(id:) queries here, merging fetched comment nodes into that thread
-# before the jq transform runs. fetch_failed is set only when a follow-up
-# query for that thread errors — never derived from the original page's
-# hasNextPage, which stays true even after a successful merge.
+# The top-level reviewThreads query does not paginate each thread's nested
+# comments connection. Any thread whose first 100 comments aren't the whole
+# thread needs its own follow-up node(id:) queries here, merging fetched
+# comment nodes into that thread before the jq transform runs. fetch_failed is
+# set only when a follow-up query for that thread errors — never derived from
+# the original page's hasNextPage, which stays true even after a successful
+# merge.
 follow_up_query='query($id:ID!,$endCursor:String){
   node(id:$id){
     ... on PullRequestReviewThread{
@@ -114,14 +126,14 @@ follow_up_query='query($id:ID!,$endCursor:String){
   }
 }'
 
-thread_count="$(jq 'length' <<<"$threads_json")"
+thread_count="$(jq 'length' "$threads_file")"
 for ((i = 0; i < thread_count; i++)); do
-  thread_id="$(jq -r ".[$i].id" <<<"$threads_json")"
-  has_next="$(jq -r ".[$i].comments.pageInfo.hasNextPage" <<<"$threads_json")"
-  cursor="$(jq -r ".[$i].comments.pageInfo.endCursor" <<<"$threads_json")"
+  thread_id="$(jq -r ".[$i].id" "$threads_file")"
+  has_next="$(jq -r ".[$i].comments.pageInfo.hasNextPage" "$threads_file")"
+  cursor="$(jq -r ".[$i].comments.pageInfo.endCursor" "$threads_file")"
 
   fetch_failed=false
-  extra_comments="[]"
+  printf '[]\n' > "$extra_file"
 
   while [[ "$has_next" == "true" ]]; do
     if ! follow_up_result="$(gh api graphql \
@@ -132,21 +144,23 @@ for ((i = 0; i < thread_count; i++)); do
       break
     fi
 
-    page_nodes="$(jq -c '.data.node.comments.nodes // []' <<<"$follow_up_result")"
-    extra_comments="$(jq -c --argjson a "$extra_comments" --argjson b "$page_nodes" -n '$a + $b')"
+    jq '.data.node.comments.nodes // []' <<<"$follow_up_result" > "$page_nodes_file"
+    jq -s '.[0] + .[1]' "$extra_file" "$page_nodes_file" > "$next_file"
+    mv "$next_file" "$extra_file"
     has_next="$(jq -r '.data.node.comments.pageInfo.hasNextPage // false' <<<"$follow_up_result")"
     cursor="$(jq -r '.data.node.comments.pageInfo.endCursor // empty' <<<"$follow_up_result")"
   done
 
-  threads_json="$(jq --argjson idx "$i" --argjson extra "$extra_comments" --argjson failed "$fetch_failed" '
-    .[$idx].comments.nodes += $extra
+  jq --argjson idx "$i" --slurpfile extra "$extra_file" --argjson failed "$fetch_failed" '
+    .[$idx].comments.nodes += $extra[0]
     | .[$idx].fetch_failed = $failed
-  ' <<<"$threads_json")"
+  ' "$threads_file" > "$next_file"
+  mv "$next_file" "$threads_file"
 done
 
-result="$(jq -n --argjson threads "$threads_json" '
+result="$(jq '
   def id_from_url: (.url // "" | split("/") | last | tonumber?);
-  [$threads[] as $thread
+  [.[] as $thread
    | select($thread.isResolved == false)
    | ($thread.comments.nodes // []) as $comments
    | ($comments[] | select(.replyTo == null)) as $root
@@ -172,7 +186,7 @@ result="$(jq -n --argjson threads "$threads_json" '
    | select(.comment_id != null)
   ]
   | sort_by(.path, .line, .comment_id)
-')"
+' "$threads_file")"
 
 if [[ -n "$output_file" ]]; then
   printf '%s\n' "$result" > "$output_file"
