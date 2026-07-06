@@ -39,17 +39,6 @@ Establish:
 ## Orchestration Policy
 
 Default strategy:
-- Fetch and record the current remote default/protected branch SHA before
-  creating or verifying an integration branch.
-- Use or create `integration/<feature-name>` from the identified
-  default/protected branch as the autonomous landing branch.
-- For an existing integration branch, verify ancestry from the identified
-  default/protected branch before retargeting PRs or delegating closeout work.
-- For an existing integration branch, verify current branch commits and diff are
-  in scope for this run. If they are not, recreate it from the protected base or
-  block for human topology approval before delegation.
-- Ensure the integration branch exists on the remote before retargeting existing
-  PRs or creating new PRs against it.
 - Require each closeout item to have a PR targeting the integration branch
   before delegating to `pr-closeout-loop`.
 - Preserve branch history with normal merge commits unless the user or repo
@@ -65,48 +54,46 @@ confirm the authorization scope and merge gates first.
 
 ## Workflow
 
-1. Define the branch topology.
-   - Identify source branches or PRs.
-   - Fetch the remote default/protected branch and record the current ref/SHA.
-   - Create `integration/<feature-name>` from the default/protected branch ref,
-     or verify an existing integration branch has that ancestry.
-   - For an existing integration branch, fetch its current remote ref before
-     verifying ancestry or scope; do not evaluate ancestry or in-scope commits
-     against a stale local copy.
-   - For an existing integration branch, verify its current commits and diff are
-     in scope for this run, or recreate it from the protected branch before
-     delegation only when destructive integration-branch recreation is
-     explicitly authorized and no open PR targets the existing integration
-     branch (PRs target the branch by name, not a specific tip SHA, so any
-     open PR based on it is invalidated by a reset); otherwise block for
-     human topology approval.
-   - Push the integration branch or verify the remote branch exists before
-     retargeting or creating integration-targeted PRs.
-   - For each existing PR, verify its base branch is `integration/<feature-name>`
-     before closeout delegation.
-   - If an existing PR targets the default branch, retarget it to the integration
-     branch or create a new integration-targeted PR before delegating only when
-     PR topology edits are authorized.
-   - Prefer retargeting an existing PR over cloning it. If a new
-     integration-targeted PR is created from an existing PR, import and triage
-     the original PR's unresolved review feedback, review-level feedback, and PR
-     conversation comments before delegation.
-   - If the original PR stays open after cloning, close or supersede it only
-     when that action is explicitly authorized; otherwise keep polling it for
-     new reviews, conversation comments, and unresolved threads until the
-     integration-targeted PR merges. A one-time feedback import does not
-     cover activity added to the original PR afterward.
-   - If a source branch has no PR, verify the source branch exists on a
-     recorded remote, pushing it first when authorized, then create an
-     integration-targeted PR only when PR topology edits are authorized, or
-     block until the user explicitly defines separate branch-only gates.
+1. Define the branch topology. Work through T1–T7 in order; each has an
+   explicit on-failure action. "Block" always means: stop delegation for the
+   affected item and emit a Blocked Report (shape defined in
+   `pr-closeout-loop`).
+
+   - T1. List source branches/PRs in scope.
+   - T2. Fetch the remote default/protected branch; record its ref and SHA.
+   - T3. Resolve the integration branch:
+     - Missing → create `integration/<feature-name>` from the recorded SHA and
+       push it, ONLY IF branch creation and pushing are within the authorized
+       scope for this run; otherwise Block for topology approval.
+     - Exists → fetch its current remote ref (never evaluate a stale local
+       copy), then pass gates E1–E3:
+
+       | Gate | Check | On failure |
+       | --- | --- | --- |
+       | E1 Ancestry | branch descends from the recorded protected ref | Block for human topology approval |
+       | E2 Scope | every commit/diff on the branch belongs to this run | Recreate from the protected SHA ONLY IF destructive recreation is explicitly authorized AND no open PR targets the branch (a reset invalidates PRs based on it); otherwise Block |
+       | E3 Remote | branch exists on the remote | Push it if pushing is authorized; otherwise Block |
+
+   - T4. For each existing source PR: if its base is not the integration
+     branch, retarget it if PR-topology edits are authorized; otherwise Block
+     that item for topology approval. Prefer retargeting over cloning. If a clone is created anyway, import and triage
+     the original PR's unresolved review threads, review-level feedback, and PR
+     conversation comments first, and either close/supersede
+     the original (only if authorized) or keep polling it for new activity
+     until the clone merges.
+   - T5. For each source branch without a PR: verify the branch exists on a
+     recorded remote (push first if authorized), then create an
+     integration-targeted PR (requires PR-topology authorization); otherwise
+     Block until the user defines branch-only gates.
+   - T6. Verify every delegatable item now has a PR whose base is
+     `integration/<feature-name>`.
+   - T7. Record in the run notes: integration branch SHA, items in scope,
+     authorizations in effect.
 
 2. Define gates.
-   - Approval must be fresh for each PR's current head SHA and PR body.
-   - Approval must also cover each PR's current target/base branch.
-   - Required remote checks must be green for each current head before merge.
-   - Local tests must pass before each merge into integration.
-   - No unresolved actionable review feedback may remain.
+   - Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator
+     does not evaluate per-PR gates or merge PRs itself.
+   - Integration validation must pass after merges into the integration branch.
    - No unrelated local/user changes may be staged, committed, overwritten, or
      hidden.
 
@@ -124,10 +111,8 @@ confirm the authorization scope and merge gates first.
 
 4. Maintain the integration branch.
    - `pr-closeout-loop` owns each PR's merge into `integration/<feature-name>`
-     and must apply its full merge-gate set (fresh approval, green checks
-     against the current base, passing local suite, no actionable feedback,
-     final pre-merge refresh) immediately before merging. Do not perform an
-     independent merge here that bypasses those gates.
+     and must apply its full G1–G7 merge-gate set immediately before merging.
+     Do not perform an independent merge here that bypasses those gates.
    - Once a delegated merge has landed, use normal merge commits by default.
    - Fetch and check out the current remote `integration/<feature-name>` tip
      before running integration-level validation. Delegated merges made
