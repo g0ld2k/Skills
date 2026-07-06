@@ -65,7 +65,7 @@ content="$({
         + (if (.value.replies_truncated // false) then
             "- WARNING: replies truncated (fetch failed); re-fetch this thread before triage\n"
           else "" end)
-        + "- Body: \(.value.body | gsub("\n"; " ") | .[0:300])\n"
+        + "- Body: \(.value.body | gsub("\n"; " "))\n"
         + (if ((.value.replies // []) | length) > 0 then
             "- Replies:\n"
             + ([ .value.replies[]
