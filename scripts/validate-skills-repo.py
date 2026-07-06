@@ -28,9 +28,9 @@ EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
 # Single-word command tokens that legitimately follow Use/run/invoke in prose.
 # Extend only with commands/tools, never with skill names.
 NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
-# Matches: Use `name`, use `name`, invoke `name`, delegating to `name`, run `name`
+# Matches: Use `name`, use `name`, Invoke `name`, delegating to `name`, Run `name`
 SKILL_REF_CONTEXT_RE = re.compile(
-    r"(?:[Uu]se|invoke|delegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
+    r"(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
 )
 # Companion-list bullets like: - `pr-comment-review` for triaging...
 COMPANION_REF_RE = re.compile(
@@ -260,7 +260,7 @@ def validate_skills(errors: list[str]) -> list[str]:
 def validate_cross_skill_references(canonical_names: list[str], errors: list[str]) -> None:
     known = set(canonical_names)
     for markdown_file in sorted(SKILLS_DIR.glob("*/SKILL.md")) + sorted(
-        SKILLS_DIR.glob("*/references/*.md")
+        SKILLS_DIR.glob("*/references/**/*.md")
     ):
         text = markdown_file.read_text(encoding="utf-8")
         rel = markdown_file.relative_to(ROOT)
@@ -339,6 +339,10 @@ def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> N
         for rel in sorted(canonical_files & generated_files, key=str):
             if (canonical_dir / rel).read_bytes() != (generated_dir / rel).read_bytes():
                 errors.append(f"{generated_dir.relative_to(ROOT)}/{rel}: must match canonical file")
+            canonical_mode = (canonical_dir / rel).stat().st_mode & 0o111
+            generated_mode = (generated_dir / rel).stat().st_mode & 0o111
+            if canonical_mode != generated_mode:
+                errors.append(f"{generated_dir.relative_to(ROOT)}/{rel}: file mode must match canonical file")
 
     marketplace_paths = [
         ROOT / ".claude-plugin" / "marketplace.json",
