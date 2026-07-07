@@ -392,11 +392,43 @@ def validate_packaging(canonical_skill_names: list[str], errors: list[str]) -> N
             errors.append(f"{path.relative_to(ROOT)}: source path does not exist")
 
 
+def validate_shared_conventions(errors: list[str]) -> None:
+    source = ROOT / "_shared" / "conventions.md"
+    config = load_json(PACKAGE_CONFIG, [])
+    consumers = (config or {}).get("shared_conventions_consumers", [])
+    configured = set(consumers)
+    # Config drift must fail loudly: a vendored copy in a skill that is not
+    # listed would be neither synced nor drift-checked. This scan runs even
+    # when the config key is missing entirely.
+    for skill_dir in skill_dirs():
+        vendored = skill_dir / "references" / "conventions.md"
+        if vendored.exists() and skill_dir.name not in configured:
+            errors.append(
+                f"skills/{skill_dir.name}/references/conventions.md: exists but the skill is not listed in shared_conventions_consumers"
+            )
+    if not consumers:
+        return
+    if not source.exists():
+        errors.append(
+            "_shared/conventions.md: missing while shared_conventions_consumers is set in packaging config"
+        )
+        return
+    header = "<!-- GENERATED from _shared/conventions.md - edit there, then run scripts/sync-shared-conventions.py -->\n\n"
+    expected = header + source.read_text(encoding="utf-8")
+    for name in consumers:
+        target = SKILLS_DIR / name / "references" / "conventions.md"
+        if not target.exists():
+            errors.append(f"skills/{name}/references/conventions.md: missing; run scripts/sync-shared-conventions.py")
+        elif target.read_text(encoding="utf-8") != expected:
+            errors.append(f"skills/{name}/references/conventions.md: stale; run scripts/sync-shared-conventions.py")
+
+
 def main() -> int:
     errors: list[str] = []
     canonical_skill_names = validate_skills(errors)
     validate_cross_skill_references(canonical_skill_names, errors)
     validate_packaging(canonical_skill_names, errors)
+    validate_shared_conventions(errors)
 
     if errors:
         for error in errors:

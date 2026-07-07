@@ -201,3 +201,7 @@ docs(readme): clarify local setup and test commands
 Document required environment variables and provide copy-paste setup
 commands to reduce first-run friction.
 ```
+
+## References
+
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.

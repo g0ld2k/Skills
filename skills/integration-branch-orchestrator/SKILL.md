@@ -155,3 +155,7 @@ Report:
 - items completed, blocked, or waiting;
 - validation and CI state;
 - whether the integration branch is ready for human review or promotion.
+
+## References
+
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.

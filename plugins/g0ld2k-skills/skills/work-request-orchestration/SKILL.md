@@ -183,3 +183,7 @@ For execution output, include:
 
 When creating or editing this skill, read
 `references/validation-scenarios.md` and run the scenarios before deploying.
+
+## References
+
+- references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.
