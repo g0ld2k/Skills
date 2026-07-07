@@ -11,9 +11,11 @@ license: MIT
 Produce a high-quality commit message based on staged changes only.
 Support two modes:
 - `message-only` (default)
-- `message+commit` (only after explicit user approval)
+- `message+commit` (only after explicit user approval or a caller-provided
+  recorded approval scope that covers committing)
 
-Never commit automatically.
+Never commit automatically unless the caller provided a recorded approval scope
+that explicitly covers committing staged changes with the generated message.
 
 ## Workflow
 
@@ -121,9 +123,17 @@ Here's a suggested commit message:
 Ready to commit when you confirm.
 ```
 
+If the caller requested `message+commit` mode AND provided a recorded approval
+scope that explicitly covers committing staged changes, state that the commit
+is preauthorized and continue to Phase 6 without another prompt. In the default
+`message-only` mode, never commit — a recorded scope alone does not switch
+modes; the caller must ask for the commit.
+
 ### 6) Commit only with explicit approval
 
-Only if user explicitly approves (for example: "commit it", "looks good, commit", "please commit").
+Only if the user explicitly approves (for example: "commit it", "looks good,
+commit", "please commit") or the caller provided a recorded approval scope that
+explicitly covers committing staged changes with the generated message.
 
 Use safe file-based commit message flow (preferred across CLIs):
 ```bash
@@ -150,8 +160,8 @@ Return:
 2. 1-3 line rationale (type/scope choice)
 3. "Ready to commit when you confirm."
 
-### B) `message+commit` (approval required)
-After approval:
+### B) `message+commit` (approval or recorded scope required)
+After approval or recorded-scope verification:
 1. Commit using `git commit -F`
 2. Return commit SHA and subject from:
 ```bash
@@ -169,7 +179,7 @@ Do:
 Do not:
 - Use vague subjects like "update stuff"
 - Invent issue references, test counts, or milestones
-- Commit without explicit user confirmation
+- Commit without explicit user confirmation or a recorded approval scope
 - Describe unstaged/untracked changes as committed
 
 ## Portable examples
