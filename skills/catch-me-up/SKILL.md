@@ -1,14 +1,12 @@
 ---
 name: catch-me-up
-description: Use when the user asks to get oriented, catch up, understand unfamiliar code, trace a feature, explain architecture, understand conventions, patterns, or idioms, inspect tests, or understand code history.
+description: Use when the user asks to get oriented in unfamiliar code, explain architecture, identify conventions or idioms, trace how a feature works, explain unfamiliar syntax or APIs, assess test coverage, or understand code history.
 license: MIT
 ---
 
 # Catch Me Up
 
 Build the user's mental model of unfamiliar code, architecture, or technology. Prioritize comprehension over generation: explain before suggesting changes.
-
-Use this skill when the user asks to get oriented, catch up, understand a codebase area, trace a feature, explain unfamiliar syntax or APIs, understand test coverage, or map how unfamiliar code works.
 
 This is a read-only comprehension skill. During this skill, do not edit files, produce review findings, fix bugs, stage changes, create commits, or publish pull requests unless the user separately asks for that work after the catch-up brief.
 
@@ -64,7 +62,7 @@ git --no-pager log --oneline -- <path>
 git --no-pager blame -L <start>,<end> -- <path>
 ```
 
-Read `references/exploration-modes.md` when using this skill. Treat that file as the canonical source for mode details, evidence examples, and depth guardrails.
+Read the sections of `references/exploration-modes.md` matching the modes selected in Step 1, plus its Depth Guardrails table. Treat those sections as the canonical source for mode details, evidence examples, and depth limits.
 
 For narrower requests, emphasize the relevant modes and briefly note which modes were skipped or minimized.
 

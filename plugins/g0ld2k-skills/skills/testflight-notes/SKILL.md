@@ -79,7 +79,9 @@ Many ranges contain multiple commits for one feature/fix. Collapse these into on
 - Keep the clearest wording from the richest commit body
 - Avoid repeating the same behavior change across NEW/IMPROVED/FIX
 
-Use `references/format-guide.md` for final structure and style.
+Use `references/format-guide.md` for final structure and style, and calibrate
+entry wording against `references/examples-good-bad.md` (tester-visible effect,
+not implementation detail).
 
 ### 5) Assign labels and platform scope
 

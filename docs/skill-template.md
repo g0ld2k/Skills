@@ -57,6 +57,10 @@ NOT for (the adjacent skill or workflow that handles the rest). Example:
 "Use this for X. If the user is still choosing Y, use `pr-closeout-loop`
 first."
 
+Do not restate the frontmatter description's trigger list — the description
+already does that job. This section earns its place only through the NOT-for
+routing; if there is no adjacent skill to route to, omit the section.
+
 ## `## Definitions`
 
 Operationalize every judgment word the skill's rules depend on. If a rule

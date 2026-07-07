@@ -17,8 +17,6 @@ PLUGIN_DIR = ROOT / "plugins" / PLUGIN_NAME
 PACKAGE_CONFIG = ROOT / "packaging" / f"{PLUGIN_NAME}.json"
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
-    "pr-closeout-loop",
-    "simplify",
     "work-request-orchestration",
 }
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")

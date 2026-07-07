@@ -4,14 +4,7 @@ description: Use when drafting, creating, or updating a GitHub pull request from
 license: MIT
 ---
 
-# PR Generator (v2)
-
-## When to Use
-
-Use this skill when a user asks to:
-- generate a PR description
-- create a pull request
-- improve/update an existing PR body/title
+# PR Generator
 
 ## Runtime Compatibility
 
@@ -26,9 +19,8 @@ update the PR, stop and report the missing capability.
 
 ## Non-Negotiable Guardrails
 
-- Never create or update a PR without explicit user approval, or a
-  caller-provided recorded approval scope that explicitly covers PR
-  creation/update (and pushing, for new PRs) per Phase 6.
+- Never create or update a PR without passing the approval gate in Phase 6
+  (single source for approval and preauthorized-scope rules).
 - Never invent test execution, issue links, or validation results.
 - Never claim "tests passed" unless commands were actually run and succeeded.
 - Never use destructive git commands unless explicitly requested.
@@ -190,8 +182,6 @@ MD
 ```
 
 3) Publish action:
-
-Proceed only after explicit approval or recorded-scope verification.
 
 - If PR exists: update it
 ```bash

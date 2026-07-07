@@ -1,6 +1,6 @@
 ---
 name: work-request-orchestration
-description: Use when turning GitHub issues, milestones, epics, work requests, or external plans into an implementation, validation, PR, review, and merge workflow.
+description: Use when driving a work request (issues, milestone, epic, or external plan) through implementation, validation, PR, and merge.
 license: MIT
 disable-model-invocation: true
 ---
@@ -133,18 +133,15 @@ For mechanical-only work, define a measurable guard first: test inventory,
 
 1. Use `pr-generator` for PR title/body. Include exact tests actually run.
 2. Push and create/update the PR when approval covers the publish step.
-3. Hand off to `pr-closeout-loop` with the contract above; treat its Blocked
-   Report as this workflow's blocker, not as license to merge manually.
-4. Merge gating is owned by `pr-closeout-loop` (G1–G7); this workflow does not
-   evaluate its own reduced gate set or merge manually.
-5. After merge, fetch the default branch before starting the next unit.
+3. Hand off to `pr-closeout-loop` with the contract above. Merge gating is
+   owned by its G1–G7; treat its Blocked Report as this workflow's blocker,
+   not as license to evaluate gates or merge manually.
+4. After merge, fetch the default branch before starting the next unit.
 
 ## Guardrails
 
 - Do not invent issue details, test results, approvals, or remote state.
 - Do not bundle unrelated fixes because they are nearby.
-- Do not merge manually or re-evaluate merge gates; defer to
-  `pr-closeout-loop`'s G1–G7 and act only on its Blocked Report.
 - Do not silently perform repo-admin, release, credential, billing, or policy
   decisions; document or ask.
 - Do not let a reusable-skill request default to an install-only location when

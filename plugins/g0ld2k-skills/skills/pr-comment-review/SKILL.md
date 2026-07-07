@@ -6,13 +6,6 @@ license: MIT
 
 # PR Comment Review
 
-## When to Use
-
-Use this skill when a user asks to:
-- review PR comments
-- respond to reviewer feedback
-- address review threads on a pull request
-
 ## Runtime Compatibility
 
 This skill is designed for:
