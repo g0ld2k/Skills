@@ -2,18 +2,7 @@
 
 Use these modes as lenses, not as rigid boxes. Prefer concrete evidence over broad summaries. When evidence is missing, say what was checked and what remains unknown.
 
-## Mode Trigger Signals
-
-| Mode | Trigger signals |
-| --- | --- |
-| Architecture | "how is this structured", "where does this fit", "what owns this", "system design", "architecture" |
-| Convention | "what patterns", "what is the standard", "how do they usually", "idioms", "style" |
-| Feature Trace | "how does X work", "trace", "walk me through", "flow", "from click to result", "from request to response" |
-| Syntax/API | "what does this syntax mean", "what is this API", "why this construct", "explain this type", "framework magic" |
-| Testing | "how is this tested", "what covers this", "test strategy", "missing tests", "how would I validate" |
-| History | "why was this changed", "who changed this", "when did this appear", "rationale", "regression history" |
-
-For broad "catch me up" requests, choose the modes that appear useful after the first evidence pass. Do not force every mode if it would create noise.
+Mode trigger signals live in `SKILL.md` (Step 1); this file holds per-mode detail and depth limits.
 
 ## Depth Guardrails
 

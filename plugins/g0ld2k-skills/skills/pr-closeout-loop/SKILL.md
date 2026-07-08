@@ -2,7 +2,6 @@
 name: pr-closeout-loop
 description: Use when an existing GitHub pull request, or the current branch's identifiable PR, needs unattended closeout for review feedback, CI failures, stale approval, or merge readiness.
 license: MIT
-disable-model-invocation: true
 ---
 
 # PR Closeout Loop
@@ -27,8 +26,8 @@ Establish before starting:
 - Approval signal, including which reviewer identity or reaction counts. Default
   Codex signal: the reaction on the PR description/body changes from eyes to
   thumbs-up. This is not a commit-specific reaction.
-- Approval surface: current head SHA, current PR body, current target/base
-  branch, and current base ref, merge-base, or computed diff.
+- Approval surface, as defined in Approval Freshness (the single source for
+  surface and staleness rules).
 - User authorization scope for committing, pushing, replying, resolving threads,
   and merging.
 - Merge target and method. Default method is a normal merge commit unless the
@@ -161,10 +160,8 @@ re-read the ledger first; any recorded value that predates a surface change
      the reply explains why and the active policy allows resolution.
 
 8. Monitor review, CI, and approval.
-   - For the default Codex signal, poll PR description/body reactions for the
-     eyes-to-thumbs-up transition after the latest surface-changing event; do
-     not treat an older thumbs-up as fresh approval, and do not look for a
-     commit reaction. See Merge Gates (G1) for what makes approval fresh.
+   - Poll for the approval signal recorded in Inputs; G1 and Approval
+     Freshness define which events count as fresh.
    - See Merge Gates (G2) for required-check freshness after base-ref changes.
    - If new actionable feedback appears, restart at step 2.
    - If checks fail, inspect logs/artifacts through available GitHub, CI
@@ -173,11 +170,8 @@ re-read the ledger first; any recorded value that predates a surface change
      block and report the last observed state.
 
 9. Merge or block.
-   - Immediately before merging, fetch current PR state again and re-evaluate
-     feedback, approval freshness, required checks, base ref, mergeability, and
-     unrelated local/user changes.
-   - Merge only when every gate in Merge Gates passes; otherwise emit a Blocked
-     Report.
+   - Merge only when every gate in Merge Gates passes (including its required
+     pre-merge re-fetch); otherwise emit a Blocked Report.
    - If the user gave blanket approval to merge into the current target branch,
      merge there without asking again after gates pass.
    - If merge authorization is absent or ambiguous, ask before merging.

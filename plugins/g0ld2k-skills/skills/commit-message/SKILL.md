@@ -4,18 +4,19 @@ description: Use when generating a Conventional Commit message from staged chang
 license: MIT
 ---
 
-# Commit Message Skill (v2)
+# Commit Message
 
 ## Goal
 
 Produce a high-quality commit message based on staged changes only.
-Support two modes:
-- `message-only` (default)
-- `message+commit` (only after explicit user approval or a caller-provided
-  recorded approval scope that covers committing)
 
-Never commit automatically unless the caller provided a recorded approval scope
-that explicitly covers committing staged changes with the generated message.
+**Commit gate (single source for this skill):** two modes exist.
+- `message-only` (default): never commit. A recorded approval scope alone does
+  not switch modes; the caller must ask for the commit.
+- `message+commit`: commit only with explicit user approval (for example:
+  "commit it", "looks good, commit") or a caller-provided recorded approval
+  scope that explicitly covers committing staged changes with the generated
+  message.
 
 ## Workflow
 
@@ -66,18 +67,9 @@ Fallback context when docs are missing:
 
 Identify commit type, optional scope, and subject:
 
-Supported Conventional Commit types:
-- `feat:` - New feature or functionality
-- `fix:` - Bug fix
-- `refactor:` - Code restructuring without behavior change
-- `perf:` - Performance improvement
-- `docs:` - Documentation only
-- `test:` - Adding or updating tests
-- `build:` - Build system or dependency build config
-- `ci:` - CI configuration/workflow changes
-- `chore:` - Tooling/maintenance not covered above
-- `style:` - Formatting, whitespace (not visual style changes)
-- `revert:` - Revert a prior commit
+Supported Conventional Commit types: `feat`, `fix`, `refactor`, `perf`,
+`docs`, `test`, `build`, `ci`, `chore`, `style` (formatting/whitespace, not
+visual style changes), `revert`.
 
 Scope guidance (deterministic):
 - Use top-level area if mostly one area changed (`api`, `ui`, `auth`, `docs`)
@@ -123,17 +115,10 @@ Here's a suggested commit message:
 Ready to commit when you confirm.
 ```
 
-If the caller requested `message+commit` mode AND provided a recorded approval
-scope that explicitly covers committing staged changes, state that the commit
-is preauthorized and continue to Phase 6 without another prompt. In the default
-`message-only` mode, never commit — a recorded scope alone does not switch
-modes; the caller must ask for the commit.
+If the commit gate (see Goal) passes on the preauthorized path, state that the
+commit is preauthorized and continue to step 6 without another prompt.
 
-### 6) Commit only with explicit approval
-
-Only if the user explicitly approves (for example: "commit it", "looks good,
-commit", "please commit") or the caller provided a recorded approval scope that
-explicitly covers committing staged changes with the generated message.
+### 6) Commit (gate in Goal must pass)
 
 Use safe file-based commit message flow (preferred across CLIs):
 ```bash
@@ -160,46 +145,11 @@ Return:
 2. 1-3 line rationale (type/scope choice)
 3. "Ready to commit when you confirm."
 
-### B) `message+commit` (approval or recorded scope required)
-After approval or recorded-scope verification:
+### B) `message+commit` (commit gate passed)
 1. Commit using `git commit -F`
 2. Return commit SHA and subject from:
 ```bash
 git --no-pager log -1 --pretty=format:'%h %s'
-```
-
-## Quality bar
-
-Do:
-- Prefer clarity over cleverness
-- Keep subject specific and searchable
-- Align wording with repository terminology
-- Mention tests only when evidence exists
-
-Do not:
-- Use vague subjects like "update stuff"
-- Invent issue references, test counts, or milestones
-- Commit without explicit user confirmation or a recorded approval scope
-- Describe unstaged/untracked changes as committed
-
-## Portable examples
-
-Feature:
-```text
-feat(auth): add refresh-token rotation for session renewal
-
-Rotate refresh tokens on use and invalidate superseded tokens to
-reduce replay risk during long-lived sessions.
-
-Refs: security-session-hardening
-```
-
-Docs:
-```text
-docs(readme): clarify local setup and test commands
-
-Document required environment variables and provide copy-paste setup
-commands to reduce first-run friction.
 ```
 
 ## References

@@ -1,6 +1,6 @@
 ---
 name: integration-branch-orchestrator
-description: Use when planning or supervising a long-running autonomous GitHub PR workflow with integration branches, blanket approval scope, multiple PRs, or human promotion gates.
+description: Use when supervising autonomous multi-PR closeout through an integration branch with a human promotion gate.
 license: MIT
 disable-model-invocation: true
 ---

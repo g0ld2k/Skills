@@ -2,7 +2,6 @@
 name: simplify
 description: Use when reviewing changed code for reuse, quality, or efficiency issues after code changes and before commit readiness.
 license: MIT
-disable-model-invocation: true
 ---
 
 # Simplify: Code Review and Cleanup
@@ -128,7 +127,7 @@ policy explicitly includes them. Report the policy and selected finding ids
 before applying fixes.
 
 1. Present findings as a numbered list with this display format:
-   - `[id] [severity] [category] path:line - summary`
+   - `[id] [severity] [category] [confidence] path:line - summary`
    - `Fix: proposed_fix`
 2. Ask the user:
    - `Select items to address (e.g. 1,2,5,8), or reply all/none.`
