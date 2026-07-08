@@ -1,6 +1,6 @@
 ---
 name: catch-me-up
-description: Use when the user asks to get oriented in unfamiliar code, explain architecture, identify conventions or idioms, trace how a feature works, explain unfamiliar syntax or APIs, assess test coverage, or understand code history.
+description: Use when the user asks to catch them up, get oriented in unfamiliar code, explain architecture, identify conventions or idioms, trace how a feature works, explain unfamiliar syntax or APIs, assess test coverage, or understand code history.
 license: MIT
 ---
 
@@ -62,7 +62,7 @@ git --no-pager log --oneline -- <path>
 git --no-pager blame -L <start>,<end> -- <path>
 ```
 
-Read the sections of `references/exploration-modes.md` matching the modes selected in Step 1, plus its Depth Guardrails table. Treat those sections as the canonical source for mode details, evidence examples, and depth limits.
+Read the sections of `references/exploration-modes.md` matching the modes selected in Step 1, plus its Depth Guardrails table. For broad requests where Step 1 deferred mode selection, choose modes after this evidence pass and then read their sections before producing the brief. Treat those sections as the canonical source for mode details, evidence examples, and depth limits.
 
 For narrower requests, emphasize the relevant modes and briefly note which modes were skipped or minimized.
 
