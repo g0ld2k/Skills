@@ -421,12 +421,69 @@ def validate_shared_conventions(errors: list[str]) -> None:
             errors.append(f"skills/{name}/references/conventions.md: stale; run scripts/sync-shared-conventions.py")
 
 
+def validate_shared_reference_groups(errors: list[str]) -> None:
+    config = load_json(PACKAGE_CONFIG, [])
+    groups = (config or {}).get("shared_reference_groups", {})
+    if not isinstance(groups, dict):
+        errors.append(f"{PACKAGE_CONFIG.relative_to(ROOT)}: shared_reference_groups must be an object")
+        return
+    for group_name, group in groups.items():
+        if not isinstance(group, dict) or not group.get("source") or not isinstance(group.get("consumers"), list):
+            errors.append(
+                f"{PACKAGE_CONFIG.relative_to(ROOT)}: shared_reference_groups.{group_name} needs source and consumers"
+            )
+            continue
+        source_dir = ROOT / str(group["source"])
+        consumers = set(group["consumers"])
+        # A vendored group dir in an unlisted skill would be neither synced
+        # nor drift-checked, so scan every skill for orphan copies.
+        for skill_dir in skill_dirs():
+            vendored = skill_dir / "references" / group_name
+            if vendored.exists() and skill_dir.name not in consumers:
+                errors.append(
+                    f"skills/{skill_dir.name}/references/{group_name}/: exists but the skill is not listed in shared_reference_groups.{group_name}.consumers"
+                )
+        if not source_dir.exists():
+            errors.append(f"{group['source']}: missing while shared_reference_groups.{group_name} is configured")
+            continue
+        source_files = {p.relative_to(source_dir): p for p in source_dir.rglob("*") if p.is_file()}
+        if not source_files:
+            errors.append(f"{group['source']}: shared_reference_groups.{group_name} source has no files")
+            continue
+        for name in group["consumers"]:
+            target_dir = SKILLS_DIR / name / "references" / group_name
+            vendored_files = (
+                {p.relative_to(target_dir) for p in target_dir.rglob("*") if p.is_file()}
+                if target_dir.exists()
+                else set()
+            )
+            for extra in sorted(str(p) for p in vendored_files - set(source_files)):
+                errors.append(
+                    f"skills/{name}/references/{group_name}/{extra}: not in {group['source']}; run scripts/sync-shared-conventions.py"
+                )
+            for rel, source_file in sorted(source_files.items(), key=lambda item: str(item[0])):
+                target = target_dir / rel
+                rel_display = f"skills/{name}/references/{group_name}/{rel}"
+                if not target.exists():
+                    errors.append(f"{rel_display}: missing; run scripts/sync-shared-conventions.py")
+                    continue
+                source_rel = source_file.relative_to(ROOT).as_posix()
+                header = (
+                    f"<!-- GENERATED from {source_rel} - edit there, then run "
+                    "scripts/sync-shared-conventions.py -->\n\n"
+                )
+                expected = header + source_file.read_text(encoding="utf-8")
+                if target.read_text(encoding="utf-8") != expected:
+                    errors.append(f"{rel_display}: stale; run scripts/sync-shared-conventions.py")
+
+
 def main() -> int:
     errors: list[str] = []
     canonical_skill_names = validate_skills(errors)
     validate_cross_skill_references(canonical_skill_names, errors)
     validate_packaging(canonical_skill_names, errors)
     validate_shared_conventions(errors)
+    validate_shared_reference_groups(errors)
 
     if errors:
         for error in errors:

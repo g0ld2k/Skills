@@ -1,0 +1,4 @@
+interface:
+  display_name: "Apple Design Advisor"
+  short_description: "Evidence-graded Apple platform design guidance"
+  default_prompt: "Use $apple-design-advisor to recommend the right Apple platform design or implementation pattern for this task."

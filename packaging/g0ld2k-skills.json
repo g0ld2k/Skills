@@ -1,7 +1,7 @@
 {
   "name": "g0ld2k-skills",
-  "version": "0.1.0",
-  "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
+  "version": "0.2.0",
+  "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, work orchestration, and Apple platform design advising.",
   "author": {
     "name": "Chris Golding"
   },
@@ -14,7 +14,9 @@
     "pull-requests",
     "commit-messages",
     "release-notes",
-    "workflow"
+    "workflow",
+    "apple",
+    "design-review"
   ],
   "category": "Developer Tools",
   "shared_conventions_consumers": [
@@ -23,9 +25,25 @@
     "pr-comment-review",
     "pr-closeout-loop",
     "integration-branch-orchestrator",
-    "work-request-orchestration"
+    "work-request-orchestration",
+    "apple-design-advisor",
+    "apple-ui-review",
+    "apple-accessibility-review"
   ],
+  "shared_reference_groups": {
+    "apple": {
+      "source": "_shared/apple",
+      "consumers": [
+        "apple-design-advisor",
+        "apple-ui-review",
+        "apple-accessibility-review"
+      ]
+    }
+  },
   "skills": [
+    "apple-accessibility-review",
+    "apple-design-advisor",
+    "apple-ui-review",
     "catch-me-up",
     "commit-message",
     "integration-branch-orchestrator",

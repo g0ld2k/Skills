@@ -7,6 +7,9 @@ release notes, and work orchestration.
 
 | Skill | Purpose |
 | --- | --- |
+| `apple-accessibility-review` | Audit Apple platform app accessibility with user-impact-ranked, evidence-backed findings. |
+| `apple-design-advisor` | Evidence-graded design guidance, implementation direction, and best practices for Apple platforms. |
+| `apple-ui-review` | Audit built UI against Apple platform conventions with severity-ranked findings. |
 | `catch-me-up` | Build a mental model of unfamiliar code, architecture, or history via evidence-backed exploration. |
 | `commit-message` | Draft evidence-based Conventional Commit messages from staged changes. |
 | `integration-branch-orchestrator` | Plan autonomous PR work through integration branches and human promotion gates. |
@@ -23,6 +26,11 @@ release notes, and work orchestration.
 - `skills/<skill-name>/references/` contains optional supporting notes.
 - `skills/<skill-name>/scripts/` contains optional helper scripts used by the skill.
 - `skills/<skill-name>/agents/openai.yaml` contains Codex/OpenAI UI metadata.
+- `_shared/` holds single-source reference material vendored into consumer
+  skills by `scripts/sync-shared-conventions.py`: `conventions.md` plus the
+  named `shared_reference_groups` in `packaging/g0ld2k-skills.json` (e.g. the
+  `apple` group backing the Apple design suite — see
+  `docs/apple-design-advisor-architecture.md`).
 - `plugins/g0ld2k-skills/` is generated packaging for Claude, Codex, and GitHub Copilot.
 - `.claude-plugin/`, `.agents/plugins/`, and `.github/plugin/` expose marketplace metadata.
 
@@ -40,7 +48,9 @@ release notes, and work orchestration.
    Scenarios section points at it.
 4. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
    the `shared_conventions_consumers` array too if the skill keeps the
-   template's `references/conventions.md` link.
+   template's `references/conventions.md` link. If the skill consumes a
+   shared reference group (like the Apple suite's `_shared/apple/` corpus),
+   add it to that group's `consumers` list as well.
 5. Add a row for the skill to the `## Skill Catalog` table above.
 6. Run the sync + generate + validate commands:
 

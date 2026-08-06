@@ -1,0 +1,4 @@
+interface:
+  display_name: "Apple UI Review"
+  short_description: "Audit app UI against Apple platform conventions"
+  default_prompt: "Use $apple-ui-review to audit the selected screens or view code against Apple platform conventions."

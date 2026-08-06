@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "g0ld2k-skills",
-      "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
-      "version": "0.1.0",
+      "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, work orchestration, and Apple platform design advising.",
+      "version": "0.2.0",
       "source": "./plugins/g0ld2k-skills"
     }
   ]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Apple Accessibility Review"
+  short_description: "Audit Apple app accessibility with evidence"
+  default_prompt: "Use $apple-accessibility-review to audit the selected screens or flows for accessibility issues."
