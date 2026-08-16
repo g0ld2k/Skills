@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,6 +16,14 @@ LEGACY_SKILLS_DIR = ROOT / "Skills"
 PLUGIN_NAME = "g0ld2k-skills"
 PLUGIN_DIR = ROOT / "plugins" / PLUGIN_NAME
 PACKAGE_CONFIG = ROOT / "packaging" / f"{PLUGIN_NAME}.json"
+APPLE_DESIGN_CASES = ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+APPLE_DESIGN_RENDERER = ROOT / "scripts" / "render-validation-scenarios.py"
+APPLE_DESIGN_SCENARIOS = (
+    SKILLS_DIR
+    / "apple-platform-design"
+    / "references"
+    / "validation-scenarios.md"
+)
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -421,12 +430,51 @@ def validate_shared_conventions(errors: list[str]) -> None:
             errors.append(f"skills/{name}/references/conventions.md: stale; run scripts/sync-shared-conventions.py")
 
 
+def validate_apple_platform_design_scenarios(errors: list[str]) -> None:
+    """Check rendered scenario drift once the Wave 2 skill target exists."""
+    if not (SKILLS_DIR / "apple-platform-design").exists():
+        return
+
+    target = "skills/apple-platform-design/references/validation-scenarios.md"
+    command = (
+        "python3 scripts/render-validation-scenarios.py "
+        "--output skills/apple-platform-design/references/validation-scenarios.md"
+    )
+    if not APPLE_DESIGN_CASES.exists():
+        errors.append("evals/apple-platform-design/cases.jsonl: missing")
+        return
+    if not APPLE_DESIGN_RENDERER.exists():
+        errors.append("scripts/render-validation-scenarios.py: missing")
+        return
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(APPLE_DESIGN_RENDERER),
+            "--cases",
+            str(APPLE_DESIGN_CASES),
+            "--check",
+            str(APPLE_DESIGN_SCENARIOS),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return
+    if result.stderr.startswith("stale generated scenarios:"):
+        errors.append(f"{target}: stale; run {command}")
+        return
+    detail = result.stderr.strip() or result.stdout.strip() or "unknown renderer failure"
+    errors.append(f"{target}: could not verify generated scenarios: {detail}")
+
+
 def main() -> int:
     errors: list[str] = []
     canonical_skill_names = validate_skills(errors)
     validate_cross_skill_references(canonical_skill_names, errors)
     validate_packaging(canonical_skill_names, errors)
     validate_shared_conventions(errors)
+    validate_apple_platform_design_scenarios(errors)
 
     if errors:
         for error in errors:
