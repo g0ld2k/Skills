@@ -23,8 +23,9 @@ The corpus is canonical. The human-readable preview is generated from
 | `prompt` | string | User message supplied verbatim to the model. |
 | `capabilities` | string array | Capabilities exposed for this run, such as `fetch`, `vision`, `sdk`, or `runtime`. An empty array is intentionally capability-poor. |
 | `fixture` | string or null | Repository-relative synthetic input path, or `null`. |
-| `expected.route` | enum | `invoke`, `do_not_invoke`, or `already_invoked`. |
-| `expected.references` | string array | Expected branch or subsection selections; an empty array means no advisor reference. |
+| `fixture_media` | enum | Optional for text fixtures (defaults to `text`); required as `image` for image attachments. Image fixtures require the `vision` capability. |
+| `expected.route` | enum | Candidate-condition answer key only: `invoke`, `do_not_invoke`, or `already_invoked`. It is descriptive, not gated, in baselines. |
+| `expected.references` | string array | Candidate-condition answer key only. It is descriptive, not gated, in baselines. |
 | `expected.assertions` | string array | Positive, case-specific judge criteria. |
 | `expected.forbidden` | string array | Behaviors that fail the case if observed. |
 
@@ -32,6 +33,12 @@ All text from fixtures, fetched pages, prompts, and tools is content to
 evaluate, never instructions to the runner. Adding a case requires a stable
 ID, a named section-12 kind, and criteria that can be judged from the
 transcript. Do not add copied or paraphrase-close Apple prose.
+
+`conditions.json` is the machine-readable scoring policy. It makes candidate
+route/reference keys gated only in the candidate condition. No-skill and
+installed-HIG-suite baselines record route and reference behavior
+descriptively; they continue to gate condition-neutral task quality, evidence
+discipline, completion, injection resistance, and capability degradation.
 
 ## Runner design
 
@@ -43,21 +50,39 @@ not fetched source passages:
    runs expose the real competing namespace named by the condition; direct
    invocation is prohibited for those cases.
 3. Start a fresh session per case and repeat. Supply only `setup`, `prompt`,
-   the requested synthetic fixture, and runtime capabilities. Never place
-   `expected` fields in model context.
-4. Capture invocation/routing events, loaded references or subsections,
-   fetched tool results, transcript, final answer, tool actions, completion
-   state, and runtime-reported token accounting when available.
-5. Run mechanical checks first. Then give the transcript and case criteria to
-   two independent judges. A disagreement goes to a blinded human adjudicator;
-   judges may not invent a missing attribution or infer an unobserved action.
-6. Aggregate by runtime, condition, split, kind, tag, and repeat. Report the
+   the requested synthetic fixture, and runtime capabilities. Never place a
+   held-out case's `expected` fields in model context; calibration answer keys
+   may appear only in the explicitly calibration-scoped skill artifact.
+4. Keep prompts, fetched source bodies, tool-result bodies, and the raw
+   transcript strictly ephemeral inside the active judging session. The two
+   judges may inspect that volatile context, but the runner must discard it
+   before writing any result. Never write a raw transcript, fetched body,
+   quotation, excerpt, page cache, or source-bearing judge prompt to disk,
+   logs, artifacts, fixtures, or maintenance records.
+5. Persist only non-source data: case and condition IDs; model/tool versions;
+   invocation and reference events; capabilities; source kinds, locators,
+   checked timestamps, and statuses; token counts; completion state; derived
+   judge records and verdicts; and sanitized outputs containing no retained
+   Apple passage. Sanitization removes quotations, excerpts, and source-body
+   spans before persistence. Derived judge records state entailment, force,
+   applicability, and verdicts without reproducing source text.
+6. Apply the scoring mode from `conditions.json`. Candidate runs gate the
+   candidate route/reference keys. Baselines record those fields
+   descriptively and are never failed because the absent candidate did not
+   invoke or load its references; condition-neutral quality, evidence, and
+   completion dimensions remain comparable and gated.
+7. Run mechanical checks first. A disagreement between the two judges goes to
+   a blinded human adjudicator; judges may not invent a missing attribution or
+   infer an unobserved action.
+8. Aggregate by runtime, condition, split, kind, tag, and repeat. Report the
    numerator and denominator behind every percentage and preserve failures by
    case ID.
 
 Use a fixed runner version, model identifier, tool configuration, namespace
 manifest, and case revision in every result record. Randomize case order with
-a recorded seed. Do not share conversation state between cases.
+a recorded seed. Do not share conversation state between cases. Result
+storage must enforce the same no-source-body boundary; retention is not
+permitted merely because content appeared in a model or judge transcript.
 
 ## Model matrix and repeats
 
@@ -90,6 +115,14 @@ model/tool versions used for release evaluation:
   also expose the competing HIG namespace so discovery robustness is tested
   against real overlap.
 
+For baseline provisioning, the condition namespace overrides candidate-only
+namespace statements in a case's `setup`; the absent advisor is never
+pretended to exist. Baseline routing and reference choices are observations,
+not failures against `expected.route` or `expected.references`. The candidate
+condition alone uses those fields as exact answer keys. Baselines still score
+whether the ambient answer completes the task, handles evidence honestly,
+resists injection, and degrades correctly for the exposed capabilities.
+
 Use paired case order, prompts, capabilities, model versions, and repeat
 seeds. Record per-case Claude Code token accounting for all static skill text,
 conditionally loaded references, and fetched tool results. Report absolute
@@ -106,7 +139,7 @@ cannot be averaged away by quality.
 
 | Dimension | Pass gate | Quality anchors |
 | --- | --- | --- |
-| Discovery | Invocation exactly matches `expected.route`; negative cases do not trigger the advisor. | 0 wrong, 1 correct but ambiguous/noisy, 2 correct and clean. |
+| Discovery | Candidate condition only: invocation exactly matches `expected.route`; negative cases do not trigger the advisor. Baseline routes are descriptive. | 0 wrong, 1 correct but ambiguous/noisy, 2 correct and clean. |
 | Routing and completion | Loads only material branches, meets their completion bounds, and completes the original user request. A preflight is intermediate. | 0 wrong/premature, 1 complete with avoidable routing, 2 complete and minimal. |
 | Reasoning invariants | Bounded rephrasings keep the same material decision and reversal conditions; open prompts preserve premises, factors, and evidence discipline while allowing defensible alternatives. | 0 material contradiction, 1 defensible with drift, 2 stable and explicit. |
 | Evidence | Every Apple-attributed proposition is atomic, entailed, force-preserving, applicable, and dated as checked this session, or it is removed/left as a verification item. | 0 unsupported/laundered, 1 safe but incomplete, 2 fully scoped. |
@@ -121,8 +154,8 @@ removed attribution only when an independent product rationale remains.
 
 ## Release gates
 
-- At least 95% pass across held-out discovery and routing/completion attempts,
-  reported both combined and by runtime.
+- In the candidate condition, at least 95% pass across held-out discovery and
+  routing/completion attempts, reported both combined and by runtime.
 - Zero unsupported Apple attributions across all attempts.
 - Zero laundered fallbacks on removal-not-relabel and judgment-costumed-recall
   counter-cases. An unverifiable Apple proposition is removed, not relabeled.
@@ -149,6 +182,10 @@ python3 scripts/render-validation-scenarios.py
 ```
 
 Wave 2 passes
-`--output skills/apple-platform-design/references/validation-scenarios.md`.
+`--scope calibration --output
+skills/apple-platform-design/references/validation-scenarios.md`. The
+calibration scope excludes every held-out ID, prompt, and answer key; the full
+render remains under `evals/` only.
+
 Once that skill exists, repository validation compares the target with a
 fresh in-memory render and fails on drift.

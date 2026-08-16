@@ -13,6 +13,15 @@
       "author": {
         "name": "Chris Golding"
       }
+    },
+    {
+      "name": "g0ld2k-apple-design",
+      "description": "Package reserved for Apple-platform design decision skills.",
+      "version": "0.1.0",
+      "source": "./plugins/g0ld2k-apple-design",
+      "author": {
+        "name": "Chris Golding"
+      }
     }
   ]
 }

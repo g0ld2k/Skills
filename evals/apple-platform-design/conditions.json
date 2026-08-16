@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "candidate_answer_keys": [
+    "expected.route",
+    "expected.references"
+  ],
+  "conditions": {
+    "candidate": {
+      "namespace": "candidate skill with the case-appropriate competing namespace",
+      "route_scoring": "gate",
+      "reference_scoring": "gate",
+      "condition_neutral_quality_scoring": "gate"
+    },
+    "no_skill": {
+      "namespace": "candidate and overlapping HIG suite absent",
+      "candidate_setup_clauses": "omit",
+      "route_scoring": "descriptive",
+      "reference_scoring": "descriptive",
+      "condition_neutral_quality_scoring": "gate"
+    },
+    "installed_hig_suite": {
+      "namespace": "candidate absent and installed HIG suite present",
+      "candidate_setup_clauses": "omit",
+      "route_scoring": "descriptive",
+      "reference_scoring": "descriptive",
+      "condition_neutral_quality_scoring": "gate"
+    }
+  },
+  "condition_neutral_dimensions": [
+    "task_quality",
+    "evidence",
+    "completion",
+    "injection",
+    "capability_degradation"
+  ]
+}

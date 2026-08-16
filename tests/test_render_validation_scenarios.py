@@ -118,6 +118,7 @@ class RenderValidationScenariosTests(unittest.TestCase):
     def test_rejects_missing_repository_fixture(self) -> None:
         item = case("evidence-01", "Missing fixture")
         item["fixture"] = "evals/apple-platform-design/fixtures/does-not-exist.md"
+        item["fixture_media"] = "text"
         self.write_cases([item])
 
         result = self.run_renderer()
@@ -125,6 +126,40 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fixture does not exist", result.stderr)
         self.assertFalse(self.output_path.exists())
+
+    def test_rejects_fixture_media_that_does_not_match_file_type(self) -> None:
+        item = case("evidence-01", "Wrong media")
+        item["fixture"] = (
+            "evals/apple-platform-design/fixtures/synthetic-design-guidance.md"
+        )
+        item["fixture_media"] = "image"
+        self.write_cases([item])
+
+        result = self.run_renderer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture_media image requires an image fixture", result.stderr)
+        self.assertFalse(self.output_path.exists())
+
+    def test_calibration_scope_excludes_all_held_out_content(self) -> None:
+        calibration = case("discovery-calibration", "Calibration title")
+        held_out = case("discovery-held-out", "HELD OUT SECRET TITLE")
+        held_out["split"] = "held_out"
+        held_out["prompt"] = "HELD OUT SECRET PROMPT"
+        held_out["expected"]["assertions"] = ["HELD OUT SECRET CRITERION"]
+        self.write_cases([held_out, calibration])
+
+        result = self.run_renderer(
+            "--scope", "calibration", "--output", str(self.output_path)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = self.output_path.read_text(encoding="utf-8")
+        self.assertIn("discovery-calibration", rendered)
+        self.assertNotIn("discovery-held-out", rendered)
+        self.assertNotIn("HELD OUT SECRET TITLE", rendered)
+        self.assertNotIn("HELD OUT SECRET PROMPT", rendered)
+        self.assertNotIn("HELD OUT SECRET CRITERION", rendered)
 
 
 if __name__ == "__main__":

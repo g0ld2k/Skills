@@ -68,6 +68,12 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
             self.temp_dir / "evals" / "apple-platform-design" / "cases.jsonl"
         )
         self.module.APPLE_DESIGN_RENDERER = RENDERER
+        self.module.APPLE_DESIGN_PREVIEW = (
+            self.temp_dir
+            / "evals"
+            / "apple-platform-design"
+            / "validation-scenarios.preview.md"
+        )
         self.module.APPLE_DESIGN_SCENARIOS = (
             self.temp_dir
             / "skills"
@@ -79,18 +85,66 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir)
 
-    def test_no_ops_until_skill_exists(self) -> None:
+    def write_valid_wave1_artifacts(self) -> None:
+        self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)
+        self.module.APPLE_DESIGN_CASES.write_text(
+            json.dumps(minimal_case()) + "\n", encoding="utf-8"
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(RENDERER),
+                "--cases",
+                str(self.module.APPLE_DESIGN_CASES),
+                "--output",
+                str(self.module.APPLE_DESIGN_PREVIEW),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_skill_target_no_ops_after_wave1_validation(self) -> None:
+        self.write_valid_wave1_artifacts()
         errors: list[str] = []
 
         self.module.validate_apple_platform_design_scenarios(errors)
 
         self.assertEqual(errors, [])
 
-    def test_reports_drift_when_skill_target_is_stale(self) -> None:
-        self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True)
+    def test_reports_malformed_corpus_before_skill_exists(self) -> None:
+        self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)
+        self.module.APPLE_DESIGN_CASES.write_text("{not-json}\n", encoding="utf-8")
+        self.module.APPLE_DESIGN_PREVIEW.write_text("stale\n", encoding="utf-8")
+        errors: list[str] = []
+
+        self.module.validate_apple_platform_design_scenarios(errors)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("could not verify generated scenarios", errors[0])
+        self.assertIn("invalid JSON", errors[0])
+
+    def test_reports_stale_preview_before_skill_exists(self) -> None:
+        self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)
         self.module.APPLE_DESIGN_CASES.write_text(
             json.dumps(minimal_case()) + "\n", encoding="utf-8"
         )
+        self.module.APPLE_DESIGN_PREVIEW.write_text("stale\n", encoding="utf-8")
+        errors: list[str] = []
+
+        self.module.validate_apple_platform_design_scenarios(errors)
+
+        self.assertEqual(
+            errors,
+            [
+                "evals/apple-platform-design/validation-scenarios.preview.md: "
+                "stale; run python3 scripts/render-validation-scenarios.py"
+            ],
+        )
+
+    def test_reports_drift_when_skill_target_is_stale(self) -> None:
+        self.write_valid_wave1_artifacts()
         self.module.APPLE_DESIGN_SCENARIOS.parent.mkdir(parents=True)
         self.module.APPLE_DESIGN_SCENARIOS.write_text("stale\n", encoding="utf-8")
         errors: list[str] = []
@@ -102,6 +156,7 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
             [
                 "skills/apple-platform-design/references/validation-scenarios.md: "
                 "stale; run python3 scripts/render-validation-scenarios.py "
+                "--scope calibration "
                 "--output skills/apple-platform-design/references/validation-scenarios.md"
             ],
         )

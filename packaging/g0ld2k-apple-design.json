@@ -1,0 +1,33 @@
+{
+  "name": "g0ld2k-apple-design",
+  "version": "0.1.0",
+  "description": "Package reserved for Apple-platform design decision skills.",
+  "author": {
+    "name": "Chris Golding"
+  },
+  "homepage": "https://github.com/g0ld2k/Skills",
+  "repository": "https://github.com/g0ld2k/Skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "apple-platforms",
+    "product-design"
+  ],
+  "category": "Developer Tools",
+  "interface": {
+    "display_name": "g0ld2k Apple Design",
+    "short_description": "Apple-platform design decision skills",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "default_prompts": [
+      "Use these skills to make or review Apple-platform design decisions."
+    ],
+    "brand_color": "#2563EB"
+  },
+  "shared_conventions_consumers": [],
+  "skills": []
+}
