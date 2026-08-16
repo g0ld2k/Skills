@@ -17,6 +17,27 @@
     "workflow"
   ],
   "category": "Developer Tools",
+  "interface": {
+    "display_name": "g0ld2k Skills",
+    "short_description": "Reusable coding workflow skills",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "default_prompts": [
+      "Use these skills to help with pull request or release workflow.",
+      "Use these skills to produce commit, PR, or review workflow output."
+    ],
+    "brand_color": "#2563EB"
+  },
+  "marketplace": {
+    "name": "g0ld2k-skills",
+    "display_name": "g0ld2k Skills",
+    "description": "Marketplace for g0ld2k reusable agent skills.",
+    "owner_name": "Chris Golding",
+    "github_owner": "g0ld2k"
+  },
   "shared_conventions_consumers": [
     "commit-message",
     "pr-generator",

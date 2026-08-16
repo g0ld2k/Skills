@@ -23,7 +23,8 @@ release notes, and work orchestration.
 - `skills/<skill-name>/references/` contains optional supporting notes.
 - `skills/<skill-name>/scripts/` contains optional helper scripts used by the skill.
 - `skills/<skill-name>/agents/openai.yaml` contains Codex/OpenAI UI metadata.
-- `plugins/g0ld2k-skills/` is generated packaging for Claude, Codex, and GitHub Copilot.
+- `packaging/<plugin-name>.json` defines one plugin and its member skills.
+- `plugins/<plugin-name>/` contains generated packaging for Claude, Codex, and GitHub Copilot.
 - `.claude-plugin/`, `.agents/plugins/`, and `.github/plugin/` expose marketplace metadata.
 
 ## Add a New Skill
@@ -38,9 +39,9 @@ release notes, and work orchestration.
 3. Create `skills/<name>/references/validation-scenarios.md` with at least 3
    scenarios (happy path, edge case, adversarial) — the template's Validation
    Scenarios section points at it.
-4. Add the skill to `packaging/g0ld2k-skills.json`: the `skills` array, and
-   the `shared_conventions_consumers` array too if the skill keeps the
-   template's `references/conventions.md` link.
+4. Add the skill to exactly one `packaging/<plugin-name>.json` `skills` array.
+   Add it to that config's `shared_conventions_consumers` array too if the
+   skill keeps the template's `references/conventions.md` link.
 5. Add a row for the skill to the `## Skill Catalog` table above.
 6. Run the sync + generate + validate commands:
 
@@ -61,8 +62,7 @@ gh skill install g0ld2k/Skills skills/pr-comment-review/SKILL.md --agent github-
 ```
 
 Use exact `skills/<skill-name>/SKILL.md` paths for direct installs so `gh skill`
-does not also install the generated plugin bundle under
-`plugins/g0ld2k-skills/skills/`.
+does not also install a generated plugin bundle under `plugins/`.
 
 Validate the direct publisher shape:
 

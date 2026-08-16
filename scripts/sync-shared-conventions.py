@@ -5,13 +5,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "_shared" / "conventions.md"
-CONFIG = ROOT / "packaging" / "g0ld2k-skills.json"
+PACKAGING_DIR = ROOT / "packaging"
 HEADER = "<!-- GENERATED from _shared/conventions.md - edit there, then run scripts/sync-shared-conventions.py -->\n\n"
 
 
+def load_package_configs() -> list[dict]:
+    return [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(PACKAGING_DIR.glob("*.json"))
+    ]
+
+
 def main() -> int:
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
-    consumers = config.get("shared_conventions_consumers", [])
+    consumers = [
+        consumer
+        for config in load_package_configs()
+        for consumer in config.get("shared_conventions_consumers", [])
+    ]
     body = HEADER + SOURCE.read_text(encoding="utf-8")
     for name in consumers:
         target = ROOT / "skills" / name / "references" / "conventions.md"
