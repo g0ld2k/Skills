@@ -9,9 +9,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_CONFIG = ROOT / "packaging" / "g0ld2k-skills.json"
+PACKAGING_DIR = ROOT / "packaging"
 SKILLS_DIR = ROOT / "skills"
-PLUGIN_DIR = ROOT / "plugins" / "g0ld2k-skills"
+PLUGINS_DIR = ROOT / "plugins"
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -19,19 +19,38 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def safe_remove_plugin_dir() -> None:
-    resolved_plugin = PLUGIN_DIR.resolve()
-    resolved_plugins_root = (ROOT / "plugins").resolve()
+def load_package_configs() -> list[dict]:
+    configs: list[dict] = []
+    for path in sorted(PACKAGING_DIR.glob("*.json")):
+        config = json.loads(path.read_text(encoding="utf-8"))
+        if config.get("name") != path.stem:
+            raise ValueError(f"package name must match config filename: {path}")
+        configs.append(config)
+    if not configs:
+        raise FileNotFoundError(f"no plugin package configs found in {PACKAGING_DIR}")
+    return sorted(configs, key=lambda config: ("marketplace" not in config, config["name"]))
+
+
+def plugin_dir(config: dict) -> Path:
+    return PLUGINS_DIR / config["name"]
+
+
+def safe_remove_plugin_dir(config: dict) -> None:
+    destination = plugin_dir(config)
+    resolved_plugin = destination.resolve()
+    resolved_plugins_root = PLUGINS_DIR.resolve()
     if resolved_plugin.parent != resolved_plugins_root:
-        raise RuntimeError(f"refusing to remove unexpected path: {PLUGIN_DIR}")
-    if PLUGIN_DIR.exists():
-        shutil.rmtree(PLUGIN_DIR)
+        raise RuntimeError(f"refusing to remove unexpected path: {destination}")
+    if destination.exists():
+        shutil.rmtree(destination)
 
 
-def copy_skills(skill_names: list[str]) -> None:
-    bundled_skills_dir = PLUGIN_DIR / "skills"
+def copy_skills(config: dict) -> None:
+    bundled_skills_dir = plugin_dir(config) / "skills"
     bundled_skills_dir.mkdir(parents=True, exist_ok=True)
-    for skill_name in skill_names:
+    if not config["skills"]:
+        (bundled_skills_dir / ".gitkeep").write_text("", encoding="utf-8")
+    for skill_name in config["skills"]:
         source = SKILLS_DIR / skill_name
         destination = bundled_skills_dir / skill_name
         if not source.exists():
@@ -52,22 +71,22 @@ def base_manifest(config: dict) -> dict:
     }
 
 
-def main() -> None:
-    config = json.loads(PACKAGE_CONFIG.read_text(encoding="utf-8"))
-    skill_names = config["skills"]
+def generate_plugin(config: dict) -> None:
+    destination = plugin_dir(config)
+    interface = config["interface"]
 
-    safe_remove_plugin_dir()
-    copy_skills(skill_names)
+    safe_remove_plugin_dir(config)
+    copy_skills(config)
 
     copilot_manifest = {
         **base_manifest(config),
         "category": config["category"],
         "skills": "./skills/",
     }
-    write_json(PLUGIN_DIR / "plugin.json", copilot_manifest)
+    write_json(destination / "plugin.json", copilot_manifest)
 
     claude_manifest = base_manifest(config)
-    write_json(PLUGIN_DIR / ".claude-plugin" / "plugin.json", claude_manifest)
+    write_json(destination / ".claude-plugin" / "plugin.json", claude_manifest)
 
     codex_manifest = {
         "name": config["name"],
@@ -80,56 +99,57 @@ def main() -> None:
         "keywords": config["keywords"],
         "skills": "./skills/",
         "interface": {
-            "displayName": "g0ld2k Skills",
-            "shortDescription": "Reusable coding workflow skills",
+            "displayName": interface["display_name"],
+            "shortDescription": interface["short_description"],
             "longDescription": config["description"],
             "developerName": config["author"]["name"],
             "category": config["category"],
-            "capabilities": [
-                "Interactive",
-                "Read",
-                "Write"
-            ],
-            "defaultPrompt": [
-                "Use these skills to help with pull request or release workflow.",
-                "Use these skills to produce commit, PR, or review workflow output."
-            ],
+            "capabilities": interface["capabilities"],
+            "defaultPrompt": interface["default_prompts"],
             "websiteURL": config["homepage"],
-            "brandColor": "#2563EB",
+            "brandColor": interface["brand_color"],
             "screenshots": []
         }
     }
-    write_json(PLUGIN_DIR / ".codex-plugin" / "plugin.json", codex_manifest)
+    write_json(destination / ".codex-plugin" / "plugin.json", codex_manifest)
+
+
+def generate_marketplaces(configs: list[dict]) -> None:
+    marketplace_configs = [config for config in configs if "marketplace" in config]
+    if len(marketplace_configs) != 1:
+        raise ValueError("exactly one package config must define marketplace metadata")
+    marketplace = marketplace_configs[0]["marketplace"]
 
     claude_marketplace = {
-        "name": config["name"],
-        "description": "Marketplace for g0ld2k reusable agent skills.",
+        "name": marketplace["name"],
+        "description": marketplace["description"],
         "owner": {
-            "name": config["author"]["name"]
+            "name": marketplace["owner_name"]
         },
         "plugins": [
             {
                 "name": config["name"],
                 "description": config["description"],
                 "version": config["version"],
-                "source": "./plugins/g0ld2k-skills",
+                "source": f"./plugins/{config['name']}",
                 "author": config["author"]
             }
+            for config in configs
         ]
     }
     write_json(ROOT / ".claude-plugin" / "marketplace.json", claude_marketplace)
 
     codex_marketplace = {
-        "name": config["name"],
+        "name": marketplace["name"],
         "interface": {
-            "displayName": "g0ld2k Skills"
+            "displayName": marketplace["display_name"]
         },
         "plugins": [
             {
                 "name": config["name"],
                 "source": {
                     "source": "local",
-                    "path": "./plugins/g0ld2k-skills"
+                    "path": f"./plugins/{config['name']}"
                 },
                 "policy": {
                     "installation": "AVAILABLE",
@@ -137,28 +157,37 @@ def main() -> None:
                 },
                 "category": config["category"]
             }
+            for config in configs
         ]
     }
     write_json(ROOT / ".agents" / "plugins" / "marketplace.json", codex_marketplace)
 
     copilot_marketplace = {
-        "name": config["name"],
+        "name": marketplace["name"],
         "owner": {
-            "name": "g0ld2k"
+            "name": marketplace["github_owner"]
         },
         "metadata": {
-            "description": "Marketplace for g0ld2k reusable agent skills."
+            "description": marketplace["description"]
         },
         "plugins": [
             {
                 "name": config["name"],
                 "description": config["description"],
                 "version": config["version"],
-                "source": "./plugins/g0ld2k-skills"
+                "source": f"./plugins/{config['name']}"
             }
+            for config in configs
         ]
     }
     write_json(ROOT / ".github" / "plugin" / "marketplace.json", copilot_marketplace)
+
+
+def main() -> None:
+    configs = load_package_configs()
+    for config in configs:
+        generate_plugin(config)
+    generate_marketplaces(configs)
 
 
 if __name__ == "__main__":
