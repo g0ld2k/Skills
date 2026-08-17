@@ -51,6 +51,26 @@ APPLE_DESIGN_CANDIDATE_FORBIDDEN_KEYS = [
 ]
 APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS = ["expected.condition_neutral_assertions"]
 APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS = ["expected.condition_neutral_forbidden"]
+APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
+    {
+        "id": "bounded-context",
+        "case_ids": ["ceiling-01", "ceiling-02"],
+        "required_tags": ["4k"],
+        "runtime": "claude-code",
+        "metric": "total_incremental_tokens",
+        "p95_max_tokens": 4000,
+        "report": ["p95", "maximum"],
+    },
+    {
+        "id": "open-context",
+        "case_ids": ["ceiling-03", "ceiling-04"],
+        "required_tags": ["8k"],
+        "runtime": "claude-code",
+        "metric": "total_incremental_tokens",
+        "p95_max_tokens": 8000,
+        "report": ["p95", "maximum"],
+    },
+]
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -550,6 +570,7 @@ def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
     expected_top_level = {
         "schema_version",
         "candidate_answer_keys",
+        "aggregate_release_gates",
         "conditions",
         "condition_neutral_dimensions",
     }
@@ -572,6 +593,11 @@ def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
         errors.append(
             f"{relative}: candidate_answer_keys must be exactly "
             f"{', '.join(expected_answer_keys)}"
+        )
+    if policy.get("aggregate_release_gates") != APPLE_DESIGN_AGGREGATE_RELEASE_GATES:
+        errors.append(
+            f"{relative}: aggregate_release_gates must be exactly the bounded "
+            "and open Claude Code context gates"
         )
     expected_dimensions = ["task_quality", "evidence", "completion"]
     if policy.get("condition_neutral_dimensions") != expected_dimensions:

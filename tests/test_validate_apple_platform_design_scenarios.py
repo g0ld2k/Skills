@@ -87,6 +87,26 @@ def valid_conditions() -> dict[str, object]:
     return {
         "schema_version": 1,
         "candidate_answer_keys": ["expected.route", "expected.references"],
+        "aggregate_release_gates": [
+            {
+                "id": "bounded-context",
+                "case_ids": ["ceiling-01", "ceiling-02"],
+                "required_tags": ["4k"],
+                "runtime": "claude-code",
+                "metric": "total_incremental_tokens",
+                "p95_max_tokens": 4000,
+                "report": ["p95", "maximum"],
+            },
+            {
+                "id": "open-context",
+                "case_ids": ["ceiling-03", "ceiling-04"],
+                "required_tags": ["8k"],
+                "runtime": "claude-code",
+                "metric": "total_incremental_tokens",
+                "p95_max_tokens": 8000,
+                "report": ["p95", "maximum"],
+            },
+        ],
         "conditions": {
             "candidate": {
                 "namespace": "candidate skill with competing namespace",
@@ -268,6 +288,19 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
                 self.assertTrue(
                     any("candidate_answer_keys" in error for error in errors)
                 )
+
+    def test_reports_malformed_aggregate_release_gate(self) -> None:
+        policy = valid_conditions()
+        policy["aggregate_release_gates"][1]["p95_max_tokens"] = 4000
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any(
+                "aggregate_release_gates must be exactly" in error
+                for error in errors
+            )
+        )
 
     def test_reports_malformed_corpus_before_skill_exists(self) -> None:
         self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)

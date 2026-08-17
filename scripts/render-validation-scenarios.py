@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +29,7 @@ SPLITS = {"calibration", "held_out"}
 ROUTES = {"invoke", "do_not_invoke", "already_invoked"}
 SCOPES = {"full", "calibration"}
 TEXT_FIXTURE_SUFFIXES = {".md", ".txt"}
-IMAGE_FIXTURE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_FIXTURE_SUFFIXES = {".png"}
 FULL_HEADER = """<!-- GENERATED from evals/apple-platform-design/cases.jsonl by scripts/render-validation-scenarios.py; edit the JSONL source, then rerun the renderer. -->
 
 # Apple Platform Design Validation Scenarios
@@ -62,15 +64,108 @@ def require_string_list(value: Any, field: str, case_id: str, *, allow_empty: bo
 
 
 def validate_raster_data(path: Path, suffix: str, case_id: str) -> None:
-    header = path.read_bytes()[:12]
-    if suffix == ".png" and not header.startswith(b"\x89PNG\r\n\x1a\n"):
+    payload = path.read_bytes()
+    if suffix != ".png" or not payload.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError(f"{case_id}: PNG fixture is not PNG raster data")
-    if suffix in {".jpg", ".jpeg"} and not header.startswith(b"\xff\xd8\xff"):
-        raise ValueError(f"{case_id}: JPEG fixture is not JPEG raster data")
-    if suffix == ".webp" and not (
-        header.startswith(b"RIFF") and header[8:12] == b"WEBP"
-    ):
-        raise ValueError(f"{case_id}: WebP fixture is not WebP raster data")
+    if len(payload) == 8:
+        raise ValueError(f"{case_id}: truncated PNG chunk")
+
+    offset = 8
+    ihdr: Optional[tuple[int, int, int, int]] = None
+    seen_plte = False
+    seen_idat = False
+    idat_ended = False
+    seen_iend = False
+    compressed_parts: list[bytes] = []
+    while offset < len(payload):
+        if len(payload) - offset < 12:
+            raise ValueError(f"{case_id}: truncated PNG chunk")
+        length = struct.unpack(">I", payload[offset : offset + 4])[0]
+        chunk_end = offset + 12 + length
+        if chunk_end > len(payload):
+            raise ValueError(f"{case_id}: truncated PNG chunk")
+        chunk_type = payload[offset + 4 : offset + 8]
+        chunk_data = payload[offset + 8 : offset + 8 + length]
+        expected_crc = struct.unpack(">I", payload[offset + 8 + length : chunk_end])[0]
+        actual_crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+        if actual_crc != expected_crc:
+            raise ValueError(f"{case_id}: PNG chunk CRC mismatch")
+        if len(chunk_type) != 4 or not all(
+            65 <= byte <= 90 or 97 <= byte <= 122 for byte in chunk_type
+        ):
+            raise ValueError(f"{case_id}: invalid PNG chunk type")
+        if ihdr is None and chunk_type != b"IHDR":
+            raise ValueError(f"{case_id}: PNG IHDR must be first")
+
+        if chunk_type == b"IHDR":
+            if ihdr is not None or offset != 8 or length != 13:
+                raise ValueError(f"{case_id}: invalid PNG IHDR chunk")
+            width, height, bit_depth, color_type, compression, filtering, interlace = (
+                struct.unpack(">IIBBBBB", chunk_data)
+            )
+            valid_depths = {
+                0: {1, 2, 4, 8, 16},
+                2: {8, 16},
+                3: {1, 2, 4, 8},
+                4: {8, 16},
+                6: {8, 16},
+            }
+            if width == 0 or height == 0:
+                raise ValueError(f"{case_id}: PNG dimensions must be positive")
+            if color_type not in valid_depths or bit_depth not in valid_depths[color_type]:
+                raise ValueError(f"{case_id}: unsupported PNG color type or bit depth")
+            if compression != 0 or filtering != 0 or interlace != 0:
+                raise ValueError(
+                    f"{case_id}: PNG must use standard compression, filtering, and no interlace"
+                )
+            ihdr = (width, height, bit_depth, color_type)
+        elif chunk_type == b"PLTE":
+            if seen_plte or seen_idat or length == 0 or length % 3 != 0 or length > 768:
+                raise ValueError(f"{case_id}: invalid PNG PLTE chunk")
+            seen_plte = True
+        elif chunk_type == b"IDAT":
+            if idat_ended:
+                raise ValueError(f"{case_id}: PNG IDAT chunks must be contiguous")
+            seen_idat = True
+            compressed_parts.append(chunk_data)
+        elif chunk_type == b"IEND":
+            if length != 0 or not seen_idat:
+                raise ValueError(f"{case_id}: invalid PNG IEND chunk")
+            seen_iend = True
+            if chunk_end != len(payload):
+                raise ValueError(f"{case_id}: data follows PNG IEND chunk")
+        else:
+            if 65 <= chunk_type[0] <= 90:
+                raise ValueError(f"{case_id}: unsupported critical PNG chunk")
+        if seen_idat and chunk_type not in {b"IDAT", b"IEND"}:
+            idat_ended = True
+        offset = chunk_end
+
+    if ihdr is None:
+        raise ValueError(f"{case_id}: missing PNG IHDR chunk")
+    if not seen_idat:
+        raise ValueError(f"{case_id}: missing PNG IDAT chunk")
+    if not seen_iend:
+        raise ValueError(f"{case_id}: missing PNG IEND chunk")
+    width, height, bit_depth, color_type = ihdr
+    if color_type == 3 and not seen_plte:
+        raise ValueError(f"{case_id}: indexed PNG requires a PLTE chunk")
+
+    try:
+        inflater = zlib.decompressobj()
+        scanlines = inflater.decompress(b"".join(compressed_parts)) + inflater.flush()
+    except zlib.error as exc:
+        raise ValueError(f"{case_id}: invalid PNG zlib stream") from exc
+    if not inflater.eof or inflater.unused_data or inflater.unconsumed_tail:
+        raise ValueError(f"{case_id}: invalid PNG zlib stream")
+    samples_per_pixel = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
+    row_bytes = (width * samples_per_pixel * bit_depth + 7) // 8
+    expected_length = height * (row_bytes + 1)
+    if len(scanlines) != expected_length:
+        raise ValueError(f"{case_id}: PNG scanline data length is invalid")
+    for row in range(height):
+        if scanlines[row * (row_bytes + 1)] > 4:
+            raise ValueError(f"{case_id}: invalid PNG scanline filter")
 
 
 def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
@@ -93,13 +188,19 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
 
     fixture = raw.get("fixture")
     fixture_media = raw.get("fixture_media")
+    fixture_delivery = raw.get("fixture_delivery")
     requires_image = "requires-image-fixture" in raw["tags"]
+    requires_fetch_output = "requires-fetch-output-fixture" in raw["tags"]
     if requires_image and fixture is None:
         raise ValueError(f"{case_id}: requires an attached image fixture")
+    if requires_fetch_output and fixture is None:
+        raise ValueError(f"{case_id}: requires an untrusted tool-output fixture")
     if fixture is not None and (not isinstance(fixture, str) or not fixture.strip()):
         raise ValueError(f"{case_id}: fixture must be null or a non-empty string")
     if fixture is None and fixture_media is not None:
         raise ValueError(f"{case_id}: fixture_media requires a fixture")
+    if fixture is None and fixture_delivery is not None:
+        raise ValueError(f"{case_id}: fixture_delivery requires a fixture")
     if fixture is not None:
         if fixture_media is None:
             fixture_media = "text"
@@ -127,7 +228,7 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
             raise ValueError(f"{case_id}: fixture_media text requires a text fixture")
         if fixture_media == "image" and suffix not in IMAGE_FIXTURE_SUFFIXES:
             raise ValueError(
-                f"{case_id}: fixture_media image requires a raster image fixture"
+                f"{case_id}: fixture_media image requires a PNG fixture"
             )
         if fixture_media == "image":
             validate_raster_data(candidate, suffix, case_id)
@@ -135,6 +236,14 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
             raise ValueError(f"{case_id}: image fixtures require the vision capability")
         if requires_image and fixture_media != "image":
             raise ValueError(f"{case_id}: requires an attached image fixture")
+        if fixture_delivery is not None and fixture_delivery != "tool_output":
+            raise ValueError(f"{case_id}: unknown fixture_delivery: {fixture_delivery}")
+        if requires_fetch_output and (
+            fixture_media != "text"
+            or fixture_delivery != "tool_output"
+            or "fetch" not in raw.get("capabilities", [])
+        ):
+            raise ValueError(f"{case_id}: requires an untrusted tool-output fixture")
 
     expected = raw.get("expected")
     if not isinstance(expected, dict):
@@ -217,6 +326,7 @@ def render(cases: list[dict[str, Any]], scope: str) -> str:
         expected = item["expected"]
         fixture = item["fixture"] or "none"
         fixture_media = item.get("fixture_media") or "none"
+        fixture_delivery = item.get("fixture_delivery") or "direct_input"
         references = ", ".join(f"`{reference}`" for reference in expected["references"])
         if not references:
             references = "none"
@@ -233,6 +343,7 @@ def render(cases: list[dict[str, Any]], scope: str) -> str:
             f"- **Capabilities:** {capabilities}",
             f"- **Fixture:** `{fixture}`",
             f"- **Fixture media:** `{fixture_media}`",
+            f"- **Fixture delivery:** `{fixture_delivery}`",
             f"- **Route:** `{expected['route']}`",
             f"- **References:** {references}",
             "",

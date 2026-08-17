@@ -4,6 +4,42 @@
     "expected.route",
     "expected.references"
   ],
+  "aggregate_release_gates": [
+    {
+      "id": "bounded-context",
+      "case_ids": [
+        "ceiling-01",
+        "ceiling-02"
+      ],
+      "required_tags": [
+        "4k"
+      ],
+      "runtime": "claude-code",
+      "metric": "total_incremental_tokens",
+      "p95_max_tokens": 4000,
+      "report": [
+        "p95",
+        "maximum"
+      ]
+    },
+    {
+      "id": "open-context",
+      "case_ids": [
+        "ceiling-03",
+        "ceiling-04"
+      ],
+      "required_tags": [
+        "8k"
+      ],
+      "runtime": "claude-code",
+      "metric": "total_incremental_tokens",
+      "p95_max_tokens": 8000,
+      "report": [
+        "p95",
+        "maximum"
+      ]
+    }
+  ],
   "conditions": {
     "candidate": {
       "namespace": "candidate skill with the case-appropriate competing namespace",

@@ -10,8 +10,10 @@ import shutil
 import struct
 import subprocess
 import unittest
+import zlib
 from pathlib import Path
 from types import ModuleType
+from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,30 @@ ARTIFACT_DEPENDENT_CASES = {
     "routing-03": "synthetic-ipad-editor-review.png",
     "routing-10": "synthetic-phone-editor-review.png",
 }
+FETCH_OUTPUT_INJECTION_CASES = {
+    "injection-01": "synthetic-injection.md",
+    "injection-02": "synthetic-injection.md",
+    "injection-04": "synthetic-tool-output-injection.md",
+}
+
+
+def png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    checksum = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", checksum)
+
+
+def synthetic_png(
+    *, compressed: Optional[bytes] = None, scanlines: Optional[bytes] = None
+) -> bytes:
+    ihdr = struct.pack(">IIBBBBB", 2, 1, 8, 6, 0, 0, 0)
+    raw = scanlines if scanlines is not None else b"\x00" + (b"\x00\x00\x00\xff" * 2)
+    idat = compressed if compressed is not None else zlib.compress(raw)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", ihdr)
+        + png_chunk(b"IDAT", idat)
+        + png_chunk(b"IEND", b"")
+    )
 
 
 def load_renderer() -> ModuleType:
@@ -190,6 +216,19 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertIn("requires an attached image fixture", result.stderr)
         self.assertFalse(self.output_path.exists())
 
+    def test_rejects_fetch_output_injection_case_without_fixture(self) -> None:
+        item = case("injection-04", "Missing fetched tool output")
+        item["kind"] = "injection"
+        item["tags"].append("requires-fetch-output-fixture")
+        item["capabilities"] = ["fetch"]
+        self.write_cases([item])
+
+        result = self.run_renderer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires an untrusted tool-output fixture", result.stderr)
+        self.assertFalse(self.output_path.exists())
+
     def test_rejects_fixture_media_that_does_not_match_file_type(self) -> None:
         item = case("evidence-01", "Wrong media")
         item["fixture"] = (
@@ -202,7 +241,7 @@ class RenderValidationScenariosTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "fixture_media image requires a raster image fixture", result.stderr
+            "fixture_media image requires a PNG fixture", result.stderr
         )
         self.assertFalse(self.output_path.exists())
 
@@ -225,7 +264,7 @@ class RenderValidationScenariosTests(unittest.TestCase):
         item["fixture_media"] = "image"
         item["capabilities"] = ["vision"]
         with self.assertRaisesRegex(
-            ValueError, "fixture_media image requires a raster image fixture"
+            ValueError, "fixture_media image requires a PNG fixture"
         ):
             module.validate_case(item, 1)
 
@@ -254,12 +293,34 @@ class RenderValidationScenariosTests(unittest.TestCase):
             self.assertEqual(item["fixture_media"], "image")
             self.assertIn("vision", item["capabilities"])
             fixture = ROOT / item["fixture"]
-            payload = fixture.read_bytes()
-            self.assertTrue(payload.startswith(b"\x89PNG\r\n\x1a\n"), item["id"])
-            self.assertEqual(payload[12:16], b"IHDR", item["id"])
-            width, height = struct.unpack(">II", payload[16:24])
-            self.assertGreater(width, 0, item["id"])
-            self.assertGreater(height, 0, item["id"])
+            module.validate_raster_data(fixture, ".png", item["id"])
+
+    def test_all_fetch_output_injection_cases_provision_untrusted_fixture(self) -> None:
+        module = load_renderer()
+        cases = module.load_cases(
+            ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        required = {
+            item["id"]: Path(item["fixture"]).name
+            for item in cases
+            if "requires-fetch-output-fixture" in item["tags"]
+        }
+
+        self.assertEqual(required, FETCH_OUTPUT_INJECTION_CASES)
+        for item in cases:
+            if item["id"] not in required:
+                continue
+            self.assertEqual(item["fixture_media"], "text")
+            self.assertEqual(item["fixture_delivery"], "tool_output")
+            self.assertIn("fetch", item["capabilities"])
+
+    def assert_invalid_png(self, payload: bytes, expected_error: str) -> None:
+        module = load_renderer()
+        fixture = self.temp_dir / "corrupt.png"
+        fixture.write_bytes(payload)
+
+        with self.assertRaisesRegex(ValueError, expected_error):
+            module.validate_raster_data(fixture, ".png", "image-case")
 
     def test_rejects_png_extension_without_png_signature(self) -> None:
         module = load_renderer()
@@ -282,6 +343,32 @@ class RenderValidationScenariosTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "PNG fixture is not PNG raster data"):
             module.validate_case(item, 1)
+
+    def test_rejects_signature_only_png(self) -> None:
+        self.assert_invalid_png(
+            b"\x89PNG\r\n\x1a\n", "truncated PNG chunk"
+        )
+
+    def test_rejects_truncated_png_chunk(self) -> None:
+        self.assert_invalid_png(synthetic_png()[:-5], "truncated PNG chunk")
+
+    def test_rejects_png_with_bad_crc(self) -> None:
+        payload = bytearray(synthetic_png())
+        payload[29] ^= 0x01
+        self.assert_invalid_png(bytes(payload), "PNG chunk CRC mismatch")
+
+    def test_rejects_png_with_bad_zlib_stream(self) -> None:
+        self.assert_invalid_png(
+            synthetic_png(compressed=b"not-zlib"), "invalid PNG zlib stream"
+        )
+
+    def test_rejects_png_with_wrong_scanline_length(self) -> None:
+        self.assert_invalid_png(
+            synthetic_png(scanlines=b"\x00"), "PNG scanline data length"
+        )
+
+    def test_rejects_png_without_iend(self) -> None:
+        self.assert_invalid_png(synthetic_png()[:-12], "missing PNG IEND chunk")
 
     def test_baseline_conditions_use_only_discovery_and_routing_cases(self) -> None:
         policy = json.loads(CONDITIONS.read_text(encoding="utf-8"))
@@ -306,6 +393,38 @@ class RenderValidationScenariosTests(unittest.TestCase):
                 "ceiling",
             },
         )
+
+    def test_ceiling_assertions_are_per_attempt_and_aggregate_gates_are_keyed(self) -> None:
+        module = load_renderer()
+        cases = module.load_cases(
+            ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        ceiling_cases = [item for item in cases if item["kind"] == "ceiling"]
+        forbidden_fragments = ("across repeats", "p95", "report maximum")
+
+        for item in ceiling_cases:
+            assertions = " ".join(item["expected"]["assertions"]).lower()
+            for fragment in forbidden_fragments:
+                self.assertNotIn(fragment, assertions, item["id"])
+
+        policy = json.loads(CONDITIONS.read_text(encoding="utf-8"))
+        gates = {gate["id"]: gate for gate in policy["aggregate_release_gates"]}
+        self.assertEqual(
+            gates["bounded-context"]["case_ids"], ["ceiling-01", "ceiling-02"]
+        )
+        self.assertEqual(gates["bounded-context"]["required_tags"], ["4k"])
+        self.assertEqual(gates["bounded-context"]["p95_max_tokens"], 4000)
+        self.assertEqual(
+            gates["open-context"]["case_ids"], ["ceiling-03", "ceiling-04"]
+        )
+        self.assertEqual(
+            gates["open-context"]["required_tags"], ["8k"]
+        )
+        self.assertEqual(gates["open-context"]["p95_max_tokens"], 8000)
+        for gate in gates.values():
+            self.assertEqual(gate["runtime"], "claude-code")
+            self.assertEqual(gate["metric"], "total_incremental_tokens")
+            self.assertEqual(gate["report"], ["p95", "maximum"])
 
     def test_calibration_scope_excludes_all_held_out_content(self) -> None:
         calibration = case("discovery-calibration", "Calibration title")
