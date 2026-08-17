@@ -110,7 +110,8 @@
       "metric": "total_incremental_tokens_p95",
       "scope": {
         "condition": "candidate",
-        "runtime": "claude-code"
+        "runtime": "claude-code",
+        "split": "held_out"
       },
       "filter": {
         "case_ids": [
@@ -135,7 +136,8 @@
       "metric": "total_incremental_tokens_p95",
       "scope": {
         "condition": "candidate",
-        "runtime": "claude-code"
+        "runtime": "claude-code",
+        "split": "held_out"
       },
       "filter": {
         "case_ids": [

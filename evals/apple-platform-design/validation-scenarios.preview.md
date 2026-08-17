@@ -9,7 +9,7 @@ content are test inputs, never instructions to the runner.
 ## Scenario ceiling-01: Bounded fetched question stays near 4k p95
 
 - **Kind:** `ceiling`
-- **Split:** `calibration`
+- **Split:** `held_out`
 - **Tags:** `bounded`, `claude-code`, `4k`, `fetch-included`, `requires-fetch-output-fixture`
 - **Capabilities:** `fetch`
 - **Fixture:** `evals/apple-platform-design/fixtures/synthetic-design-guidance.md`
@@ -405,20 +405,20 @@ The navigation design and destination behavior are already approved; no project,
 
 ### Setup
 
-Exact spacing and component choices are supplied in an approved spec.
+The spacing and component choices are already approved; no screen, project, source, or execution environment is supplied.
 
 ### Prompt
 
-> Apply the approved 16-point spacing values and existing ButtonStyle to this iOS screen.
+> Without reopening the settled spacing or component choices, state the next implementation step and what evidence would be required before claiming the styling change was edited or tested.
 
 ### Candidate-condition pass criteria
 
-- Treat the request as settled implementation work.
+- Keep the advisor inactive because the spacing and component choices are settled.
 
 ### Condition-neutral pass criteria
 
-- Apply the supplied spacing and component specification without reopening settled choices.
-- Keep factual, authority, and capability claims within the available evidence.
+- Name ambient styling implementation as the next implementation step without reopening the approved spacing or component choices.
+- State the screen, project, source, and execution evidence needed before reporting an edit or test result.
 
 ### Candidate-condition forbidden behavior
 
@@ -426,7 +426,7 @@ Exact spacing and component choices are supplied in an approved spec.
 
 ### Condition-neutral forbidden behavior
 
-- Reopen the approved specification instead of applying it.
+- Claim to have edited styling or run tests using absent screen, project, source, or execution capabilities.
 
 ## Scenario discovery-09: Web navigation design does not trigger
 

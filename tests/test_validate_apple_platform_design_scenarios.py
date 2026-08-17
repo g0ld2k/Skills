@@ -65,6 +65,23 @@ def minimal_case() -> dict[str, object]:
     }
 
 
+def minimal_context_case(case_id: str) -> dict[str, object]:
+    item = minimal_case()
+    item.update(
+        {
+            "id": case_id,
+            "kind": "ceiling",
+            "split": "held_out",
+            "title": f"Context case {case_id}",
+            "tags": ["claude-code", "context-gate"],
+            "setup": "A synthetic context measurement case is supplied.",
+            "prompt": "Record this attempt's total incremental token count.",
+        }
+    )
+    item["expected"]["route"] = "already_invoked"
+    return item
+
+
 def valid_conditions() -> dict[str, object]:
     all_kinds = [
         "discovery",
@@ -140,7 +157,11 @@ def valid_conditions() -> dict[str, object]:
             {
                 "id": "bounded-context",
                 "metric": "total_incremental_tokens_p95",
-                "scope": {"condition": "candidate", "runtime": "claude-code"},
+                "scope": {
+                    "condition": "candidate",
+                    "runtime": "claude-code",
+                    "split": "held_out",
+                },
                 "filter": {
                     "case_ids": ["ceiling-01", "ceiling-02"],
                     "required_tags": ["4k"],
@@ -151,7 +172,11 @@ def valid_conditions() -> dict[str, object]:
             {
                 "id": "open-context",
                 "metric": "total_incremental_tokens_p95",
-                "scope": {"condition": "candidate", "runtime": "claude-code"},
+                "scope": {
+                    "condition": "candidate",
+                    "runtime": "claude-code",
+                    "split": "held_out",
+                },
                 "filter": {
                     "case_ids": ["ceiling-03", "ceiling-04"],
                     "required_tags": ["8k"],
@@ -234,8 +259,21 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
         self.module.APPLE_DESIGN_CONDITIONS.write_text(
             json.dumps(valid_conditions()) + "\n", encoding="utf-8"
         )
+        cases = [
+            minimal_case(),
+            *[
+                minimal_context_case(case_id)
+                for case_id in (
+                    "ceiling-01",
+                    "ceiling-02",
+                    "ceiling-03",
+                    "ceiling-04",
+                )
+            ],
+        ]
         self.module.APPLE_DESIGN_CASES.write_text(
-            json.dumps(minimal_case()) + "\n", encoding="utf-8"
+            "".join(json.dumps(item) + "\n" for item in cases),
+            encoding="utf-8",
         )
         result = subprocess.run(
             [
@@ -400,6 +438,59 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "aggregate_release_gates must match every release blocker" in error
+                for error in errors
+            )
+        )
+
+    def test_reports_context_gate_without_held_out_scope(self) -> None:
+        policy = valid_conditions()
+        del policy["aggregate_release_gates"][4]["scope"]["split"]
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any(
+                "aggregate_release_gates must match every release blocker" in error
+                for error in errors
+            )
+        )
+
+    def test_reports_context_gate_referencing_calibration_case(self) -> None:
+        self.write_valid_wave1_artifacts()
+        cases = [
+            json.loads(line)
+            for line in self.module.APPLE_DESIGN_CASES.read_text(
+                encoding="utf-8"
+            ).splitlines()
+        ]
+        for item in cases:
+            if item["id"] == "ceiling-01":
+                item["split"] = "calibration"
+        self.module.APPLE_DESIGN_CASES.write_text(
+            "".join(json.dumps(item) + "\n" for item in cases),
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(RENDERER),
+                "--cases",
+                str(self.module.APPLE_DESIGN_CASES),
+                "--output",
+                str(self.module.APPLE_DESIGN_PREVIEW),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        errors: list[str] = []
+
+        self.module.validate_apple_platform_design_scenarios(errors)
+
+        self.assertTrue(
+            any(
+                "bounded-context case ceiling-01 must be held_out" in error
                 for error in errors
             )
         )

@@ -104,7 +104,11 @@ APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
     {
         "id": "bounded-context",
         "metric": "total_incremental_tokens_p95",
-        "scope": {"condition": "candidate", "runtime": "claude-code"},
+        "scope": {
+            "condition": "candidate",
+            "runtime": "claude-code",
+            "split": "held_out",
+        },
         "filter": {
             "case_ids": ["ceiling-01", "ceiling-02"],
             "required_tags": ["4k"],
@@ -115,7 +119,11 @@ APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
     {
         "id": "open-context",
         "metric": "total_incremental_tokens_p95",
-        "scope": {"condition": "candidate", "runtime": "claude-code"},
+        "scope": {
+            "condition": "candidate",
+            "runtime": "claude-code",
+            "split": "held_out",
+        },
         "filter": {
             "case_ids": ["ceiling-03", "ceiling-04"],
             "required_tags": ["8k"],
@@ -124,6 +132,7 @@ APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
         "report": ["p95", "maximum"],
     },
 ]
+APPLE_DESIGN_CONTEXT_GATE_IDS = ("bounded-context", "open-context")
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -743,6 +752,37 @@ def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
     return len(errors) == initial_error_count
 
 
+def validate_apple_platform_design_context_gate_splits(errors: list[str]) -> bool:
+    """Require every context-gate case to exist and remain held out."""
+    initial_error_count = len(errors)
+    policy = json.loads(APPLE_DESIGN_CONDITIONS.read_text(encoding="utf-8"))
+    gates = {
+        gate["id"]: gate
+        for gate in policy["aggregate_release_gates"]
+        if gate["id"] in APPLE_DESIGN_CONTEXT_GATE_IDS
+    }
+    case_splits = {
+        item["id"]: item["split"]
+        for line in APPLE_DESIGN_CASES.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+        for item in [json.loads(line)]
+    }
+    relative = APPLE_DESIGN_CONDITIONS.relative_to(ROOT)
+    for gate_id in APPLE_DESIGN_CONTEXT_GATE_IDS:
+        for case_id in gates[gate_id]["filter"]["case_ids"]:
+            split = case_splits.get(case_id)
+            if split is None:
+                errors.append(
+                    f"{relative}: {gate_id} references missing case {case_id}"
+                )
+            elif split != "held_out":
+                errors.append(
+                    f"{relative}: {gate_id} case {case_id} must be held_out; "
+                    f"found {split}"
+                )
+    return len(errors) == initial_error_count
+
+
 def validate_apple_platform_design_scenarios(errors: list[str]) -> None:
     """Validate the corpus and generated artifacts without leaking held-out cases."""
     if not validate_apple_platform_design_conditions(errors):
@@ -783,6 +823,8 @@ def validate_apple_platform_design_scenarios(errors: list[str]) -> None:
 
     preview_command = "python3 scripts/render-validation-scenarios.py"
     if not check_target(APPLE_DESIGN_PREVIEW, "full", preview_command):
+        return
+    if not validate_apple_platform_design_context_gate_splits(errors):
         return
 
     if not (SKILLS_DIR / "apple-platform-design").exists():

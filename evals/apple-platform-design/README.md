@@ -117,10 +117,12 @@ not fetched source passages:
    statistics. Apply every `aggregate_release_gates` entry from
    `conditions.json`: the held-out discovery/routing pass-rate gate, global
    unsupported-attribution count, counter-case laundering count, fetchless
-   degradation pass rate, and the two Claude Code context slices. Compute p95
-   and maximum only for the context gates at this aggregation phase. Report
-   every dimension named by each gate, including numerator and denominator
-   behind percentages, and preserve failures by case ID.
+   degradation pass rate, and the two held-out Claude Code context slices.
+   Every case referenced by a context gate must remain `held_out`; validation
+   fails if a referenced case is missing or publishable as calibration.
+   Compute p95 and maximum only for the context gates at this aggregation
+   phase. Report every dimension named by each gate, including numerator and
+   denominator behind percentages, and preserve failures by case ID.
 
 Use a fixed runner version, model identifier, tool configuration, namespace
 manifest, and case revision in every result record. Randomize case order with
@@ -221,8 +223,10 @@ removed attribution only when an independent product rationale remains.
   incremental context of about 4k tokens or less.
   Aggregate `ceiling-03` and `ceiling-04` attempts tagged `8k` and require p95
   of about 8k tokens or less. Fetches are included. Report p95 and maximum for
-  each slice. Codex and Copilot are unmeasured for context, and no byte proxy
-  is permitted.
+  each slice. All four cases and both policy scopes are held out, so no scored
+  context-gate prompt or answer is published in the installed calibration
+  artifact. Codex and Copilot are unmeasured for context, and no byte proxy is
+  permitted.
 
 These gates are release blockers. Report unavailable runtimes and unresolved
 human-judge disagreements as residual risk rather than converting them into
@@ -241,7 +245,9 @@ skills/apple-platform-design/references/validation-scenarios.md`. The safe
 publication filter excludes every held-out ID, prompt, and answer key. It also
 excludes any calibration case with a `pair-*` tag shared by a held-out case,
 so no scored rephrasing premise or answer is exposed through the installed
-skill. The full corpus and its complete render remain under `evals/` only.
+skill. Every context-gate case is held out and mechanically excluded by the
+same filter. The full corpus and its complete render remain under `evals/`
+only.
 
 Once that skill exists, repository validation compares the target with a
 fresh in-memory render and fails on drift.

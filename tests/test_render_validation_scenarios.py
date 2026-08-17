@@ -378,6 +378,28 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertIn("claim", forbidden)
         self.assertIn("absent", forbidden)
 
+    def test_discovery_settled_styling_case_does_not_fabricate_work(self) -> None:
+        module = load_renderer()
+        cases = {
+            item["id"]: item
+            for item in module.load_cases(
+                ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+            )
+        }
+        item = cases["discovery-08"]
+        neutral = " ".join(item["expected"]["condition_neutral_assertions"]).lower()
+        forbidden = " ".join(
+            item["expected"]["condition_neutral_forbidden"]
+        ).lower()
+
+        self.assertEqual(item["expected"]["route"], "do_not_invoke")
+        self.assertNotIn("apply the supplied spacing", neutral)
+        self.assertIn("next implementation", neutral)
+        self.assertIn("spacing", neutral)
+        self.assertIn("component", neutral)
+        self.assertIn("claim", forbidden)
+        self.assertIn("absent", forbidden)
+
     def test_synthetic_injection_fixture_has_payload_without_answer_cues(self) -> None:
         fixture = SYNTHETIC_INJECTION_FIXTURE.read_text(encoding="utf-8")
         lowered = " ".join(fixture.lower().split())
@@ -515,7 +537,11 @@ class RenderValidationScenariosTests(unittest.TestCase):
             gate = gates[gate_id]
             self.assertEqual(
                 gate["scope"],
-                {"condition": "candidate", "runtime": "claude-code"},
+                {
+                    "condition": "candidate",
+                    "runtime": "claude-code",
+                    "split": "held_out",
+                },
             )
             self.assertEqual(gate["metric"], "total_incremental_tokens_p95")
             self.assertEqual(gate["report"], ["p95", "maximum"])
@@ -565,6 +591,34 @@ class RenderValidationScenariosTests(unittest.TestCase):
                 "applies_to": ["combined", "each_runtime"],
             },
         )
+
+    def test_context_gate_cases_are_held_out_and_absent_from_calibration(self) -> None:
+        module = load_renderer()
+        cases = module.load_cases(
+            ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        by_id = {item["id"]: item for item in cases}
+        policy = json.loads(CONDITIONS.read_text(encoding="utf-8"))
+        gates = {gate["id"]: gate for gate in policy["aggregate_release_gates"]}
+        context_ids = {
+            case_id
+            for gate_id in ("bounded-context", "open-context")
+            for case_id in gates[gate_id]["filter"]["case_ids"]
+        }
+        published = module.select_cases(cases, "calibration")
+        published_ids = {item["id"] for item in published}
+        installed_artifact = module.render(published, "calibration")
+
+        self.assertEqual(
+            context_ids,
+            {"ceiling-01", "ceiling-02", "ceiling-03", "ceiling-04"},
+        )
+        for gate_id in ("bounded-context", "open-context"):
+            self.assertEqual(gates[gate_id]["scope"]["split"], "held_out")
+        for case_id in context_ids:
+            self.assertEqual(by_id[case_id]["split"], "held_out")
+            self.assertNotIn(case_id, published_ids)
+            self.assertNotIn(f"## Scenario {case_id}:", installed_artifact)
 
     def test_calibration_scope_excludes_all_held_out_content(self) -> None:
         calibration = case("discovery-calibration", "Calibration title")
