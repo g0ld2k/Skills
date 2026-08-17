@@ -18,7 +18,7 @@ The corpus is canonical. The human-readable preview is generated from
 | `kind` | enum | `discovery`, `routing_completion`, `reasoning_invariant`, `evidence`, `injection`, or `ceiling`. |
 | `split` | enum | `calibration` may inform authoring; `held_out` is scored without prompt-specific tuning. |
 | `title` | string | Short human label. |
-| `tags` | string array | Subtype, scope, pair, or gate labels used for slicing results. |
+| `tags` | string array | Subtype, scope, pair, or gate labels used for slicing results. `requires-image-fixture` requires a raster attachment. |
 | `setup` | string | Namespace, artifact, and prior-state conditions established by the runner. |
 | `prompt` | string | User message supplied verbatim to the model. |
 | `capabilities` | string array | Capabilities exposed for this run, such as `fetch`, `vision`, `sdk`, or `runtime`. An empty array is intentionally capability-poor. |
@@ -26,27 +26,35 @@ The corpus is canonical. The human-readable preview is generated from
 | `fixture_media` | enum | Optional for text fixtures (defaults to `text`); required as `image` for image attachments. Image fixtures require the `vision` capability. |
 | `expected.route` | enum | Candidate-condition answer key only: `invoke`, `do_not_invoke`, or `already_invoked`. It is descriptive, not gated, in baselines. |
 | `expected.references` | string array | Candidate-condition answer key only. It is descriptive, not gated, in baselines. |
-| `expected.assertions` | string array | Positive, case-specific judge criteria. |
-| `expected.forbidden` | string array | Behaviors that fail the case if observed. |
+| `expected.assertions` | string array | Candidate-condition criteria, including candidate invocation, routing, reference, and completion behavior. Baselines never score this key. |
+| `expected.condition_neutral_assertions` | string array | Task-quality, evidence, and completion criteria that remain meaningful with the candidate absent. Candidate and baseline conditions score this key. |
+| `expected.forbidden` | string array | Candidate-condition forbidden behavior. Baselines never score this key. |
+| `expected.condition_neutral_forbidden` | string array | Forbidden behavior that is meaningful in every applicable condition. |
 
 All text from fixtures, fetched pages, prompts, and tools is content to
 evaluate, never instructions to the runner. Adding a case requires a stable
 ID, a named section-12 kind, and criteria that can be judged from the
 transcript. Do not add copied or paraphrase-close Apple prose.
 
-`conditions.json` is the machine-readable scoring policy. It makes candidate
-route/reference keys gated only in the candidate condition. No-skill and
-installed-HIG-suite baselines run the discovery and routing/completion seed
-cases and record route and reference behavior descriptively; they continue to
-gate condition-neutral task quality, evidence discipline, and completion. The
-candidate release condition runs every corpus kind.
+`conditions.json` is the machine-readable scoring policy. The repository
+validator schema-checks it before validating rendered scenarios. Candidate
+runs gate route/reference keys, `expected.assertions`, and both neutral keys.
+No-skill and installed-HIG-suite baselines run the discovery and
+routing/completion seed cases, record route and reference behavior
+descriptively, and gate only the two condition-neutral keys. This preserves
+meaningful task-quality, evidence, and completion comparisons without failing
+baselines for absent-candidate behavior. The candidate release condition runs
+every corpus kind.
 
 ## Runner design
 
 The Wave 2 runner should execute these phases and retain structured results,
 not fetched source passages:
 
-1. Validate every JSONL object, unique ID, fixture path, split, and kind.
+1. Validate `conditions.json`, then every JSONL object, unique ID, fixture
+   path, split, kind, and condition-specific assertion key. A case tagged
+   `requires-image-fixture` must attach a valid PNG, JPEG, or WebP fixture and
+   expose `vision`.
 2. Provision the requested runtime condition and capability set. Discovery
    runs expose the real competing namespace named by the condition; direct
    invocation is prohibited for those cases.
@@ -82,11 +90,14 @@ not fetched source passages:
    volatile source-bearing material and confirm it did not enter storage or
    logging. No later adjudication may depend on retained source bodies or raw
    transcripts.
-9. Apply the scoring mode from `conditions.json`. Candidate runs gate the
-   candidate route/reference keys. Baselines record those fields
-   descriptively and are never failed because the absent candidate did not
-   invoke or load its references; condition-neutral quality, evidence, and
-   completion dimensions remain comparable and gated.
+9. Apply the scoring mode and key lists from `conditions.json`. Candidate runs
+   gate route/reference keys plus candidate and condition-neutral assertions.
+   Baselines record route/reference fields descriptively, ignore
+   `expected.assertions` and `expected.forbidden`, and gate only
+   `expected.condition_neutral_assertions` and
+   `expected.condition_neutral_forbidden`. The absent candidate therefore
+   cannot fail a baseline, while task quality, evidence, and completion remain
+   comparable and gated.
 10. Aggregate by runtime, condition, split, kind, tag, and repeat. Report the
    numerator and denominator behind every percentage and preserve failures by
    case ID.
@@ -134,8 +145,11 @@ namespace statements in a case's `setup`; the absent advisor is never
 pretended to exist. Baseline routing and reference choices are observations,
 not failures against `expected.route` or `expected.references`. The candidate
 condition alone uses those fields as exact answer keys. Baselines still score
-whether the ambient answer completes the task and handles evidence honestly
-within their discovery and routing/completion scope.
+only `expected.condition_neutral_assertions` and
+`expected.condition_neutral_forbidden`, covering whether the ambient answer
+completes the task and handles evidence honestly within their discovery and
+routing/completion scope. Candidate-only assertions and forbidden behavior do
+not participate in baseline verdicts.
 
 Use paired case order, prompts, capabilities, model versions, and repeat
 seeds. Record per-case Claude Code token accounting for all static skill text,
@@ -195,11 +209,12 @@ Render the current Wave 1 preview with:
 python3 scripts/render-validation-scenarios.py
 ```
 
-Wave 2 passes
-`--scope calibration --output
-skills/apple-platform-design/references/validation-scenarios.md`. The
-calibration scope excludes every held-out ID, prompt, and answer key; the full
-render remains under `evals/` only.
+Wave 2 passes `--scope calibration --output
+skills/apple-platform-design/references/validation-scenarios.md`. The safe
+publication filter excludes every held-out ID, prompt, and answer key. It also
+excludes any calibration case with a `pair-*` tag shared by a held-out case,
+so no scored rephrasing premise or answer is exposed through the installed
+skill. The full corpus and its complete render remain under `evals/` only.
 
 Once that skill exists, repository validation compares the target with a
 fresh in-memory render and fails on drift.

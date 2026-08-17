@@ -24,6 +24,16 @@ SYNTHETIC_VISUAL_FIXTURE = (
     / "fixtures"
     / "synthetic-visual-injection.png"
 )
+ARTIFACT_DEPENDENT_CASES = {
+    "ceiling-04": "synthetic-ipad-editor-review.png",
+    "discovery-02": "synthetic-checkout-review.png",
+    "discovery-11": "synthetic-phone-editor-review.png",
+    "injection-03": "synthetic-visual-injection.png",
+    "invariant-06": "synthetic-ipad-editor-review.png",
+    "routing-02": "synthetic-phone-editor-review.png",
+    "routing-03": "synthetic-ipad-editor-review.png",
+    "routing-10": "synthetic-phone-editor-review.png",
+}
 
 
 def load_renderer() -> ModuleType:
@@ -67,7 +77,12 @@ def case(case_id: str, title: str) -> dict[str, object]:
                 "Resolve the material container decision and state a reversal condition.",
                 "Verify or remove each Apple-attributed proposition.",
             ],
+            "condition_neutral_assertions": [
+                "Give a usable recommendation with rationale and a reversal condition.",
+                "Keep authority claims within the available evidence.",
+            ],
             "forbidden": ["Stop after emitting a handoff artifact."],
+            "condition_neutral_forbidden": ["Leave the requested task incomplete."],
         },
     }
 
@@ -115,9 +130,22 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertTrue(rendered.startswith("<!-- GENERATED from evals/apple-platform-design/cases.jsonl"))
         self.assertLess(rendered.index("## Scenario discovery-01"), rendered.index("## Scenario discovery-02"))
         self.assertIn("**Route:** `invoke`", rendered)
-        self.assertIn("### Pass criteria", rendered)
-        self.assertIn("### Forbidden behavior", rendered)
+        self.assertIn("### Candidate-condition pass criteria", rendered)
+        self.assertIn("### Condition-neutral pass criteria", rendered)
+        self.assertIn("### Candidate-condition forbidden behavior", rendered)
+        self.assertIn("### Condition-neutral forbidden behavior", rendered)
         self.assertTrue(rendered.endswith("\n"))
+
+    def test_rejects_missing_condition_neutral_assertions(self) -> None:
+        item = case("discovery-01", "Missing neutral assertions")
+        del item["expected"]["condition_neutral_assertions"]
+        self.write_cases([item])
+
+        result = self.run_renderer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected.condition_neutral_assertions", result.stderr)
+        self.assertFalse(self.output_path.exists())
 
     def test_rejects_duplicate_case_ids_without_writing_output(self) -> None:
         self.write_cases([case("discovery-01", "First"), case("discovery-01", "Duplicate")])
@@ -148,6 +176,18 @@ class RenderValidationScenariosTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fixture does not exist", result.stderr)
+        self.assertFalse(self.output_path.exists())
+
+    def test_rejects_required_image_case_without_fixture(self) -> None:
+        item = case("routing-02", "Missing required screenshot")
+        item["tags"].append("requires-image-fixture")
+        item["capabilities"] = ["vision"]
+        self.write_cases([item])
+
+        result = self.run_renderer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires an attached image fixture", result.stderr)
         self.assertFalse(self.output_path.exists())
 
     def test_rejects_fixture_media_that_does_not_match_file_type(self) -> None:
@@ -195,6 +235,31 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertTrue(payload.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertEqual(payload[12:16], b"IHDR")
         self.assertEqual(struct.unpack(">II", payload[16:24]), (800, 600))
+
+    def test_all_artifact_dependent_cases_have_valid_raster_fixtures(self) -> None:
+        module = load_renderer()
+        cases = module.load_cases(
+            ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        required = {
+            item["id"]: Path(item["fixture"]).name
+            for item in cases
+            if "requires-image-fixture" in item["tags"]
+        }
+
+        self.assertEqual(required, ARTIFACT_DEPENDENT_CASES)
+        for item in cases:
+            if item["id"] not in required:
+                continue
+            self.assertEqual(item["fixture_media"], "image")
+            self.assertIn("vision", item["capabilities"])
+            fixture = ROOT / item["fixture"]
+            payload = fixture.read_bytes()
+            self.assertTrue(payload.startswith(b"\x89PNG\r\n\x1a\n"), item["id"])
+            self.assertEqual(payload[12:16], b"IHDR", item["id"])
+            width, height = struct.unpack(">II", payload[16:24])
+            self.assertGreater(width, 0, item["id"])
+            self.assertGreater(height, 0, item["id"])
 
     def test_rejects_png_extension_without_png_signature(self) -> None:
         module = load_renderer()
@@ -261,6 +326,48 @@ class RenderValidationScenariosTests(unittest.TestCase):
         self.assertNotIn("HELD OUT SECRET TITLE", rendered)
         self.assertNotIn("HELD OUT SECRET PROMPT", rendered)
         self.assertNotIn("HELD OUT SECRET CRITERION", rendered)
+
+    def test_calibration_scope_excludes_calibration_member_of_held_out_pair(self) -> None:
+        paired_calibration = case("invariant-calibration", "Paired calibration")
+        paired_calibration["tags"] = ["pair-example-01", "phrasing-a"]
+        paired_held_out = case("invariant-held-out", "Paired held out")
+        paired_held_out["split"] = "held_out"
+        paired_held_out["tags"] = ["pair-example-01", "phrasing-b"]
+        unrelated = case("discovery-calibration", "Unrelated calibration")
+        self.write_cases([paired_calibration, paired_held_out, unrelated])
+
+        result = self.run_renderer(
+            "--scope", "calibration", "--output", str(self.output_path)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = self.output_path.read_text(encoding="utf-8")
+        self.assertNotIn("invariant-calibration", rendered)
+        self.assertNotIn("invariant-held-out", rendered)
+        self.assertIn("discovery-calibration", rendered)
+
+    def test_published_calibration_has_no_pair_tag_shared_with_held_out(self) -> None:
+        module = load_renderer()
+        cases = module.load_cases(
+            ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        published = module.select_cases(cases, "calibration")
+        held_out_pair_tags = {
+            tag
+            for item in cases
+            if item["split"] == "held_out"
+            for tag in item["tags"]
+            if tag.startswith("pair-")
+        }
+        published_pair_tags = {
+            tag
+            for item in published
+            for tag in item["tags"]
+            if tag.startswith("pair-")
+        }
+
+        self.assertTrue(held_out_pair_tags)
+        self.assertTrue(published_pair_tags.isdisjoint(held_out_pair_tags))
 
 
 if __name__ == "__main__":

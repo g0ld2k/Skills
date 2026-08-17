@@ -40,8 +40,10 @@ CALIBRATION_HEADER = """<!-- GENERATED calibration-only scenarios from evals/app
 
 # Apple Platform Design Calibration Scenarios
 
-This artifact contains calibration cases only. Held-out IDs, prompts, and
-answer keys are excluded so an installed skill cannot access evaluation data.
+This artifact contains publication-safe calibration cases only. Held-out IDs,
+prompts, and answer keys are excluded, along with any calibration case whose
+pair tag is shared with a held-out case, so an installed skill cannot access
+scored pair premises or answers.
 """
 
 
@@ -91,6 +93,9 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
 
     fixture = raw.get("fixture")
     fixture_media = raw.get("fixture_media")
+    requires_image = "requires-image-fixture" in raw["tags"]
+    if requires_image and fixture is None:
+        raise ValueError(f"{case_id}: requires an attached image fixture")
     if fixture is not None and (not isinstance(fixture, str) or not fixture.strip()):
         raise ValueError(f"{case_id}: fixture must be null or a non-empty string")
     if fixture is None and fixture_media is not None:
@@ -128,6 +133,8 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
             validate_raster_data(candidate, suffix, case_id)
         if fixture_media == "image" and "vision" not in raw.get("capabilities", []):
             raise ValueError(f"{case_id}: image fixtures require the vision capability")
+        if requires_image and fixture_media != "image":
+            raise ValueError(f"{case_id}: requires an attached image fixture")
 
     expected = raw.get("expected")
     if not isinstance(expected, dict):
@@ -140,7 +147,19 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
     )
     require_string_list(expected.get("assertions"), "expected.assertions", case_id)
     require_string_list(
+        expected.get("condition_neutral_assertions"),
+        "expected.condition_neutral_assertions",
+        case_id,
+        allow_empty=True,
+    )
+    require_string_list(
         expected.get("forbidden"), "expected.forbidden", case_id, allow_empty=True
+    )
+    require_string_list(
+        expected.get("condition_neutral_forbidden"),
+        "expected.condition_neutral_forbidden",
+        case_id,
+        allow_empty=True,
     )
     return raw
 
@@ -173,7 +192,19 @@ def quote_prompt(prompt: str) -> str:
 def select_cases(cases: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
     if scope == "full":
         return cases
-    selected = [item for item in cases if item["split"] == "calibration"]
+    held_out_pair_tags = {
+        tag
+        for item in cases
+        if item["split"] == "held_out"
+        for tag in item["tags"]
+        if tag.startswith("pair-")
+    }
+    selected = [
+        item
+        for item in cases
+        if item["split"] == "calibration"
+        and not held_out_pair_tags.intersection(item["tags"])
+    ]
     if not selected:
         raise ValueError("calibration scope contains no cases")
     return selected
@@ -213,17 +244,41 @@ def render(cases: list[dict[str, Any]], scope: str) -> str:
             "",
             quote_prompt(item["prompt"]),
             "",
-            "### Pass criteria",
+            "### Candidate-condition pass criteria",
             "",
             *[f"- {assertion}" for assertion in expected["assertions"]],
         ]
+        if expected["condition_neutral_assertions"]:
+            lines.extend(
+                [
+                    "",
+                    "### Condition-neutral pass criteria",
+                    "",
+                    *[
+                        f"- {assertion}"
+                        for assertion in expected["condition_neutral_assertions"]
+                    ],
+                ]
+            )
         if expected["forbidden"]:
             lines.extend(
                 [
                     "",
-                    "### Forbidden behavior",
+                    "### Candidate-condition forbidden behavior",
                     "",
                     *[f"- {behavior}" for behavior in expected["forbidden"]],
+                ]
+            )
+        if expected["condition_neutral_forbidden"]:
+            lines.extend(
+                [
+                    "",
+                    "### Condition-neutral forbidden behavior",
+                    "",
+                    *[
+                        f"- {behavior}"
+                        for behavior in expected["condition_neutral_forbidden"]
+                    ],
                 ]
             )
         sections.append("\n".join(lines))

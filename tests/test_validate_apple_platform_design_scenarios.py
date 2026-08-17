@@ -56,8 +56,69 @@ def minimal_case() -> dict[str, object]:
             "route": "invoke",
             "references": ["advise:container"],
             "assertions": ["Invoke for the unresolved design choice."],
+            "condition_neutral_assertions": [
+                "Give a useful container recommendation with rationale."
+            ],
             "forbidden": [],
+            "condition_neutral_forbidden": [],
         },
+    }
+
+
+def valid_conditions() -> dict[str, object]:
+    all_kinds = [
+        "discovery",
+        "routing_completion",
+        "reasoning_invariant",
+        "evidence",
+        "injection",
+        "ceiling",
+    ]
+    candidate_assertions = [
+        "expected.assertions",
+        "expected.condition_neutral_assertions",
+    ]
+    candidate_forbidden = [
+        "expected.forbidden",
+        "expected.condition_neutral_forbidden",
+    ]
+    neutral_assertions = ["expected.condition_neutral_assertions"]
+    neutral_forbidden = ["expected.condition_neutral_forbidden"]
+    return {
+        "schema_version": 1,
+        "candidate_answer_keys": ["expected.route", "expected.references"],
+        "conditions": {
+            "candidate": {
+                "namespace": "candidate skill with competing namespace",
+                "case_kinds": all_kinds,
+                "route_scoring": "gate",
+                "reference_scoring": "gate",
+                "assertion_keys": candidate_assertions,
+                "forbidden_keys": candidate_forbidden,
+                "condition_neutral_quality_scoring": "gate",
+            },
+            "no_skill": {
+                "namespace": "candidate and overlapping suite absent",
+                "case_kinds": ["discovery", "routing_completion"],
+                "candidate_setup_clauses": "omit",
+                "route_scoring": "descriptive",
+                "reference_scoring": "descriptive",
+                "assertion_keys": neutral_assertions,
+                "forbidden_keys": neutral_forbidden,
+                "condition_neutral_quality_scoring": "gate",
+            },
+            "installed_hig_suite": {
+                "namespace": "candidate absent and HIG suite present",
+                "case_kinds": ["discovery", "routing_completion"],
+                "candidate_setup_clauses": "omit",
+                "route_scoring": "descriptive",
+                "reference_scoring": "descriptive",
+                "assertion_keys": neutral_assertions,
+                "forbidden_keys": neutral_forbidden,
+                "condition_neutral_quality_scoring": "gate",
+            },
+        },
+        "condition_neutral_dimensions": ["task_quality", "evidence", "completion"],
     }
 
 
@@ -69,6 +130,13 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
         self.module.SKILLS_DIR = self.temp_dir / "skills"
         self.module.APPLE_DESIGN_CASES = (
             self.temp_dir / "evals" / "apple-platform-design" / "cases.jsonl"
+        )
+        self.module.APPLE_DESIGN_CONDITIONS = (
+            self.temp_dir / "evals" / "apple-platform-design" / "conditions.json"
+        )
+        self.module.APPLE_DESIGN_CONDITIONS.parent.mkdir(parents=True, exist_ok=True)
+        self.module.APPLE_DESIGN_CONDITIONS.write_text(
+            json.dumps(valid_conditions()) + "\n", encoding="utf-8"
         )
         self.module.APPLE_DESIGN_RENDERER = RENDERER
         self.module.APPLE_DESIGN_PREVIEW = (
@@ -90,6 +158,9 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
 
     def write_valid_wave1_artifacts(self) -> None:
         self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)
+        self.module.APPLE_DESIGN_CONDITIONS.write_text(
+            json.dumps(valid_conditions()) + "\n", encoding="utf-8"
+        )
         self.module.APPLE_DESIGN_CASES.write_text(
             json.dumps(minimal_case()) + "\n", encoding="utf-8"
         )
@@ -108,6 +179,18 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def validate_with_conditions(self, policy: object) -> list[str]:
+        self.write_valid_wave1_artifacts()
+        if isinstance(policy, str):
+            self.module.APPLE_DESIGN_CONDITIONS.write_text(policy, encoding="utf-8")
+        else:
+            self.module.APPLE_DESIGN_CONDITIONS.write_text(
+                json.dumps(policy) + "\n", encoding="utf-8"
+            )
+        errors: list[str] = []
+        self.module.validate_apple_platform_design_scenarios(errors)
+        return errors
+
     def test_missing_skill_target_no_ops_after_wave1_validation(self) -> None:
         self.write_valid_wave1_artifacts()
         errors: list[str] = []
@@ -115,6 +198,76 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
         self.module.validate_apple_platform_design_scenarios(errors)
 
         self.assertEqual(errors, [])
+
+    def test_reports_missing_conditions_policy(self) -> None:
+        self.write_valid_wave1_artifacts()
+        self.module.APPLE_DESIGN_CONDITIONS.unlink()
+        errors: list[str] = []
+
+        self.module.validate_apple_platform_design_scenarios(errors)
+
+        self.assertEqual(
+            errors, ["evals/apple-platform-design/conditions.json: missing"]
+        )
+
+    def test_reports_invalid_conditions_json(self) -> None:
+        errors = self.validate_with_conditions("{not-json}\n")
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("conditions.json: invalid JSON", errors[0])
+
+    def test_reports_missing_and_extra_conditions(self) -> None:
+        missing = valid_conditions()
+        del missing["conditions"]["no_skill"]
+        missing_errors = self.validate_with_conditions(missing)
+
+        extra = valid_conditions()
+        extra["conditions"]["experimental"] = extra["conditions"]["candidate"]
+        extra_errors = self.validate_with_conditions(extra)
+
+        self.assertTrue(
+            any("missing conditions: no_skill" in error for error in missing_errors)
+        )
+        self.assertTrue(
+            any("extra conditions: experimental" in error for error in extra_errors)
+        )
+
+    def test_reports_misspelled_scoring_enum(self) -> None:
+        policy = valid_conditions()
+        policy["conditions"]["candidate"]["route_scoring"] = "gated"
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any("candidate.route_scoring must be gate" in error for error in errors)
+        )
+
+    def test_reports_incorrect_condition_case_kind_scope(self) -> None:
+        policy = valid_conditions()
+        policy["conditions"]["no_skill"]["case_kinds"] = ["discovery"]
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(any("no_skill.case_kinds" in error for error in errors))
+
+    def test_reports_malformed_candidate_answer_keys(self) -> None:
+        policies = []
+        wrong_type = valid_conditions()
+        wrong_type["candidate_answer_keys"] = "expected.route"
+        policies.append(wrong_type)
+        wrong_value = valid_conditions()
+        wrong_value["candidate_answer_keys"] = [
+            "expected.route",
+            "expected.assertions",
+        ]
+        policies.append(wrong_value)
+
+        for policy in policies:
+            with self.subTest(policy=policy["candidate_answer_keys"]):
+                errors = self.validate_with_conditions(policy)
+                self.assertTrue(
+                    any("candidate_answer_keys" in error for error in errors)
+                )
 
     def test_reports_malformed_corpus_before_skill_exists(self) -> None:
         self.module.APPLE_DESIGN_CASES.parent.mkdir(parents=True, exist_ok=True)

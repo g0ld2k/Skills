@@ -17,6 +17,14 @@
       ],
       "route_scoring": "gate",
       "reference_scoring": "gate",
+      "assertion_keys": [
+        "expected.assertions",
+        "expected.condition_neutral_assertions"
+      ],
+      "forbidden_keys": [
+        "expected.forbidden",
+        "expected.condition_neutral_forbidden"
+      ],
       "condition_neutral_quality_scoring": "gate"
     },
     "no_skill": {
@@ -28,6 +36,12 @@
       "candidate_setup_clauses": "omit",
       "route_scoring": "descriptive",
       "reference_scoring": "descriptive",
+      "assertion_keys": [
+        "expected.condition_neutral_assertions"
+      ],
+      "forbidden_keys": [
+        "expected.condition_neutral_forbidden"
+      ],
       "condition_neutral_quality_scoring": "gate"
     },
     "installed_hig_suite": {
@@ -39,14 +53,18 @@
       "candidate_setup_clauses": "omit",
       "route_scoring": "descriptive",
       "reference_scoring": "descriptive",
+      "assertion_keys": [
+        "expected.condition_neutral_assertions"
+      ],
+      "forbidden_keys": [
+        "expected.condition_neutral_forbidden"
+      ],
       "condition_neutral_quality_scoring": "gate"
     }
   },
   "condition_neutral_dimensions": [
     "task_quality",
     "evidence",
-    "completion",
-    "injection",
-    "capability_degradation"
+    "completion"
   ]
 }

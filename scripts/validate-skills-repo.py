@@ -16,6 +16,9 @@ LEGACY_SKILLS_DIR = ROOT / "Skills"
 PACKAGING_DIR = ROOT / "packaging"
 PLUGINS_DIR = ROOT / "plugins"
 APPLE_DESIGN_CASES = ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+APPLE_DESIGN_CONDITIONS = (
+    ROOT / "evals" / "apple-platform-design" / "conditions.json"
+)
 APPLE_DESIGN_RENDERER = ROOT / "scripts" / "render-validation-scenarios.py"
 APPLE_DESIGN_PREVIEW = (
     ROOT
@@ -29,6 +32,25 @@ APPLE_DESIGN_SCENARIOS = (
     / "references"
     / "validation-scenarios.md"
 )
+APPLE_DESIGN_KINDS = [
+    "discovery",
+    "routing_completion",
+    "reasoning_invariant",
+    "evidence",
+    "injection",
+    "ceiling",
+]
+APPLE_DESIGN_BASELINE_KINDS = ["discovery", "routing_completion"]
+APPLE_DESIGN_CANDIDATE_ASSERTION_KEYS = [
+    "expected.assertions",
+    "expected.condition_neutral_assertions",
+]
+APPLE_DESIGN_CANDIDATE_FORBIDDEN_KEYS = [
+    "expected.forbidden",
+    "expected.condition_neutral_forbidden",
+]
+APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS = ["expected.condition_neutral_assertions"]
+APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS = ["expected.condition_neutral_forbidden"]
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -514,8 +536,138 @@ def validate_shared_conventions(
             errors.append(f"skills/{name}/references/conventions.md: stale; run scripts/sync-shared-conventions.py")
 
 
+def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
+    """Validate the condition policy consumed by the future evaluation runner."""
+    initial_error_count = len(errors)
+    policy = load_json(APPLE_DESIGN_CONDITIONS, errors)
+    if policy is None:
+        return False
+    relative = APPLE_DESIGN_CONDITIONS.relative_to(ROOT)
+    if not isinstance(policy, dict):
+        errors.append(f"{relative}: top level must be an object")
+        return False
+
+    expected_top_level = {
+        "schema_version",
+        "candidate_answer_keys",
+        "conditions",
+        "condition_neutral_dimensions",
+    }
+    actual_top_level = set(policy)
+    missing_top_level = expected_top_level - actual_top_level
+    extra_top_level = actual_top_level - expected_top_level
+    if missing_top_level:
+        errors.append(
+            f"{relative}: missing fields: {', '.join(sorted(missing_top_level))}"
+        )
+    if extra_top_level:
+        errors.append(
+            f"{relative}: extra fields: {', '.join(sorted(extra_top_level))}"
+        )
+    if policy.get("schema_version") != 1:
+        errors.append(f"{relative}: schema_version must be 1")
+
+    expected_answer_keys = ["expected.route", "expected.references"]
+    if policy.get("candidate_answer_keys") != expected_answer_keys:
+        errors.append(
+            f"{relative}: candidate_answer_keys must be exactly "
+            f"{', '.join(expected_answer_keys)}"
+        )
+    expected_dimensions = ["task_quality", "evidence", "completion"]
+    if policy.get("condition_neutral_dimensions") != expected_dimensions:
+        errors.append(
+            f"{relative}: condition_neutral_dimensions must be exactly "
+            f"{', '.join(expected_dimensions)}"
+        )
+
+    conditions = policy.get("conditions")
+    if not isinstance(conditions, dict):
+        errors.append(f"{relative}: conditions must be an object")
+        return False
+    expected_condition_names = {"candidate", "no_skill", "installed_hig_suite"}
+    actual_condition_names = set(conditions)
+    missing_conditions = expected_condition_names - actual_condition_names
+    extra_conditions = actual_condition_names - expected_condition_names
+    if missing_conditions:
+        errors.append(
+            f"{relative}: missing conditions: {', '.join(sorted(missing_conditions))}"
+        )
+    if extra_conditions:
+        errors.append(
+            f"{relative}: extra conditions: {', '.join(sorted(extra_conditions))}"
+        )
+
+    common_expected = {
+        "condition_neutral_quality_scoring": "gate",
+    }
+    condition_expected: dict[str, dict[str, object]] = {
+        "candidate": {
+            "case_kinds": APPLE_DESIGN_KINDS,
+            "route_scoring": "gate",
+            "reference_scoring": "gate",
+            "assertion_keys": APPLE_DESIGN_CANDIDATE_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_CANDIDATE_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+        "no_skill": {
+            "case_kinds": APPLE_DESIGN_BASELINE_KINDS,
+            "candidate_setup_clauses": "omit",
+            "route_scoring": "descriptive",
+            "reference_scoring": "descriptive",
+            "assertion_keys": APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+        "installed_hig_suite": {
+            "case_kinds": APPLE_DESIGN_BASELINE_KINDS,
+            "candidate_setup_clauses": "omit",
+            "route_scoring": "descriptive",
+            "reference_scoring": "descriptive",
+            "assertion_keys": APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+    }
+    for condition_name in sorted(expected_condition_names & actual_condition_names):
+        condition = conditions[condition_name]
+        if not isinstance(condition, dict):
+            errors.append(f"{relative}: {condition_name} must be an object")
+            continue
+        namespace = condition.get("namespace")
+        if not isinstance(namespace, str) or not namespace.strip():
+            errors.append(f"{relative}: {condition_name}.namespace must be a string")
+        expected_fields = condition_expected[condition_name]
+        allowed_fields = {"namespace", *expected_fields}
+        missing_fields = allowed_fields - set(condition)
+        extra_fields = set(condition) - allowed_fields
+        if missing_fields:
+            errors.append(
+                f"{relative}: {condition_name} missing fields: "
+                f"{', '.join(sorted(missing_fields))}"
+            )
+        if extra_fields:
+            errors.append(
+                f"{relative}: {condition_name} extra fields: "
+                f"{', '.join(sorted(extra_fields))}"
+            )
+        for field, expected_value in expected_fields.items():
+            if condition.get(field) != expected_value:
+                rendered_expected = (
+                    ", ".join(expected_value)
+                    if isinstance(expected_value, list)
+                    else str(expected_value)
+                )
+                errors.append(
+                    f"{relative}: {condition_name}.{field} must be {rendered_expected}"
+                )
+
+    return len(errors) == initial_error_count
+
+
 def validate_apple_platform_design_scenarios(errors: list[str]) -> None:
     """Validate the corpus and generated artifacts without leaking held-out cases."""
+    if not validate_apple_platform_design_conditions(errors):
+        return
     if not APPLE_DESIGN_CASES.exists():
         errors.append("evals/apple-platform-design/cases.jsonl: missing")
         return
