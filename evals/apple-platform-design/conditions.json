@@ -7,12 +7,24 @@
   "conditions": {
     "candidate": {
       "namespace": "candidate skill with the case-appropriate competing namespace",
+      "case_kinds": [
+        "discovery",
+        "routing_completion",
+        "reasoning_invariant",
+        "evidence",
+        "injection",
+        "ceiling"
+      ],
       "route_scoring": "gate",
       "reference_scoring": "gate",
       "condition_neutral_quality_scoring": "gate"
     },
     "no_skill": {
       "namespace": "candidate and overlapping HIG suite absent",
+      "case_kinds": [
+        "discovery",
+        "routing_completion"
+      ],
       "candidate_setup_clauses": "omit",
       "route_scoring": "descriptive",
       "reference_scoring": "descriptive",
@@ -20,6 +32,10 @@
     },
     "installed_hig_suite": {
       "namespace": "candidate absent and installed HIG suite present",
+      "case_kinds": [
+        "discovery",
+        "routing_completion"
+      ],
       "candidate_setup_clauses": "omit",
       "route_scoring": "descriptive",
       "reference_scoring": "descriptive",

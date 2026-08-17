@@ -3,20 +3,43 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
+import struct
 import subprocess
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RENDERER = ROOT / "scripts" / "render-validation-scenarios.py"
+CONDITIONS = ROOT / "evals" / "apple-platform-design" / "conditions.json"
+SYNTHETIC_VISUAL_FIXTURE = (
+    ROOT
+    / "evals"
+    / "apple-platform-design"
+    / "fixtures"
+    / "synthetic-visual-injection.png"
+)
+
+
+def load_renderer() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("render_validation_scenarios", RENDERER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load scenario renderer")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def make_temp_dir() -> Path:
-    template = str(Path(os.environ.get("TMPDIR", "/tmp")) / "apple-design-render-tests.XXXXXX")
+    template = str(
+        Path(os.environ.get("TMPDIR") or "/tmp")
+        / "apple-design-render-tests.XXXXXX"
+    )
     result = subprocess.run(
         ["mktemp", "-d", template],
         check=True,
@@ -138,8 +161,86 @@ class RenderValidationScenariosTests(unittest.TestCase):
         result = self.run_renderer()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("fixture_media image requires an image fixture", result.stderr)
+        self.assertIn(
+            "fixture_media image requires a raster image fixture", result.stderr
+        )
         self.assertFalse(self.output_path.exists())
+
+    def test_rejects_svg_image_fixture(self) -> None:
+        module = load_renderer()
+        module.ROOT = self.temp_dir
+        fixture = (
+            self.temp_dir
+            / "evals"
+            / "apple-platform-design"
+            / "fixtures"
+            / "synthetic-visual-injection.svg"
+        )
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("<svg></svg>\n", encoding="utf-8")
+        item = case("injection-01", "Non-portable image")
+        item["fixture"] = (
+            "evals/apple-platform-design/fixtures/synthetic-visual-injection.svg"
+        )
+        item["fixture_media"] = "image"
+        item["capabilities"] = ["vision"]
+        with self.assertRaisesRegex(
+            ValueError, "fixture_media image requires a raster image fixture"
+        ):
+            module.validate_case(item, 1)
+
+    def test_synthetic_visual_fixture_is_png_raster(self) -> None:
+        payload = SYNTHETIC_VISUAL_FIXTURE.read_bytes()
+
+        self.assertTrue(payload.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(payload[12:16], b"IHDR")
+        self.assertEqual(struct.unpack(">II", payload[16:24]), (800, 600))
+
+    def test_rejects_png_extension_without_png_signature(self) -> None:
+        module = load_renderer()
+        module.ROOT = self.temp_dir
+        fixture = (
+            self.temp_dir
+            / "evals"
+            / "apple-platform-design"
+            / "fixtures"
+            / "not-a-raster.png"
+        )
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text(
+            "synthetic text pretending to be an image", encoding="utf-8"
+        )
+        item = case("injection-02", "Fake raster")
+        item["fixture"] = "evals/apple-platform-design/fixtures/not-a-raster.png"
+        item["fixture_media"] = "image"
+        item["capabilities"] = ["vision"]
+
+        with self.assertRaisesRegex(ValueError, "PNG fixture is not PNG raster data"):
+            module.validate_case(item, 1)
+
+    def test_baseline_conditions_use_only_discovery_and_routing_cases(self) -> None:
+        policy = json.loads(CONDITIONS.read_text(encoding="utf-8"))
+        conditions = policy["conditions"]
+
+        expected_baseline_kinds = ["discovery", "routing_completion"]
+        self.assertEqual(
+            conditions["no_skill"]["case_kinds"], expected_baseline_kinds
+        )
+        self.assertEqual(
+            conditions["installed_hig_suite"]["case_kinds"],
+            expected_baseline_kinds,
+        )
+        self.assertEqual(
+            set(conditions["candidate"]["case_kinds"]),
+            {
+                "discovery",
+                "routing_completion",
+                "reasoning_invariant",
+                "evidence",
+                "injection",
+                "ceiling",
+            },
+        )
 
     def test_calibration_scope_excludes_all_held_out_content(self) -> None:
         calibration = case("discovery-calibration", "Calibration title")

@@ -27,7 +27,7 @@ SPLITS = {"calibration", "held_out"}
 ROUTES = {"invoke", "do_not_invoke", "already_invoked"}
 SCOPES = {"full", "calibration"}
 TEXT_FIXTURE_SUFFIXES = {".md", ".txt"}
-IMAGE_FIXTURE_SUFFIXES = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_FIXTURE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 FULL_HEADER = """<!-- GENERATED from evals/apple-platform-design/cases.jsonl by scripts/render-validation-scenarios.py; edit the JSONL source, then rerun the renderer. -->
 
 # Apple Platform Design Validation Scenarios
@@ -57,6 +57,18 @@ def require_string_list(value: Any, field: str, case_id: str, *, allow_empty: bo
     if not all(isinstance(item, str) and item.strip() for item in value):
         raise ValueError(f"{case_id}: {field} must contain only non-empty strings")
     return value
+
+
+def validate_raster_data(path: Path, suffix: str, case_id: str) -> None:
+    header = path.read_bytes()[:12]
+    if suffix == ".png" and not header.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError(f"{case_id}: PNG fixture is not PNG raster data")
+    if suffix in {".jpg", ".jpeg"} and not header.startswith(b"\xff\xd8\xff"):
+        raise ValueError(f"{case_id}: JPEG fixture is not JPEG raster data")
+    if suffix == ".webp" and not (
+        header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+    ):
+        raise ValueError(f"{case_id}: WebP fixture is not WebP raster data")
 
 
 def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
@@ -109,7 +121,11 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
         if fixture_media == "text" and suffix not in TEXT_FIXTURE_SUFFIXES:
             raise ValueError(f"{case_id}: fixture_media text requires a text fixture")
         if fixture_media == "image" and suffix not in IMAGE_FIXTURE_SUFFIXES:
-            raise ValueError(f"{case_id}: fixture_media image requires an image fixture")
+            raise ValueError(
+                f"{case_id}: fixture_media image requires a raster image fixture"
+            )
+        if fixture_media == "image":
+            validate_raster_data(candidate, suffix, case_id)
         if fixture_media == "image" and "vision" not in raw.get("capabilities", []):
             raise ValueError(f"{case_id}: image fixtures require the vision capability")
 

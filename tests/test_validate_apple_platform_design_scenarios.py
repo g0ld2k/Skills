@@ -28,7 +28,10 @@ def load_validator() -> ModuleType:
 
 
 def make_temp_dir() -> Path:
-    template = str(Path(os.environ.get("TMPDIR", "/tmp")) / "apple-design-validator-tests.XXXXXX")
+    template = str(
+        Path(os.environ.get("TMPDIR") or "/tmp")
+        / "apple-design-validator-tests.XXXXXX"
+    )
     result = subprocess.run(
         ["mktemp", "-d", template],
         check=True,

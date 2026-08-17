@@ -36,9 +36,10 @@ transcript. Do not add copied or paraphrase-close Apple prose.
 
 `conditions.json` is the machine-readable scoring policy. It makes candidate
 route/reference keys gated only in the candidate condition. No-skill and
-installed-HIG-suite baselines record route and reference behavior
-descriptively; they continue to gate condition-neutral task quality, evidence
-discipline, completion, injection resistance, and capability degradation.
+installed-HIG-suite baselines run the discovery and routing/completion seed
+cases and record route and reference behavior descriptively; they continue to
+gate condition-neutral task quality, evidence discipline, and completion. The
+candidate release condition runs every corpus kind.
 
 ## Runner design
 
@@ -53,28 +54,40 @@ not fetched source passages:
    the requested synthetic fixture, and runtime capabilities. Never place a
    held-out case's `expected` fields in model context; calibration answer keys
    may appear only in the explicitly calibration-scoped skill artifact.
-4. Keep prompts, fetched source bodies, tool-result bodies, and the raw
-   transcript strictly ephemeral inside the active judging session. The two
-   judges may inspect that volatile context, but the runner must discard it
-   before writing any result. Never write a raw transcript, fetched body,
-   quotation, excerpt, page cache, or source-bearing judge prompt to disk,
-   logs, artifacts, fixtures, or maintenance records.
-5. Persist only non-source data: case and condition IDs; model/tool versions;
+4. Keep prompts, fetched source bodies, tool-result bodies, the raw transcript,
+   and source-bearing judge prompts strictly ephemeral inside one active,
+   volatile session. They may be accessible only in memory to the mechanical
+   checks, both judges, and a synchronously available blinded human
+   adjudicator. Never write any of this volatile material to disk, logs,
+   queues, artifacts, fixtures, caches, or maintenance records.
+5. While that same volatile session remains active, run the mechanical checks
+   and both judges. If the judges disagree, perform blinded human adjudication
+   synchronously, before any result is persisted and before volatile material
+   is discarded. Judges may not invent a missing attribution or infer an
+   unobserved action.
+6. If a human adjudicator is not synchronously available, persist only an
+   unresolved-adjudication status with non-source identifiers and status
+   metadata, then discard the volatile material. Never queue or store a raw
+   transcript or source body for later adjudication.
+7. If judging is resolved, build and persist only the sanitized structured
+   record after judging and any synchronous adjudication: case and condition
+   IDs; model/tool versions;
    invocation and reference events; capabilities; source kinds, locators,
    checked timestamps, and statuses; token counts; completion state; derived
    judge records and verdicts; and sanitized outputs containing no retained
    Apple passage. Sanitization removes quotations, excerpts, and source-body
    spans before persistence. Derived judge records state entailment, force,
    applicability, and verdicts without reproducing source text.
-6. Apply the scoring mode from `conditions.json`. Candidate runs gate the
+8. Once the sanitized record or unresolved status is persisted, discard all
+   volatile source-bearing material and confirm it did not enter storage or
+   logging. No later adjudication may depend on retained source bodies or raw
+   transcripts.
+9. Apply the scoring mode from `conditions.json`. Candidate runs gate the
    candidate route/reference keys. Baselines record those fields
    descriptively and are never failed because the absent candidate did not
    invoke or load its references; condition-neutral quality, evidence, and
    completion dimensions remain comparable and gated.
-7. Run mechanical checks first. A disagreement between the two judges goes to
-   a blinded human adjudicator; judges may not invent a missing attribution or
-   infer an unobserved action.
-8. Aggregate by runtime, condition, split, kind, tag, and repeat. Report the
+10. Aggregate by runtime, condition, split, kind, tag, and repeat. Report the
    numerator and denominator behind every percentage and preserve failures by
    case ID.
 
@@ -103,25 +116,26 @@ Run baselines before candidate-skill authoring and again against the same
 model/tool versions used for release evaluation:
 
 - **No-skill baseline:** remove the candidate advisor and overlapping HIG
-  suite from the namespace. Run the full corpus to measure ambient routing,
-  reasoning quality, unsupported attribution, completion, and Claude Code
-  context.
+  suite from the namespace. Run the discovery and routing/completion seed
+  cases to measure ambient discovery, routing, task quality, evidence,
+  completion, and Claude Code context.
 - **Installed-HIG-suite baseline:** keep the candidate absent and expose the
-  complete installed HIG suite with its production descriptions. Run the full
-  corpus to measure trigger competition, reference selection, answer quality,
-  and Claude Code context.
-- **Candidate condition:** enable the candidate skill. In ordinary behavior
-  cases, apply the decided coexistence configuration. In discovery cases,
-  also expose the competing HIG namespace so discovery robustness is tested
-  against real overlap.
+  complete installed HIG suite with its production descriptions. Run the same
+  discovery and routing/completion seed cases to measure trigger competition,
+  reference selection, task quality, evidence, completion, and Claude Code
+  context.
+- **Candidate condition:** enable the candidate skill and run the full corpus
+  for release evaluation. In ordinary behavior cases, apply the decided
+  coexistence configuration. In discovery cases, also expose the competing
+  HIG namespace so discovery robustness is tested against real overlap.
 
 For baseline provisioning, the condition namespace overrides candidate-only
 namespace statements in a case's `setup`; the absent advisor is never
 pretended to exist. Baseline routing and reference choices are observations,
 not failures against `expected.route` or `expected.references`. The candidate
 condition alone uses those fields as exact answer keys. Baselines still score
-whether the ambient answer completes the task, handles evidence honestly,
-resists injection, and degrades correctly for the exposed capabilities.
+whether the ambient answer completes the task and handles evidence honestly
+within their discovery and routing/completion scope.
 
 Use paired case order, prompts, capabilities, model versions, and repeat
 seeds. Record per-case Claude Code token accounting for all static skill text,
