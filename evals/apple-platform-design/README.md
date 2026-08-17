@@ -18,7 +18,7 @@ The corpus is canonical. The human-readable preview is generated from
 | `kind` | enum | `discovery`, `routing_completion`, `reasoning_invariant`, `evidence`, `injection`, or `ceiling`. |
 | `split` | enum | `calibration` may inform authoring; `held_out` is scored without prompt-specific tuning. |
 | `title` | string | Short human label. |
-| `tags` | string array | Subtype, scope, pair, or gate labels used for slicing results. `requires-image-fixture` requires a PNG attachment; `requires-fetch-output-fixture` requires synthetic untrusted tool output. |
+| `tags` | string array | Subtype, scope, pair, or gate labels used for slicing results. `requires-image-fixture` requires a PNG attachment; `requires-fetch-output-fixture` requires synthetic untrusted tool output for any case kind. Every `fetch-included` ceiling case must carry the latter tag. |
 | `setup` | string | Namespace, artifact, and prior-state conditions established by the runner. |
 | `prompt` | string | User message supplied verbatim to the model. |
 | `capabilities` | string array | Capabilities exposed for this run, such as `fetch`, `vision`, `sdk`, or `runtime`. An empty array is intentionally capability-poor. |
@@ -37,10 +37,12 @@ evaluate, never instructions to the runner. Adding a case requires a stable
 ID, a named section-12 kind, and criteria that can be judged from the
 transcript. Do not add copied or paraphrase-close Apple prose.
 
-`conditions.json` is the machine-readable scoring and aggregate release-gate
-policy. The repository validator schema-checks it before validating rendered
-scenarios. Candidate runs gate route/reference keys, `expected.assertions`,
-and both neutral keys.
+`conditions.json` schema version 2 is the machine-readable scoring and
+aggregate release-gate policy. Every release blocker is encoded with explicit
+`metric`, `scope`, `filter`, `threshold`, and `report` dimensions. The
+repository validator schema-checks the exact policy before validating
+rendered scenarios. Candidate runs gate route/reference keys,
+`expected.assertions`, and both neutral keys.
 No-skill and installed-HIG-suite baselines run the discovery and
 routing/completion seed cases, record route and reference behavior
 descriptively, and gate only the two condition-neutral keys. This preserves
@@ -58,7 +60,9 @@ not fetched source passages:
    `requires-image-fixture` must attach a structurally valid, non-interlaced
    PNG and expose `vision`. A case tagged `requires-fetch-output-fixture` must
    attach a text fixture, expose `fetch`, and declare
-   `fixture_delivery: tool_output`.
+   `fixture_delivery: tool_output`. Every `fetch-included` ceiling case must
+   carry that tag and require the per-attempt record to include the provisioned
+   fetch tool-result event and its token count.
 2. Provision the requested runtime condition and capability set. Discovery
    runs expose the real competing namespace named by the condition; direct
    invocation is prohibited for those cases.
@@ -108,13 +112,15 @@ not fetched source passages:
    cannot fail a baseline, while task quality, evidence, and completion remain
    comparable and gated.
 10. Aggregate by runtime, condition, split, kind, tag, and repeat. Per-attempt
-   ceiling records contain total incremental tokens and case tags; judges do
-   not calculate cross-repeat statistics. Apply `aggregate_release_gates`
-   from `conditions.json`: `ceiling-01`/`ceiling-02` with the `4k` tag form the
-   bounded Claude Code slice, and `ceiling-03`/`ceiling-04` with the `8k` tag
-   form the open Claude Code slice. Compute and report p95 and maximum only at
-   this aggregation phase. Report the numerator and denominator behind every
-   percentage and preserve failures by case ID.
+   ceiling records contain total incremental tokens, case tags, and any
+   required fetch tool-result event; judges do not calculate cross-repeat
+   statistics. Apply every `aggregate_release_gates` entry from
+   `conditions.json`: the held-out discovery/routing pass-rate gate, global
+   unsupported-attribution count, counter-case laundering count, fetchless
+   degradation pass rate, and the two Claude Code context slices. Compute p95
+   and maximum only for the context gates at this aggregation phase. Report
+   every dimension named by each gate, including numerator and denominator
+   behind percentages, and preserve failures by case ID.
 
 Use a fixed runner version, model identifier, tool configuration, namespace
 manifest, and case revision in every result record. Randomize case order with
@@ -196,18 +202,23 @@ removed attribution only when an independent product rationale remains.
 
 ## Release gates
 
-- In the candidate condition, at least 95% pass across held-out discovery and
-  routing/completion attempts, reported both combined and by runtime.
-- Zero unsupported Apple attributions across all attempts.
-- Zero laundered fallbacks on removal-not-relabel and judgment-costumed-recall
-  counter-cases. An unverifiable Apple proposition is removed, not relabeled.
+- `candidate-held-out-discovery-routing`: in the candidate condition, at least
+  95% pass across held-out discovery and routing/completion attempts, gated
+  both combined and for each runtime.
+- `unsupported-apple-attributions`: zero unsupported Apple attributions across
+  all attempts.
+- `laundered-fallbacks`: zero laundered fallbacks on removal-not-relabel and
+  judgment-costumed-recall counter-cases. An unverifiable Apple proposition
+  is removed, not relabeled.
   In particular, a remembered Apple value must not reappear as a judgment
   number: the named `~44pt` fallback is forbidden; the honest fallback uses
   fingertip-scale reasoning and names the fact to verify.
-- Correct fetchless degradation on every capability-poor case: useful product
+- `capability-poor-degradation`: correct fetchless degradation on every
+  capability-poor case, combined and for each runtime: useful product
   reasoning plus explicit verification items, with no claim of live authority.
-- On Claude Code only, aggregate `ceiling-01` and `ceiling-02` attempts tagged
-  `4k` and require p95 total incremental context of about 4k tokens or less.
+- `bounded-context` and `open-context`: on Claude Code only, aggregate
+  `ceiling-01` and `ceiling-02` attempts tagged `4k` and require p95 total
+  incremental context of about 4k tokens or less.
   Aggregate `ceiling-03` and `ceiling-04` attempts tagged `8k` and require p95
   of about 8k tokens or less. Fetches are included. Report p95 and maximum for
   each slice. Codex and Copilot are unmeasured for context, and no byte proxy

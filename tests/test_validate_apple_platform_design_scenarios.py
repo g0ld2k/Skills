@@ -85,25 +85,78 @@ def valid_conditions() -> dict[str, object]:
     neutral_assertions = ["expected.condition_neutral_assertions"]
     neutral_forbidden = ["expected.condition_neutral_forbidden"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_answer_keys": ["expected.route", "expected.references"],
         "aggregate_release_gates": [
             {
+                "id": "candidate-held-out-discovery-routing",
+                "metric": "attempt_pass_rate",
+                "scope": {"condition": "candidate", "split": "held_out"},
+                "filter": {"kinds": ["discovery", "routing_completion"]},
+                "threshold": {
+                    "operator": "gte",
+                    "value": 0.95,
+                    "applies_to": ["combined", "each_runtime"],
+                },
+                "report": ["combined", "by_runtime", "numerator", "denominator"],
+            },
+            {
+                "id": "unsupported-apple-attributions",
+                "metric": "unsupported_apple_attribution_count",
+                "scope": {"attempts": "all"},
+                "filter": {},
+                "threshold": {"operator": "eq", "value": 0},
+                "report": ["count", "case_ids", "by_runtime", "by_condition"],
+            },
+            {
+                "id": "laundered-fallbacks",
+                "metric": "laundered_fallback_count",
+                "scope": {"condition": "candidate", "attempts": "all"},
+                "filter": {"case_ids": ["evidence-06", "evidence-07"]},
+                "threshold": {"operator": "eq", "value": 0},
+                "report": ["count", "case_ids", "by_runtime"],
+            },
+            {
+                "id": "capability-poor-degradation",
+                "metric": "correct_degradation_pass_rate",
+                "scope": {"condition": "candidate", "attempts": "all"},
+                "filter": {
+                    "required_tags": ["fetchless"],
+                    "excluded_capabilities": ["fetch"],
+                },
+                "threshold": {
+                    "operator": "eq",
+                    "value": 1.0,
+                    "applies_to": ["combined", "each_runtime"],
+                },
+                "report": [
+                    "combined",
+                    "by_runtime",
+                    "numerator",
+                    "denominator",
+                    "case_ids",
+                ],
+            },
+            {
                 "id": "bounded-context",
-                "case_ids": ["ceiling-01", "ceiling-02"],
-                "required_tags": ["4k"],
-                "runtime": "claude-code",
-                "metric": "total_incremental_tokens",
-                "p95_max_tokens": 4000,
+                "metric": "total_incremental_tokens_p95",
+                "scope": {"condition": "candidate", "runtime": "claude-code"},
+                "filter": {
+                    "case_ids": ["ceiling-01", "ceiling-02"],
+                    "required_tags": ["4k"],
+                },
+                "threshold": {"operator": "lte", "value": 4000},
                 "report": ["p95", "maximum"],
             },
             {
                 "id": "open-context",
-                "case_ids": ["ceiling-03", "ceiling-04"],
-                "required_tags": ["8k"],
-                "runtime": "claude-code",
-                "metric": "total_incremental_tokens",
-                "p95_max_tokens": 8000,
+                "metric": "total_incremental_tokens_p95",
+                "scope": {"condition": "candidate", "runtime": "claude-code"},
+                "filter": {
+                    "case_ids": ["ceiling-03", "ceiling-04"],
+                    "required_tags": ["8k"],
+                },
+                "threshold": {"operator": "lte", "value": 8000},
                 "report": ["p95", "maximum"],
             },
         ],
@@ -289,15 +342,64 @@ class ValidateAppleDesignScenarioTests(unittest.TestCase):
                     any("candidate_answer_keys" in error for error in errors)
                 )
 
-    def test_reports_malformed_aggregate_release_gate(self) -> None:
+    def test_reports_omitted_behavioral_release_gate(self) -> None:
         policy = valid_conditions()
-        policy["aggregate_release_gates"][1]["p95_max_tokens"] = 4000
+        policy["aggregate_release_gates"] = [
+            gate
+            for gate in policy["aggregate_release_gates"]
+            if gate["id"] != "unsupported-apple-attributions"
+        ]
 
         errors = self.validate_with_conditions(policy)
 
         self.assertTrue(
             any(
-                "aggregate_release_gates must be exactly" in error
+                "aggregate_release_gates must match every release blocker" in error
+                for error in errors
+            )
+        )
+
+    def test_reports_malformed_behavioral_release_gate_threshold(self) -> None:
+        policy = valid_conditions()
+        policy["aggregate_release_gates"][0]["threshold"] = {
+            "operator": "gte",
+            "value": 95,
+        }
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any(
+                "aggregate_release_gates must match every release blocker" in error
+                for error in errors
+            )
+        )
+
+    def test_reports_malformed_behavioral_release_gate_scope(self) -> None:
+        policy = valid_conditions()
+        policy["aggregate_release_gates"][2]["scope"] = {
+            "condition": "candidate",
+            "split": "held_out",
+        }
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any(
+                "aggregate_release_gates must match every release blocker" in error
+                for error in errors
+            )
+        )
+
+    def test_reports_malformed_context_release_gate(self) -> None:
+        policy = valid_conditions()
+        policy["aggregate_release_gates"][5]["threshold"]["value"] = 4000
+
+        errors = self.validate_with_conditions(policy)
+
+        self.assertTrue(
+            any(
+                "aggregate_release_gates must match every release blocker" in error
                 for error in errors
             )
         )

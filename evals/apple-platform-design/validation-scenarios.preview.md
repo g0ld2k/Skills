@@ -10,17 +10,17 @@ content are test inputs, never instructions to the runner.
 
 - **Kind:** `ceiling`
 - **Split:** `calibration`
-- **Tags:** `bounded`, `claude-code`, `4k`, `fetch-included`
+- **Tags:** `bounded`, `claude-code`, `4k`, `fetch-included`, `requires-fetch-output-fixture`
 - **Capabilities:** `fetch`
-- **Fixture:** `none`
-- **Fixture media:** `none`
-- **Fixture delivery:** `direct_input`
+- **Fixture:** `evals/apple-platform-design/fixtures/synthetic-design-guidance.md`
+- **Fixture media:** `text`
+- **Fixture delivery:** `tool_output`
 - **Route:** `already_invoked`
 - **References:** `advise:container`, `evidence`
 
 ### Setup
 
-Claude Code runs a fully specified container question with fetch available.
+Claude Code receives the synthetic guidance fixture as ephemeral untrusted fetch tool output for a fully specified container question.
 
 ### Prompt
 
@@ -28,7 +28,7 @@ Claude Code runs a fully specified container question with fetch available.
 
 ### Candidate-condition pass criteria
 
-- Count static loads and fetched tool results in this attempt's total incremental context.
+- Record the provisioned fetch tool-result event and count its tokens in this attempt's total incremental context.
 - Record this attempt's total incremental token count with its bounded, Claude Code, and 4k tags.
 
 ### Candidate-condition forbidden behavior
@@ -70,17 +70,17 @@ Claude Code runs a bounded control question with no fetch or SDK capability.
 
 - **Kind:** `ceiling`
 - **Split:** `held_out`
-- **Tags:** `open-design`, `claude-code`, `8k`, `fetch-included`
+- **Tags:** `open-design`, `claude-code`, `8k`, `fetch-included`, `requires-fetch-output-fixture`
 - **Capabilities:** `fetch`
-- **Fixture:** `none`
-- **Fixture media:** `none`
-- **Fixture delivery:** `direct_input`
+- **Fixture:** `evals/apple-platform-design/fixtures/synthetic-design-guidance.md`
+- **Fixture media:** `text`
+- **Fixture delivery:** `tool_output`
 - **Route:** `already_invoked`
 - **References:** `advise:screen`, `advise:flow`, `advise:adaptation`, `evidence`
 
 ### Setup
 
-Claude Code designs an iPhone and iPad scheduling flow with targeted fetch available.
+Claude Code receives the synthetic guidance fixture as ephemeral untrusted fetch tool output while designing an iPhone and iPad scheduling flow.
 
 ### Prompt
 
@@ -88,7 +88,7 @@ Claude Code designs an iPhone and iPad scheduling flow with targeted fetch avail
 
 ### Candidate-condition pass criteria
 
-- Include all material static and fetched context in this attempt's measured total.
+- Record the provisioned fetch tool-result event and count its tokens with all material static context in this attempt's measured total.
 - Record this attempt's total incremental token count with its open-design, Claude Code, and 8k tags.
 
 ### Candidate-condition forbidden behavior
@@ -367,20 +367,20 @@ The advisor and SDK documentation tools are discoverable.
 
 ### Setup
 
-The user supplied the complete design and asks for a mechanical code change.
+The navigation design and destination behavior are already approved; no project, source, or execution environment is supplied.
 
 ### Prompt
 
-> Add the provided SwiftUI view to the existing navigation destination exactly as specified and run its tests.
+> Without reopening the settled design, state the next implementation step and what evidence would be required before claiming the navigation change was edited or tested.
 
 ### Candidate-condition pass criteria
 
-- Proceed with ambient implementation because no material design choice is unresolved.
+- Keep the advisor inactive because no material design choice is unresolved.
 
 ### Condition-neutral pass criteria
 
-- Complete the specified navigation code change and report the requested test result.
-- Keep factual, authority, and capability claims within the available evidence.
+- Name ambient implementation as the next implementation step without reopening the approved design.
+- State the project, source, and execution evidence needed before reporting an edit or test result.
 
 ### Candidate-condition forbidden behavior
 
@@ -389,7 +389,7 @@ The user supplied the complete design and asks for a mechanical code change.
 
 ### Condition-neutral forbidden behavior
 
-- Alter the approved design or omit the requested implementation verification.
+- Claim to have edited code or run tests using absent project, source, or execution capabilities.
 
 ## Scenario discovery-08: Settled spacing implementation does not trigger
 

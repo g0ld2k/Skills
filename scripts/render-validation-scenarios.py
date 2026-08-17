@@ -191,8 +191,13 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
     fixture_delivery = raw.get("fixture_delivery")
     requires_image = "requires-image-fixture" in raw["tags"]
     requires_fetch_output = "requires-fetch-output-fixture" in raw["tags"]
+    fetch_included_ceiling = kind == "ceiling" and "fetch-included" in raw["tags"]
     if requires_image and fixture is None:
         raise ValueError(f"{case_id}: requires an attached image fixture")
+    if fetch_included_ceiling and not requires_fetch_output:
+        raise ValueError(
+            f"{case_id}: fetch-included ceiling requires a tool-output fixture"
+        )
     if requires_fetch_output and fixture is None:
         raise ValueError(f"{case_id}: requires an untrusted tool-output fixture")
     if fixture is not None and (not isinstance(fixture, str) or not fixture.strip()):
@@ -254,7 +259,16 @@ def validate_case(raw: Any, line_number: int) -> dict[str, Any]:
     require_string_list(
         expected.get("references"), "expected.references", case_id, allow_empty=True
     )
-    require_string_list(expected.get("assertions"), "expected.assertions", case_id)
+    expected_assertions = require_string_list(
+        expected.get("assertions"), "expected.assertions", case_id
+    )
+    if fetch_included_ceiling:
+        assertion_text = " ".join(expected_assertions).lower()
+        if "fetch tool-result event" not in assertion_text or "tokens" not in assertion_text:
+            raise ValueError(
+                f"{case_id}: fetch-included ceiling must record a fetch "
+                "tool-result event and its tokens"
+            )
     require_string_list(
         expected.get("condition_neutral_assertions"),
         "expected.condition_neutral_assertions",

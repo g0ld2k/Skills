@@ -53,21 +53,74 @@ APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS = ["expected.condition_neutral_assertions"]
 APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS = ["expected.condition_neutral_forbidden"]
 APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
     {
+        "id": "candidate-held-out-discovery-routing",
+        "metric": "attempt_pass_rate",
+        "scope": {"condition": "candidate", "split": "held_out"},
+        "filter": {"kinds": ["discovery", "routing_completion"]},
+        "threshold": {
+            "operator": "gte",
+            "value": 0.95,
+            "applies_to": ["combined", "each_runtime"],
+        },
+        "report": ["combined", "by_runtime", "numerator", "denominator"],
+    },
+    {
+        "id": "unsupported-apple-attributions",
+        "metric": "unsupported_apple_attribution_count",
+        "scope": {"attempts": "all"},
+        "filter": {},
+        "threshold": {"operator": "eq", "value": 0},
+        "report": ["count", "case_ids", "by_runtime", "by_condition"],
+    },
+    {
+        "id": "laundered-fallbacks",
+        "metric": "laundered_fallback_count",
+        "scope": {"condition": "candidate", "attempts": "all"},
+        "filter": {"case_ids": ["evidence-06", "evidence-07"]},
+        "threshold": {"operator": "eq", "value": 0},
+        "report": ["count", "case_ids", "by_runtime"],
+    },
+    {
+        "id": "capability-poor-degradation",
+        "metric": "correct_degradation_pass_rate",
+        "scope": {"condition": "candidate", "attempts": "all"},
+        "filter": {
+            "required_tags": ["fetchless"],
+            "excluded_capabilities": ["fetch"],
+        },
+        "threshold": {
+            "operator": "eq",
+            "value": 1.0,
+            "applies_to": ["combined", "each_runtime"],
+        },
+        "report": [
+            "combined",
+            "by_runtime",
+            "numerator",
+            "denominator",
+            "case_ids",
+        ],
+    },
+    {
         "id": "bounded-context",
-        "case_ids": ["ceiling-01", "ceiling-02"],
-        "required_tags": ["4k"],
-        "runtime": "claude-code",
-        "metric": "total_incremental_tokens",
-        "p95_max_tokens": 4000,
+        "metric": "total_incremental_tokens_p95",
+        "scope": {"condition": "candidate", "runtime": "claude-code"},
+        "filter": {
+            "case_ids": ["ceiling-01", "ceiling-02"],
+            "required_tags": ["4k"],
+        },
+        "threshold": {"operator": "lte", "value": 4000},
         "report": ["p95", "maximum"],
     },
     {
         "id": "open-context",
-        "case_ids": ["ceiling-03", "ceiling-04"],
-        "required_tags": ["8k"],
-        "runtime": "claude-code",
-        "metric": "total_incremental_tokens",
-        "p95_max_tokens": 8000,
+        "metric": "total_incremental_tokens_p95",
+        "scope": {"condition": "candidate", "runtime": "claude-code"},
+        "filter": {
+            "case_ids": ["ceiling-03", "ceiling-04"],
+            "required_tags": ["8k"],
+        },
+        "threshold": {"operator": "lte", "value": 8000},
         "report": ["p95", "maximum"],
     },
 ]
@@ -585,8 +638,8 @@ def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
         errors.append(
             f"{relative}: extra fields: {', '.join(sorted(extra_top_level))}"
         )
-    if policy.get("schema_version") != 1:
-        errors.append(f"{relative}: schema_version must be 1")
+    if policy.get("schema_version") != 2:
+        errors.append(f"{relative}: schema_version must be 2")
 
     expected_answer_keys = ["expected.route", "expected.references"]
     if policy.get("candidate_answer_keys") != expected_answer_keys:
@@ -596,8 +649,8 @@ def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
         )
     if policy.get("aggregate_release_gates") != APPLE_DESIGN_AGGREGATE_RELEASE_GATES:
         errors.append(
-            f"{relative}: aggregate_release_gates must be exactly the bounded "
-            "and open Claude Code context gates"
+            f"{relative}: aggregate_release_gates must match every release blocker "
+            "with exact metric, scope, filter, threshold, and report fields"
         )
     expected_dimensions = ["task_quality", "evidence", "completion"]
     if policy.get("condition_neutral_dimensions") != expected_dimensions:
