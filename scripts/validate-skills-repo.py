@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,6 +15,124 @@ SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
 PACKAGING_DIR = ROOT / "packaging"
 PLUGINS_DIR = ROOT / "plugins"
+APPLE_DESIGN_CASES = ROOT / "evals" / "apple-platform-design" / "cases.jsonl"
+APPLE_DESIGN_CONDITIONS = (
+    ROOT / "evals" / "apple-platform-design" / "conditions.json"
+)
+APPLE_DESIGN_RENDERER = ROOT / "scripts" / "render-validation-scenarios.py"
+APPLE_DESIGN_PREVIEW = (
+    ROOT
+    / "evals"
+    / "apple-platform-design"
+    / "validation-scenarios.preview.md"
+)
+APPLE_DESIGN_SCENARIOS = (
+    SKILLS_DIR
+    / "apple-platform-design"
+    / "references"
+    / "validation-scenarios.md"
+)
+APPLE_DESIGN_KINDS = [
+    "discovery",
+    "routing_completion",
+    "reasoning_invariant",
+    "evidence",
+    "injection",
+    "ceiling",
+]
+APPLE_DESIGN_BASELINE_KINDS = ["discovery", "routing_completion"]
+APPLE_DESIGN_CANDIDATE_ASSERTION_KEYS = [
+    "expected.assertions",
+    "expected.condition_neutral_assertions",
+]
+APPLE_DESIGN_CANDIDATE_FORBIDDEN_KEYS = [
+    "expected.forbidden",
+    "expected.condition_neutral_forbidden",
+]
+APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS = ["expected.condition_neutral_assertions"]
+APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS = ["expected.condition_neutral_forbidden"]
+APPLE_DESIGN_AGGREGATE_RELEASE_GATES = [
+    {
+        "id": "candidate-held-out-discovery-routing",
+        "metric": "attempt_pass_rate",
+        "scope": {"condition": "candidate", "split": "held_out"},
+        "filter": {"kinds": ["discovery", "routing_completion"]},
+        "threshold": {
+            "operator": "gte",
+            "value": 0.95,
+            "applies_to": ["combined", "each_runtime"],
+        },
+        "report": ["combined", "by_runtime", "numerator", "denominator"],
+    },
+    {
+        "id": "unsupported-apple-attributions",
+        "metric": "unsupported_apple_attribution_count",
+        "scope": {"attempts": "all"},
+        "filter": {},
+        "threshold": {"operator": "eq", "value": 0},
+        "report": ["count", "case_ids", "by_runtime", "by_condition"],
+    },
+    {
+        "id": "laundered-fallbacks",
+        "metric": "laundered_fallback_count",
+        "scope": {"condition": "candidate", "attempts": "all"},
+        "filter": {"case_ids": ["evidence-06", "evidence-07"]},
+        "threshold": {"operator": "eq", "value": 0},
+        "report": ["count", "case_ids", "by_runtime"],
+    },
+    {
+        "id": "capability-poor-degradation",
+        "metric": "correct_degradation_pass_rate",
+        "scope": {"condition": "candidate", "attempts": "all"},
+        "filter": {
+            "required_tags": ["fetchless"],
+            "excluded_capabilities": ["fetch"],
+        },
+        "threshold": {
+            "operator": "eq",
+            "value": 1.0,
+            "applies_to": ["combined", "each_runtime"],
+        },
+        "report": [
+            "combined",
+            "by_runtime",
+            "numerator",
+            "denominator",
+            "case_ids",
+        ],
+    },
+    {
+        "id": "bounded-context",
+        "metric": "total_incremental_tokens_p95",
+        "scope": {
+            "condition": "candidate",
+            "runtime": "claude-code",
+            "split": "held_out",
+        },
+        "filter": {
+            "case_ids": ["ceiling-01", "ceiling-02"],
+            "required_tags": ["4k"],
+        },
+        "threshold": {"operator": "lte", "value": 4000},
+        "report": ["p95", "maximum"],
+    },
+    {
+        "id": "open-context",
+        "metric": "total_incremental_tokens_p95",
+        "scope": {
+            "condition": "candidate",
+            "runtime": "claude-code",
+            "split": "held_out",
+        },
+        "filter": {
+            "case_ids": ["ceiling-03", "ceiling-04"],
+            "required_tags": ["8k"],
+        },
+        "threshold": {"operator": "lte", "value": 8000},
+        "report": ["p95", "maximum"],
+    },
+]
+APPLE_DESIGN_CONTEXT_GATE_IDS = ("bounded-context", "open-context")
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -499,6 +618,225 @@ def validate_shared_conventions(
             errors.append(f"skills/{name}/references/conventions.md: stale; run scripts/sync-shared-conventions.py")
 
 
+def validate_apple_platform_design_conditions(errors: list[str]) -> bool:
+    """Validate the condition policy consumed by the future evaluation runner."""
+    initial_error_count = len(errors)
+    policy = load_json(APPLE_DESIGN_CONDITIONS, errors)
+    if policy is None:
+        return False
+    relative = APPLE_DESIGN_CONDITIONS.relative_to(ROOT)
+    if not isinstance(policy, dict):
+        errors.append(f"{relative}: top level must be an object")
+        return False
+
+    expected_top_level = {
+        "schema_version",
+        "candidate_answer_keys",
+        "aggregate_release_gates",
+        "conditions",
+        "condition_neutral_dimensions",
+    }
+    actual_top_level = set(policy)
+    missing_top_level = expected_top_level - actual_top_level
+    extra_top_level = actual_top_level - expected_top_level
+    if missing_top_level:
+        errors.append(
+            f"{relative}: missing fields: {', '.join(sorted(missing_top_level))}"
+        )
+    if extra_top_level:
+        errors.append(
+            f"{relative}: extra fields: {', '.join(sorted(extra_top_level))}"
+        )
+    if policy.get("schema_version") != 2:
+        errors.append(f"{relative}: schema_version must be 2")
+
+    expected_answer_keys = ["expected.route", "expected.references"]
+    if policy.get("candidate_answer_keys") != expected_answer_keys:
+        errors.append(
+            f"{relative}: candidate_answer_keys must be exactly "
+            f"{', '.join(expected_answer_keys)}"
+        )
+    if policy.get("aggregate_release_gates") != APPLE_DESIGN_AGGREGATE_RELEASE_GATES:
+        errors.append(
+            f"{relative}: aggregate_release_gates must match every release blocker "
+            "with exact metric, scope, filter, threshold, and report fields"
+        )
+    expected_dimensions = ["task_quality", "evidence", "completion"]
+    if policy.get("condition_neutral_dimensions") != expected_dimensions:
+        errors.append(
+            f"{relative}: condition_neutral_dimensions must be exactly "
+            f"{', '.join(expected_dimensions)}"
+        )
+
+    conditions = policy.get("conditions")
+    if not isinstance(conditions, dict):
+        errors.append(f"{relative}: conditions must be an object")
+        return False
+    expected_condition_names = {"candidate", "no_skill", "installed_hig_suite"}
+    actual_condition_names = set(conditions)
+    missing_conditions = expected_condition_names - actual_condition_names
+    extra_conditions = actual_condition_names - expected_condition_names
+    if missing_conditions:
+        errors.append(
+            f"{relative}: missing conditions: {', '.join(sorted(missing_conditions))}"
+        )
+    if extra_conditions:
+        errors.append(
+            f"{relative}: extra conditions: {', '.join(sorted(extra_conditions))}"
+        )
+
+    common_expected = {
+        "condition_neutral_quality_scoring": "gate",
+    }
+    condition_expected: dict[str, dict[str, object]] = {
+        "candidate": {
+            "case_kinds": APPLE_DESIGN_KINDS,
+            "route_scoring": "gate",
+            "reference_scoring": "gate",
+            "assertion_keys": APPLE_DESIGN_CANDIDATE_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_CANDIDATE_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+        "no_skill": {
+            "case_kinds": APPLE_DESIGN_BASELINE_KINDS,
+            "candidate_setup_clauses": "omit",
+            "route_scoring": "descriptive",
+            "reference_scoring": "descriptive",
+            "assertion_keys": APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+        "installed_hig_suite": {
+            "case_kinds": APPLE_DESIGN_BASELINE_KINDS,
+            "candidate_setup_clauses": "omit",
+            "route_scoring": "descriptive",
+            "reference_scoring": "descriptive",
+            "assertion_keys": APPLE_DESIGN_NEUTRAL_ASSERTION_KEYS,
+            "forbidden_keys": APPLE_DESIGN_NEUTRAL_FORBIDDEN_KEYS,
+            **common_expected,
+        },
+    }
+    for condition_name in sorted(expected_condition_names & actual_condition_names):
+        condition = conditions[condition_name]
+        if not isinstance(condition, dict):
+            errors.append(f"{relative}: {condition_name} must be an object")
+            continue
+        namespace = condition.get("namespace")
+        if not isinstance(namespace, str) or not namespace.strip():
+            errors.append(f"{relative}: {condition_name}.namespace must be a string")
+        expected_fields = condition_expected[condition_name]
+        allowed_fields = {"namespace", *expected_fields}
+        missing_fields = allowed_fields - set(condition)
+        extra_fields = set(condition) - allowed_fields
+        if missing_fields:
+            errors.append(
+                f"{relative}: {condition_name} missing fields: "
+                f"{', '.join(sorted(missing_fields))}"
+            )
+        if extra_fields:
+            errors.append(
+                f"{relative}: {condition_name} extra fields: "
+                f"{', '.join(sorted(extra_fields))}"
+            )
+        for field, expected_value in expected_fields.items():
+            if condition.get(field) != expected_value:
+                rendered_expected = (
+                    ", ".join(expected_value)
+                    if isinstance(expected_value, list)
+                    else str(expected_value)
+                )
+                errors.append(
+                    f"{relative}: {condition_name}.{field} must be {rendered_expected}"
+                )
+
+    return len(errors) == initial_error_count
+
+
+def validate_apple_platform_design_context_gate_splits(errors: list[str]) -> bool:
+    """Require every context-gate case to exist and remain held out."""
+    initial_error_count = len(errors)
+    policy = json.loads(APPLE_DESIGN_CONDITIONS.read_text(encoding="utf-8"))
+    gates = {
+        gate["id"]: gate
+        for gate in policy["aggregate_release_gates"]
+        if gate["id"] in APPLE_DESIGN_CONTEXT_GATE_IDS
+    }
+    case_splits = {
+        item["id"]: item["split"]
+        for line in APPLE_DESIGN_CASES.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+        for item in [json.loads(line)]
+    }
+    relative = APPLE_DESIGN_CONDITIONS.relative_to(ROOT)
+    for gate_id in APPLE_DESIGN_CONTEXT_GATE_IDS:
+        for case_id in gates[gate_id]["filter"]["case_ids"]:
+            split = case_splits.get(case_id)
+            if split is None:
+                errors.append(
+                    f"{relative}: {gate_id} references missing case {case_id}"
+                )
+            elif split != "held_out":
+                errors.append(
+                    f"{relative}: {gate_id} case {case_id} must be held_out; "
+                    f"found {split}"
+                )
+    return len(errors) == initial_error_count
+
+
+def validate_apple_platform_design_scenarios(errors: list[str]) -> None:
+    """Validate the corpus and generated artifacts without leaking held-out cases."""
+    if not validate_apple_platform_design_conditions(errors):
+        return
+    if not APPLE_DESIGN_CASES.exists():
+        errors.append("evals/apple-platform-design/cases.jsonl: missing")
+        return
+    if not APPLE_DESIGN_RENDERER.exists():
+        errors.append("scripts/render-validation-scenarios.py: missing")
+        return
+
+    def check_target(target: Path, scope: str, command: str) -> bool:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(APPLE_DESIGN_RENDERER),
+                "--cases",
+                str(APPLE_DESIGN_CASES),
+                "--scope",
+                scope,
+                "--check",
+                str(target),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        relative_target = target.relative_to(ROOT)
+        if result.returncode == 0:
+            return True
+        if result.stderr.startswith("stale generated scenarios:"):
+            errors.append(f"{relative_target}: stale; run {command}")
+            return False
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown renderer failure"
+        errors.append(
+            f"{relative_target}: could not verify generated scenarios: {detail}"
+        )
+        return False
+
+    preview_command = "python3 scripts/render-validation-scenarios.py"
+    if not check_target(APPLE_DESIGN_PREVIEW, "full", preview_command):
+        return
+    if not validate_apple_platform_design_context_gate_splits(errors):
+        return
+
+    if not (SKILLS_DIR / "apple-platform-design").exists():
+        return
+
+    skill_command = (
+        "python3 scripts/render-validation-scenarios.py --scope calibration "
+        "--output skills/apple-platform-design/references/validation-scenarios.md"
+    )
+    check_target(APPLE_DESIGN_SCENARIOS, "calibration", skill_command)
+
+
 def main() -> int:
     errors: list[str] = []
     configs = load_package_configs(errors)
@@ -506,6 +844,7 @@ def main() -> int:
     validate_cross_skill_references(canonical_skill_names, errors)
     validate_packaging(canonical_skill_names, errors, configs)
     validate_shared_conventions(errors, configs)
+    validate_apple_platform_design_scenarios(errors)
 
     if errors:
         for error in errors:
