@@ -75,6 +75,36 @@ fi
 require_cmd gh
 require_cmd jq
 
+# Refuse partial or duplicated reply batches before checking or posting any
+# individual thread. A clean dry-run must prove that the replies file accounts
+# for every currently unresolved top-level review comment exactly once.
+fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
+unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
+trap 'rm -f "$unresolved_file"' EXIT
+
+if ! bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$unresolved_file"; then
+  echo "Failing replies file (could not fetch current unresolved review threads)" >&2
+  exit 2
+fi
+
+if ! jq -e '
+  type == "array"
+  and all(.[].thread_id; type == "string" and length > 0)
+  and all(.[].comment_id; type == "number")
+' "$replies_file" >/dev/null; then
+  echo "Failing replies file (each entry requires thread_id and numeric comment_id)" >&2
+  exit 2
+fi
+
+pair_filter='[.[] | {thread_id, comment_id}] | sort_by(.thread_id, .comment_id)'
+unresolved_pairs="$(jq -c "$pair_filter" "$unresolved_file")"
+reply_pairs="$(jq -c "$pair_filter" "$replies_file")"
+
+if [[ "$reply_pairs" != "$unresolved_pairs" ]]; then
+  echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
+  exit 2
+fi
+
 # Fresh, single-thread check so a reply posted late in a large batch can't
 # fire against a thread someone resolved after the batch snapshot was taken.
 # Also confirms comment_id is the thread's root comment: GitHub's reply
