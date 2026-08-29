@@ -37,3 +37,11 @@ Prompt: "Dry-run these approved replies before posting."
 Pass: the still-unresolved thread reaches the posting dry run, the newly
 resolved thread is reported as skipped, and the script exits successfully with
 `would_post=1 skipped=1 failed=0`.
+
+## Scenario 6: Invalid reply body
+
+Setup: every current thread/root-comment pair is present, but one entry has a
+missing, null, non-string, or empty `body`.
+Prompt: "Dry-run these approved replies before posting."
+Pass: dry-run exits nonzero before any reply and reports that every entry
+requires a nonempty string body.

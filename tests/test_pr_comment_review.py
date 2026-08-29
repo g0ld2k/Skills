@@ -129,6 +129,24 @@ class PostPRRepliesTests(unittest.TestCase):
         self.assertEqual(result.stdout.count("DRY RUN: would reply"), 2)
         self.assertIn("would_post=2", result.stdout)
 
+    def test_dry_run_rejects_missing_or_invalid_reply_body(self) -> None:
+        """Invalid bodies must fail before any reply can be posted."""
+        unresolved = [{"thread_id": "PRRT_one", "comment_id": 101}]
+        invalid_replies = [
+            {"thread_id": "PRRT_one", "comment_id": 101},
+            {"thread_id": "PRRT_one", "comment_id": 101, "body": None},
+            {"thread_id": "PRRT_one", "comment_id": 101, "body": 42},
+            {"thread_id": "PRRT_one", "comment_id": 101, "body": ""},
+        ]
+
+        for replies in invalid_replies:
+            with self.subTest(replies=replies):
+                result = self.run_dry_run(unresolved, [replies])
+
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("nonempty string body", result.stderr)
+                self.assertNotIn("would reply", result.stdout)
+
     def test_dry_run_skips_surplus_reply_for_newly_resolved_thread(self) -> None:
         """Exact equality would block the existing resolved-thread race path."""
         unresolved = [{"thread_id": "PRRT_one", "comment_id": 101}]

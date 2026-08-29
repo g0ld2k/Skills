@@ -143,7 +143,8 @@ contains every current `thread_id` + root `comment_id` pair exactly once.
 Surplus entries are permitted so a thread resolved after the replies file was
 prepared can reach the per-thread resolved check and be skipped safely. Every
 entry is still verified against the requested repository, PR, and root comment
-before the script reports that it would post or skip.
+before the script reports that it would post or skip, and every reply body must
+be a nonempty string.
 
 Require explicit user approval before the non-dry-run step (or verify the
 caller's recorded scope covers reply posting — see Unattended mode under

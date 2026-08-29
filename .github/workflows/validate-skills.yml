@@ -35,6 +35,9 @@ jobs:
       - name: Validate repository structure
         run: python3 scripts/validate-skills-repo.py
 
+      - name: Run regression tests
+        run: python3 -m unittest discover -s tests
+
       - name: Validate JSON manifests
         run: |
           find plugins .claude-plugin .agents .github -name '*.json' -print |

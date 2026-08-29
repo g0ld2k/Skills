@@ -17,10 +17,10 @@ replies.json format:
 "thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
 and it drives a fresh check immediately before each POST that the thread
 belongs to the given --owner/--repo/--pr, is unresolved, and that
-comment_id is its root comment. An entry missing comment_id or thread_id,
-or one that fails any of those checks for a reason other than "already
-resolved", is a hard failure (counted in "failed", exit code 2) — it is
-not silently skipped.
+comment_id is its root comment. "body" must be a nonempty string. An entry
+missing any required field, or one that fails any of those checks for a reason
+other than "already resolved", is a hard failure (counted in "failed", exit
+code 2) — it is not silently skipped.
 USAGE
 }
 
@@ -93,8 +93,9 @@ if ! jq -e '
   type == "array"
   and all(.[].thread_id; type == "string" and length > 0)
   and all(.[].comment_id; type == "number")
+  and all(.[].body; type == "string" and length > 0)
 ' "$replies_file" >/dev/null; then
-  echo "Failing replies file (each entry requires thread_id and numeric comment_id)" >&2
+  echo "Failing replies file (each entry requires thread_id, numeric comment_id, and nonempty string body)" >&2
   exit 2
 fi
 
