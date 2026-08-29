@@ -85,6 +85,7 @@ gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
 ### Phase 2: Triage and Recommendation
 
 For each unresolved review thread, produce:
+- `thread_id`
 - `comment_id`
 - `file:line`
 - `validity` (`valid`, `partial`, `invalid`, `unclear`, `conflicting`)
@@ -98,6 +99,10 @@ just the root comment. If a thread's `replies_truncated` is `true`, its
 replies could not be fully fetched: do not triage that thread yet — retry
 the fetch (or fall back to a manual/MCP query) until `replies_truncated` is
 `false` before deciding validity or priority for it.
+
+Before presenting the plan, compare it with the fetched source data. The
+triage must contain each unresolved `thread_id` + root `comment_id` pair
+exactly once, with no omitted, duplicate, placeholder, or mismatched IDs.
 
 Use rubric: [decision-rubric.md](references/decision-rubric.md)
 Use reply patterns: [reply-templates.md](references/reply-templates.md)
@@ -132,6 +137,14 @@ Preferred helper (supports dry run):
 bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path> --dry-run
 bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path>
 ```
+
+The dry run re-fetches unresolved threads and fails unless the replies file
+contains every current `thread_id` + root `comment_id` pair exactly once.
+Surplus entries are permitted so a thread resolved after the replies file was
+prepared can reach the per-thread resolved check and be skipped safely. Every
+entry is still verified against the requested repository, PR, and root comment
+before the script reports that it would post or skip, and every reply body must
+be a nonempty string.
 
 Require explicit user approval before the non-dry-run step (or verify the
 caller's recorded scope covers reply posting — see Unattended mode under

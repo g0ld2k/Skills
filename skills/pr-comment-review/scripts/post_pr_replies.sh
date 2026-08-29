@@ -17,10 +17,10 @@ replies.json format:
 "thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
 and it drives a fresh check immediately before each POST that the thread
 belongs to the given --owner/--repo/--pr, is unresolved, and that
-comment_id is its root comment. An entry missing comment_id or thread_id,
-or one that fails any of those checks for a reason other than "already
-resolved", is a hard failure (counted in "failed", exit code 2) — it is
-not silently skipped.
+comment_id is its root comment. "body" must be a nonempty string. An entry
+missing any required field, or one that fails any of those checks for a reason
+other than "already resolved", is a hard failure (counted in "failed", exit
+code 2) — it is not silently skipped.
 USAGE
 }
 
@@ -74,6 +74,40 @@ fi
 
 require_cmd gh
 require_cmd jq
+
+# Refuse partial or duplicated reply batches before checking or posting any
+# individual thread. A clean dry-run must prove that the replies file accounts
+# for every currently unresolved top-level review comment exactly once. Surplus
+# entries are allowed through so the per-thread check can safely skip comments
+# whose threads were resolved after the replies file was prepared.
+fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
+unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
+trap 'rm -f "$unresolved_file"' EXIT
+
+if ! bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$unresolved_file"; then
+  echo "Failing replies file (could not fetch current unresolved review threads)" >&2
+  exit 2
+fi
+
+if ! jq -e '
+  type == "array"
+  and all(.[].thread_id; type == "string" and length > 0)
+  and all(.[].comment_id; type == "number")
+  and all(.[].body; type == "string" and length > 0)
+' "$replies_file" >/dev/null; then
+  echo "Failing replies file (each entry requires thread_id, numeric comment_id, and nonempty string body)" >&2
+  exit 2
+fi
+
+if ! jq -e --slurpfile unresolved "$unresolved_file" '
+  [.[] | {thread_id, comment_id}] as $reply_pairs
+  | [$unresolved[0][] | {thread_id, comment_id}] as $required_pairs
+  | ($reply_pairs | length) == ($reply_pairs | unique_by(.thread_id) | length)
+    and (($required_pairs - $reply_pairs) | length == 0)
+' "$replies_file" >/dev/null; then
+  echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
+  exit 2
+fi
 
 # Fresh, single-thread check so a reply posted late in a large batch can't
 # fire against a thread someone resolved after the batch snapshot was taken.
