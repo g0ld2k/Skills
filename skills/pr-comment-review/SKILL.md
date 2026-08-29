@@ -139,9 +139,11 @@ bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> -
 ```
 
 The dry run re-fetches unresolved threads and fails unless the replies file
-contains the same `thread_id` + root `comment_id` pairs exactly once. It also
-verifies each pair still belongs to the requested repository and PR before
-reporting that it would post.
+contains every current `thread_id` + root `comment_id` pair exactly once.
+Surplus entries are permitted so a thread resolved after the replies file was
+prepared can reach the per-thread resolved check and be skipped safely. Every
+entry is still verified against the requested repository, PR, and root comment
+before the script reports that it would post or skip.
 
 Require explicit user approval before the non-dry-run step (or verify the
 caller's recorded scope covers reply posting — see Unattended mode under

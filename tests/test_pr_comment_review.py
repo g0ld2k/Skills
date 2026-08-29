@@ -58,11 +58,16 @@ class PostPRRepliesTests(unittest.TestCase):
                     set -euo pipefail
                     comment_id=101
                     if [[ "$*" == *"id=PRRT_two"* ]]; then comment_id=202; fi
+                    if [[ "$*" == *"id=PRRT_resolved"* ]]; then comment_id=303; fi
+                    is_resolved=false
+                    if [[ "$*" == *"id=PRRT_resolved"* ]]; then is_resolved=true; fi
                     cat <<JSON
-                    {"data":{"node":{"isResolved":false,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":COMMENT_ID,"replyTo":null}]}}}}
+                    {"data":{"node":{"isResolved":IS_RESOLVED,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":COMMENT_ID,"replyTo":null}]}}}}
                     JSON
                     """
-                ).replace("COMMENT_ID", "$comment_id")
+                )
+                .replace("COMMENT_ID", "$comment_id")
+                .replace("IS_RESOLVED", "$is_resolved")
             )
             fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
 
@@ -123,6 +128,25 @@ class PostPRRepliesTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count("DRY RUN: would reply"), 2)
         self.assertIn("would_post=2", result.stdout)
+
+    def test_dry_run_skips_surplus_reply_for_newly_resolved_thread(self) -> None:
+        """Exact equality would block the existing resolved-thread race path."""
+        unresolved = [{"thread_id": "PRRT_one", "comment_id": 101}]
+        replies = [
+            {"thread_id": "PRRT_one", "comment_id": 101, "body": "Addressed."},
+            {
+                "thread_id": "PRRT_resolved",
+                "comment_id": 303,
+                "body": "Addressed.",
+            },
+        ]
+
+        result = self.run_dry_run(unresolved, replies)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("would_post=1", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+        self.assertIn("thread PRRT_resolved already resolved", result.stdout)
 
 
 if __name__ == "__main__":

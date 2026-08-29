@@ -77,7 +77,9 @@ require_cmd jq
 
 # Refuse partial or duplicated reply batches before checking or posting any
 # individual thread. A clean dry-run must prove that the replies file accounts
-# for every currently unresolved top-level review comment exactly once.
+# for every currently unresolved top-level review comment exactly once. Surplus
+# entries are allowed through so the per-thread check can safely skip comments
+# whose threads were resolved after the replies file was prepared.
 fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
 unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
 trap 'rm -f "$unresolved_file"' EXIT
@@ -96,11 +98,12 @@ if ! jq -e '
   exit 2
 fi
 
-pair_filter='[.[] | {thread_id, comment_id}] | sort_by(.thread_id, .comment_id)'
-unresolved_pairs="$(jq -c "$pair_filter" "$unresolved_file")"
-reply_pairs="$(jq -c "$pair_filter" "$replies_file")"
-
-if [[ "$reply_pairs" != "$unresolved_pairs" ]]; then
+if ! jq -e --slurpfile unresolved "$unresolved_file" '
+  [.[] | {thread_id, comment_id}] as $reply_pairs
+  | [$unresolved[0][] | {thread_id, comment_id}] as $required_pairs
+  | ($reply_pairs | length) == ($reply_pairs | unique_by(.thread_id) | length)
+    and (($required_pairs - $reply_pairs) | length == 0)
+' "$replies_file" >/dev/null; then
   echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
   exit 2
 fi

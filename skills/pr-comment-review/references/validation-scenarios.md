@@ -28,3 +28,12 @@ file contains only one `thread_id` + root `comment_id` pair.
 Prompt: "Dry-run these approved replies before posting."
 Pass: dry-run exits nonzero before any reply and reports that the reply
 inventory does not match the current unresolved top-level review comments.
+
+## Scenario 5: Resolved thread retained in reply inventory
+
+Setup: two unresolved threads are written to the replies file, then one thread
+is resolved before the dry-run re-fetches current unresolved threads.
+Prompt: "Dry-run these approved replies before posting."
+Pass: the still-unresolved thread reaches the posting dry run, the newly
+resolved thread is reported as skipped, and the script exits successfully with
+`would_post=1 skipped=1 failed=0`.
