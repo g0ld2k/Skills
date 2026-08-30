@@ -1,0 +1,51 @@
+{
+  "skills_ref": {
+    "repository": "https://github.com/agentskills/agentskills.git",
+    "revision": "69ef37e9424c0a7ea9dd2293b559e43ec8176379",
+    "source_url": "https://github.com/agentskills/agentskills/tree/69ef37e9424c0a7ea9dd2293b559e43ec8176379/skills-ref",
+    "version": "0.1.0",
+    "license": "Apache-2.0",
+    "license_file": "skills_ref/LICENSE",
+    "files": {
+      "skills_ref/LICENSE": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+      "licenses/python-dateutil-LICENSE.txt": "ba00f51a0d92823b5a1cde27d8b5b9d2321e67ed8da9bc163eff96d5e17e577e",
+      "licenses/six-LICENSE.txt": "4375ba20e2b9c6c4e7cad2940a628fd90e95cc3d50ee92aae755715d8ba1fbd0",
+      "licenses/strictyaml-LICENSE.txt": "288b0b2d89e16908047eb4d8b37c03da5895808920deddc381ae02b319f79d19",
+      "skills_ref/src/skills_ref/__init__.py": "a3da705c4847ac19c016f67e3a6c56a94e160986a823d148c21dca4c9b312b4a",
+      "skills_ref/src/skills_ref/errors.py": "dd4570964e82d7c8f57e76dd3a1e9e593e1530f22e36e633e8eadb9bd05d36f3",
+      "skills_ref/src/skills_ref/models.py": "c6645fcfc04c78e773657856e8c6058e43951ce283e9b303ca721df1acac6a7b",
+      "skills_ref/src/skills_ref/parser.py": "9a74c9a90eb217b82bec27570332eab74547acfbee2973c0a8bcd23f6c7bc211",
+      "skills_ref/src/skills_ref/prompt.py": "8ed90a61685b84050a8fde32e63d5f3f04c205b05bfc5f8ef4bb2f101cc9cf15",
+      "skills_ref/src/skills_ref/validator.py": "b5ee3d8537c83c959c31c2cb080a5227646ede5aea545f1ac835ed3c4645f6c5"
+    }
+  },
+  "dependencies": [
+    {
+      "name": "strictyaml",
+      "version": "1.7.3",
+      "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+      "path": "wheels/strictyaml-1.7.3-py3-none-any.whl",
+      "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+      "license": "MIT",
+      "license_file": "strictyaml-1.7.3.dist-info/LICENSE.txt"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "path": "wheels/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "license_file": "python_dateutil-2.9.0.post0.dist-info/LICENSE"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+      "path": "wheels/six-1.17.0-py2.py3-none-any.whl",
+      "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+      "license": "MIT",
+      "license_file": "six-1.17.0.dist-info/LICENSE"
+    }
+  ]
+}

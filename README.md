@@ -37,9 +37,13 @@ release notes, and work orchestration.
    the finished skill — delete the `DOCS-ONLY` blocks, the `## Frontmatter`
    rules section, and every guidance line as you replace it.
 2. Create `skills/<name>/agents/openai.yaml` from the template's stub.
-3. Create `skills/<name>/references/validation-scenarios.md` with at least 3
-   scenarios (happy path, edge case, adversarial) — the template's Validation
-   Scenarios section points at it.
+3. New skills must create `skills/<name>/references/validation-scenarios.md`
+   with at least 3 scenarios (happy path, edge case, adversarial) — the
+   template's Validation Scenarios section points at it. Every scenario must
+   include non-empty `Setup:`, `Prompt:`, and `Pass:` sections. Existing skills
+   are temporarily exempt only while their owning follow-up issues add richer
+   scenarios: `commit-message` (#39), `pr-generator` (#42), and
+   `testflight-notes` (#43).
 4. Add the skill to exactly one `packaging/<plugin-name>.json` `skills` array.
    Add it to that config's `shared_conventions_consumers` array too if the
    skill keeps the template's `references/conventions.md` link.
@@ -57,7 +61,10 @@ directories. The portable `plugin.json` cannot list or relocate skills. Keep
 client-specific behavior in that client's metadata; for example,
 `agents/openai.yaml` sets `policy.allow_implicit_invocation: false` for
 explicit-only skills. `disable-model-invocation` is not a portable Agent
-Skills field and must not appear in `SKILL.md` frontmatter.
+Skills field and must not appear in `SKILL.md` frontmatter. The Agent Skills
+specification permits experimental `allowed-tools` as a space-separated string;
+this repository intentionally rejects that otherwise-valid field as a house
+policy so published skills remain client-neutral.
 
 ## Direct Agent Skills Install
 
@@ -96,14 +103,31 @@ copilot plugin install g0ld2k-skills@g0ld2k-skills
 
 ## Validation
 
+Validation has two deliberately separate layers:
+
+| Layer | Checks | Reason |
+| --- | --- | --- |
+| Agent Skills specification | Required fields, field types, name syntax and directory matching, length limits, supported frontmatter, and canonical/generated copies | Keep every published skill interoperable with the portable format. Validation uses the vendored `skills-ref` API from `agentskills/agentskills` revision `69ef37e9424c0a7ea9dd2293b559e43ec8176379` plus explicit checks for documented constraints omitted by that demonstration validator. Exact paths and hashes are anchored in the validator; provenance and dependency licenses are recorded in [`vendor/README.md`](vendor/README.md) and [`vendor/manifest.json`](vendor/manifest.json), so CI never downloads code. |
+| House policy | `description` starts with `Use when`, `license: MIT`, experimental `allowed-tools` is absent, and required scenario coverage for new skills and `catch-me-up` | Make activation routing, distribution licensing, client portability, and output behavior consistent for this repository. |
+
+Spec errors are reported as `Agent Skills spec`; repository choices are
+reported as `House policy`, so a valid portable field is distinguishable from
+an intentional local restriction.
+
+The validator deliberately enforces the public portable name grammar
+`[a-z0-9-]`, which is stricter than broader Unicode/NFKC handling in the
+reference library. YAML parsing otherwise follows the pinned reference:
+StrictYAML treats plain scalar spellings as strings and rejects flow
+collections.
+
 Run the same structural checks used by CI:
 
 ```bash
+python3 scripts/validate-skills-repo.py
 python3 scripts/generate-plugin-packages.py
 git diff --exit-code
 status="$(git status --porcelain)"
 if [ -n "$status" ]; then echo "$status"; exit 1; fi
-python3 scripts/validate-skills-repo.py
 find plugins .agents .github schemas -name '*.json' -print |
   while IFS= read -r file; do python3 -m json.tool "$file" >/dev/null; done
 find skills plugins scripts -type f -name '*.sh' -print |
