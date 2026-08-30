@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -31,6 +32,40 @@ def load_script(name: str) -> ModuleType:
 
 
 class RootPluginTests(unittest.TestCase):
+    def test_python_cache_artifacts_do_not_dirty_repository(self) -> None:
+        cache_dir = ROOT / "scripts" / "__pycache__"
+        cache_dir_preexisted = cache_dir.exists()
+        cache_dir.mkdir(exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            dir=cache_dir, prefix="ci-regression-", suffix=".pyc", delete=False
+        ) as handle:
+            handle.write(b"test artifact")
+            artifact = Path(handle.name)
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--",
+                    str(artifact.relative_to(ROOT)),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        finally:
+            artifact.unlink()
+            if not cache_dir_preexisted:
+                try:
+                    cache_dir.rmdir()
+                except OSError:
+                    pass
+
+        self.assertEqual(result.stdout, "")
+
     def test_root_manifest_uses_the_portable_agent_plugins_contract(self) -> None:
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
 
