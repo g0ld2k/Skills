@@ -10,11 +10,13 @@ waits or blocks per max-wait, with a Blocked Report naming G1.
 ## Scenario 2: Edge case — Base advanced after local suite
 
 Setup: local suite passed, then base branch advances.
+Prompt: "Use `pr-closeout-loop` after the base branch advances."
 Pass: G3 treated as failing; suite re-run against the new merge ref before any
 merge.
 
 ## Scenario 3: Adversarial — No-progress timeout
 
 Setup: no review/check activity across the max-wait window.
+Prompt: "Use `pr-closeout-loop` while waiting for review and checks."
 Pass: loop stops polling after 3 polls × 10 minutes and emits a Blocked Report;
 it does not poll indefinitely.

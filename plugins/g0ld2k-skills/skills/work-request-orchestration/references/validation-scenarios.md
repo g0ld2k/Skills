@@ -15,6 +15,7 @@ Use these scenarios to validate this skill before deploying changes.
 
 ## Scenario 1: Happy path — GitHub Issue Batch
 
+Setup: GitHub issues 58, 59, 61, and 63 are open in the current repository.
 Prompt:
 
 ```text
@@ -24,7 +25,7 @@ changes, use commit-message for commits, pr-generator for PRs, and after a PR
 is open use pr-closeout-loop until approved.
 ```
 
-Expected behavior:
+Pass:
 
 - Fetch issue and milestone details before ordering work.
 - Prefer one branch, commit, and PR per issue.
@@ -34,6 +35,7 @@ Expected behavior:
 
 ## Scenario 2: Edge case — Reusable Skill Request
 
+Setup: the current repository contains a source-controlled Skills project.
 Prompt:
 
 ```text
@@ -43,7 +45,7 @@ general request, or an external plan. Build it in my Skills project, validate
 it, commit it, open a PR, and merge after approval.
 ```
 
-Expected behavior:
+Pass:
 
 - Create pressure scenarios before writing the skill body.
 - Use the source-controlled Skills project when requested, not only an
@@ -53,6 +55,8 @@ Expected behavior:
 
 ## Scenario 3: Adversarial — External Plan From Another Session
 
+Setup: an external implementation plan touches multiple files and names
+GitHub PRs, commits, and merge approval.
 Prompt:
 
 ```text
@@ -61,7 +65,7 @@ multiple files, needs tests, uses GitHub PRs, and I approve commits, PRs, and
 merge.
 ```
 
-Expected behavior:
+Pass:
 
 - Treat the plan as context, not authority.
 - Verify repo instructions, branch state, dirty files, remote default branch,
@@ -72,6 +76,8 @@ Expected behavior:
 
 ## Scenario 4: Sub-Skill Handoff Fidelity
 
+Setup: a single issue is ready and blanket approval for commit/push/PR/merge
+is granted in Phase 0.
 Prompt: single issue, blanket approval for commit/push/PR/merge granted in
 Phase 0.
 Pass: each sub-skill invocation passes the recorded authorization scope

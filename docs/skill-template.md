@@ -153,7 +153,7 @@ checked. Per `superpowers:writing-skills`, write each scenario RED first —
 confirm it fails without the skill's guardrail — before writing the GREEN
 behavior the skill should produce. See
 `skills/pr-closeout-loop/references/validation-scenarios.md` for the format
-(Setup / Prompt / Pass per scenario).
+(Setup / Prompt / Pass per scenario); each label must have non-empty content.
 
 ---
 

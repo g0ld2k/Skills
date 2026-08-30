@@ -39,8 +39,9 @@ release notes, and work orchestration.
 2. Create `skills/<name>/agents/openai.yaml` from the template's stub.
 3. New skills must create `skills/<name>/references/validation-scenarios.md`
    with at least 3 scenarios (happy path, edge case, adversarial) — the
-   template's Validation Scenarios section points at it. Existing skills are
-   temporarily exempt only while their owning follow-up issues add richer
+   template's Validation Scenarios section points at it. Every scenario must
+   include non-empty `Setup:`, `Prompt:`, and `Pass:` sections. Existing skills
+   are temporarily exempt only while their owning follow-up issues add richer
    scenarios: `commit-message` (#39), `pr-generator` (#42), and
    `testflight-notes` (#43).
 4. Add the skill to exactly one `packaging/<plugin-name>.json` `skills` array.
@@ -112,6 +113,10 @@ Validation has two deliberately separate layers:
 Spec errors are reported as `Agent Skills spec`; repository choices are
 reported as `House policy`, so a valid portable field is distinguishable from
 an intentional local restriction.
+
+The validator deliberately enforces the public portable name grammar
+`[a-z0-9-]`, which is stricter than broader Unicode/NFKC handling in the
+reference library.
 
 Run the same structural checks used by CI:
 

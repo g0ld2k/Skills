@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-import unicodedata
 from ast import literal_eval
 from pathlib import Path
 
@@ -88,6 +87,25 @@ def strip_quotes(value: str) -> str:
     return value
 
 
+def _strip_inline_yaml_comment(value: str) -> str:
+    """Remove a YAML comment that starts outside a quoted scalar."""
+    quote: str | None = None
+    for index, character in enumerate(value):
+        if quote:
+            if quote == "'" and character == quote:
+                if index + 1 < len(value) and value[index + 1] == quote:
+                    continue
+                quote = None
+            elif quote == '"' and character == quote and value[index - 1] != "\\":
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value.rstrip()
+
+
 def _split_inline_yaml(value: str) -> list[str]:
     """Split a simple inline YAML collection without evaluating its contents."""
     parts: list[str] = []
@@ -117,14 +135,20 @@ def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
         raise ValueError(
             f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
         )
-    value = value.strip()
+    value = _strip_inline_yaml_comment(value).strip()
     if not value:
         return None
-    if value[0:1] in {"'", '"'} and value[-1:] == value[0]:
+    if value[0:1] in {"'", '"'}:
+        if value[-1:] != value[0]:
+            raise ValueError("invalid quoted scalar")
+        if value[0] == '"' and re.search(
+            r'\\(?![0abtnvfre"\\/N_LPxXuU])', value
+        ):
+            raise ValueError("invalid quoted scalar")
         try:
             return literal_eval(value)
         except (SyntaxError, ValueError):
-            return value[1:-1]
+            raise ValueError("invalid quoted scalar")
     lowered = value.lower()
     if lowered == "true":
         return True
@@ -407,31 +431,30 @@ def validate_agent_skill_spec(
     if not isinstance(name, str) or not name.strip():
         _spec_error(errors, skill_file, "Field 'name' must be a non-empty string")
     else:
-        normalized_name = unicodedata.normalize("NFKC", name.strip())
-        if len(normalized_name) > MAX_SKILL_NAME_LENGTH:
+        skill_name = name.strip()
+        if len(skill_name) > MAX_SKILL_NAME_LENGTH:
             _spec_error(
                 errors,
                 skill_file,
-                f"Skill name '{normalized_name}' exceeds {MAX_SKILL_NAME_LENGTH} character limit ({len(normalized_name)} chars)",
+                f"Skill name '{skill_name}' exceeds {MAX_SKILL_NAME_LENGTH} character limit ({len(skill_name)} chars)",
             )
-        if normalized_name != normalized_name.lower():
-            _spec_error(errors, skill_file, f"Skill name '{normalized_name}' must be lowercase")
-        if normalized_name.startswith("-") or normalized_name.endswith("-"):
+        if skill_name != skill_name.lower():
+            _spec_error(errors, skill_file, f"Skill name '{skill_name}' must be lowercase")
+        if skill_name.startswith("-") or skill_name.endswith("-"):
             _spec_error(errors, skill_file, "Skill name cannot start or end with a hyphen")
-        if "--" in normalized_name:
+        if "--" in skill_name:
             _spec_error(errors, skill_file, "Skill name cannot contain consecutive hyphens")
-        if not all(character.isalnum() or character == "-" for character in normalized_name):
+        if SKILL_NAME_RE.fullmatch(skill_name) is None:
             _spec_error(
                 errors,
                 skill_file,
-                f"Skill name '{normalized_name}' contains invalid characters. Only letters, digits, and hyphens are allowed.",
+                f"Skill name '{skill_name}' contains invalid characters; it must match the portable ASCII name grammar [a-z0-9-].",
             )
-        directory_name = unicodedata.normalize("NFKC", skill_dir.name)
-        if directory_name != normalized_name:
+        if skill_dir.name != skill_name:
             _spec_error(
                 errors,
                 skill_file,
-                f"Directory name '{skill_dir.name}' must match skill name '{normalized_name}'",
+                f"Directory name '{skill_dir.name}' must match skill name '{skill_name}'",
             )
 
     description = frontmatter.get("description")
@@ -520,7 +543,10 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
     except OSError as exc:
         _policy_error(errors, scenario_file, f"cannot read validation scenarios: {exc}")
         return
-    headings = re.findall(r"^## Scenario \d+:[^\n]*", text, re.MULTILINE)
+    heading_matches = list(
+        re.finditer(r"^## Scenario \d+:[^\n]*", text, re.MULTILINE)
+    )
+    headings = [match.group(0) for match in heading_matches]
     if len(headings) < 3:
         _policy_error(
             errors,
@@ -531,6 +557,46 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
     for label in ("happy path", "edge case", "adversarial"):
         if not any(label in heading for heading in lowered_headings):
             _policy_error(errors, scenario_file, f"must include a {label} scenario")
+
+    for index, heading_match in enumerate(heading_matches):
+        scenario_number = re.match(r"^## Scenario (\d+):", heading_match.group(0))
+        if scenario_number is None:
+            continue
+        scenario_end = (
+            heading_matches[index + 1].start()
+            if index + 1 < len(heading_matches)
+            else len(text)
+        )
+        scenario_text = text[heading_match.end() : scenario_end]
+        labels = list(
+            re.finditer(r"^(Setup|Prompt|Pass):[ \t]*", scenario_text, re.MULTILINE)
+        )
+        for expected_label in ("Setup", "Prompt", "Pass"):
+            label_matches = [
+                match for match in labels if match.group(1) == expected_label
+            ]
+            if not label_matches:
+                _policy_error(
+                    errors,
+                    scenario_file,
+                    f"Scenario {scenario_number.group(1)}: missing {expected_label} label",
+                )
+                continue
+            label_match = label_matches[0]
+            label_end = next(
+                (
+                    match.start()
+                    for match in labels
+                    if match.start() > label_match.start()
+                ),
+                len(scenario_text),
+            )
+            if not scenario_text[label_match.end() : label_end].strip():
+                _policy_error(
+                    errors,
+                    scenario_file,
+                    f"Scenario {scenario_number.group(1)}: {expected_label} content must be non-empty",
+                )
 
 
 def schema_type_matches(value: object, expected: str) -> bool:

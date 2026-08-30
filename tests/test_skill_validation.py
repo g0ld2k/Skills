@@ -80,11 +80,69 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         errors = self.validate_spec("wrong-skill-file-case")
         self.assertIn("missing required file: SKILL.md", "\n".join(errors))
 
+    def test_skill_names_reject_unicode_and_nfkc_lookalikes(self) -> None:
+        for name in ("café", "ｔｅｓｔ"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory(
+                prefix="skill-validation-"
+            ) as temp:
+                skill_dir = Path(temp) / name
+                skill_dir.mkdir()
+                (skill_dir / "SKILL.md").write_text(
+                    "---\n"
+                    f"name: {name}\n"
+                    "description: Use when testing portable skill names.\n"
+                    "license: MIT\n"
+                    "---\n",
+                    encoding="utf-8",
+                )
+                errors: list[str] = []
+                self.validator.validate_agent_skill_spec(skill_dir, errors)
+
+            self.assertIn("must match the portable ASCII name grammar", "\n".join(errors))
+
     def test_malformed_frontmatter_is_reported_as_a_spec_error(self) -> None:
         errors = self.validate_spec("malformed-frontmatter")
 
         self.assertIn("Agent Skills spec", "\n".join(errors))
         self.assertIn("invalid YAML frontmatter", "\n".join(errors))
+
+    def test_malformed_quoted_scalar_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: malformed-quoted-scalar\n"
+                'description: "Use when testing \\q"\n'
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertEqual(frontmatter, {})
+        self.assertIsNotNone(parse_error)
+        self.assertIn("invalid YAML frontmatter", parse_error or "")
+
+    def test_inline_comments_are_stripped_only_outside_quotes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: inline-comments\n"
+                'description: "Use # literally when testing comments." # trailing\n'
+                "license: MIT # SPDX identifier\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["license"], "MIT")
+        self.assertEqual(
+            frontmatter["description"], "Use # literally when testing comments."
+        )
 
     def test_non_string_top_level_key_is_reported_through_spec_validation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
@@ -187,11 +245,15 @@ class AgentSkillsConformanceTests(unittest.TestCase):
 
         generated = {path for path in calls if "plugins" in path.parts}
         expected = {
-            ROOT / "plugins" / "g0ld2k-skills" / "skills" / name
+            ROOT / "plugins" / config["name"] / "skills" / name
             for config in configs
             for name in config["skills"]
         }
         self.assertTrue(expected <= generated)
+        self.assertIn("g0ld2k-apple-design", {config["name"] for config in configs})
+        self.assertTrue(
+            (ROOT / "plugins" / "g0ld2k-apple-design" / "skills").is_dir()
+        )
 
     def test_conformance_source_is_pinned_and_network_independent(self) -> None:
         self.assertEqual(
@@ -215,6 +277,52 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 errors: list[str] = []
                 self.validator.validate_validation_scenarios(skill_dir, errors)
                 self.assertEqual(errors, [])
+
+    def test_validation_scenarios_require_content_for_each_label(self) -> None:
+        for empty_label in ("Setup", "Prompt", "Pass"):
+            with self.subTest(label=empty_label), tempfile.TemporaryDirectory(
+                prefix="skill-validation-"
+            ) as temp:
+                skill_dir = Path(temp)
+                references_dir = skill_dir / "references"
+                references_dir.mkdir()
+                sections = {
+                    "Setup": "a repository is available",
+                    "Prompt": "Use the skill on the repository.",
+                    "Pass": "the skill reports the requested result.",
+                }
+                sections[empty_label] = ""
+                scenario_text = "\n".join(
+                    [
+                        "# Validation Scenarios",
+                        "",
+                        "## Scenario 1: Happy path",
+                        f"Setup: {sections['Setup']}",
+                        f"Prompt: {sections['Prompt']}",
+                        f"Pass: {sections['Pass']}",
+                        "",
+                        "## Scenario 2: Edge case",
+                        "Setup: an edge case is available",
+                        "Prompt: Use the skill for the edge case.",
+                        "Pass: the edge case is handled.",
+                        "",
+                        "## Scenario 3: Adversarial",
+                        "Setup: adversarial input is available",
+                        "Prompt: Use the skill for adversarial input.",
+                        "Pass: the input is handled safely.",
+                    ]
+                )
+                (references_dir / "validation-scenarios.md").write_text(
+                    scenario_text,
+                    encoding="utf-8",
+                )
+                errors: list[str] = []
+                self.validator.validate_validation_scenarios(skill_dir, errors)
+
+            self.assertIn(
+                f"Scenario 1: {empty_label} content must be non-empty",
+                "\n".join(errors),
+            )
 
     def test_house_policy_diagnostics_are_separate_from_spec_errors(self) -> None:
         frontmatter, parse_error = self.validator.parse_frontmatter(

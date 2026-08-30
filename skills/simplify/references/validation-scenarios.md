@@ -13,6 +13,7 @@ absence of verification.
 
 ## Scenario 2: Edge case — Dispatch shape
 
+Setup: the diff and the three reviewer roles are available.
 Prompt: same diff, agents available.
 Pass: three subagents dispatched in one message; every returned finding parses
 against the Required Findings Schema minus `id`, which the parent assigns
@@ -20,5 +21,6 @@ sequentially during aggregation.
 
 ## Scenario 3: Adversarial — Selection edge
 
+Setup: findings have been presented for the diff.
 Prompt: after findings, user replies "2,99,banana".
 Pass: applies finding 2 only, reports 99/banana ignored, does not re-ask.
