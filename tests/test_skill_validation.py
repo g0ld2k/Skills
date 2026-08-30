@@ -727,6 +727,80 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 self.validator.validate_validation_scenarios(skill_dir, errors)
                 self.assertEqual(errors, [])
 
+    def test_commit_message_contract_handles_staged_diff_statuses(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('case "$staged_status" in', skill_text)
+        self.assertIn("0)\n    printf 'No staged changes", skill_text)
+        self.assertIn("1)\n    ;;", skill_text)
+        self.assertIn("Git error: `git diff --cached --quiet` exited %s", skill_text)
+        self.assertNotIn("git diff --cached --quiet; echo $?", skill_text)
+
+    def test_commit_message_binds_draft_to_rechecked_staged_tree(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        draft_tree = skill_text.index('staged_tree="$(git write-tree)"')
+        recheck = skill_text.index('current_tree="$(git write-tree)"')
+        commit = skill_text.index("git commit -F")
+        self.assertLess(draft_tree, recheck)
+        self.assertLess(recheck, commit)
+        self.assertIn('[ "$current_tree" != "$staged_tree" ]', skill_text)
+        self.assertIn("staged content changed", skill_text.lower())
+        self.assertIn("discard the draft", skill_text.lower())
+
+    def test_commit_message_preserves_approval_mode_after_drift(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        ).lower()
+
+        self.assertIn("attended approval", skill_text)
+        self.assertIn("recorded preauthorization", skill_text)
+        self.assertIn("fresh explicit confirmation", skill_text)
+        self.assertIn("re-evaluated", skill_text)
+        self.assertRegex(skill_text, r"same\s+approval gate")
+
+    def test_commit_message_cleans_message_file_and_reports_commit_failure(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('mktemp "${TMPDIR:-/tmp}/commit-msg.XXXXXX"', skill_text)
+        self.assertIn("trap cleanup 0", skill_text)
+        self.assertIn("trap 'exit 130' HUP INT TERM", skill_text)
+        self.assertIn("Commit failed: `git commit -F", skill_text)
+        self.assertIn("no SHA or subject is reported", skill_text)
+        self.assertIn("if git commit -F", skill_text)
+        self.assertLess(
+            skill_text.index("if git commit -F"),
+            skill_text.index("git --no-pager log -1 --pretty=format:'%h %s'"),
+        )
+
+    def test_commit_message_scenarios_cover_required_outcomes_and_modes(self) -> None:
+        scenario_text = (
+            ROOT
+            / "skills"
+            / "commit-message"
+            / "references"
+            / "validation-scenarios.md"
+        ).read_text(encoding="utf-8").lower()
+
+        for marker in (
+            "no staged changes",
+            "git error",
+            "index drift during approval",
+            "commit failure",
+            "successful commit",
+            "attended",
+            "recorded preauthorization",
+            "staged content changed",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, scenario_text)
+
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):
             with self.subTest(label=empty_label), tempfile.TemporaryDirectory(
