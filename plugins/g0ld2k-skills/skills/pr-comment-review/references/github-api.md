@@ -63,9 +63,17 @@ Treat as contextual discussion, not required action items.
 ## 3) Post Reply to Review Comment (REST)
 
 ```bash
+reply_body_file="$(mktemp "${TMPDIR:-/tmp}/pr-reply-body.XXXXXX")"
+reply_payload_file="$(mktemp "${TMPDIR:-/tmp}/pr-reply-payload.XXXXXX")"
+printf '%s' 'Thanks — addressed in <commit-or-explanation>' > "$reply_body_file"
+jq -n --rawfile body "$reply_body_file" '{body: $body}' > "$reply_payload_file"
 gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/replies \
-  -f body='Thanks — addressed in <commit-or-explanation>'
+  --input "$reply_payload_file"
+rm -f "$reply_body_file" "$reply_payload_file"
 ```
+
+Use `--input` for the JSON payload so a long reply body never becomes a
+command-line argument.
 
 ## 4) Recommended Posting Policy
 
