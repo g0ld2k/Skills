@@ -47,8 +47,7 @@ artifact described by the [Agent Plugins v1 specification](https://agent-plugins
    template's Validation Scenarios section points at it. Every scenario must
    include non-empty `Setup:`, `Prompt:`, and `Pass:` sections. Existing skills
    are temporarily exempt only while their owning follow-up issues add richer
-   scenarios: `commit-message` (#39), `pr-generator` (#42), and
-   `testflight-notes` (#43).
+   scenarios: `pr-generator` (#42) and `testflight-notes` (#43).
 4. Add a row for the skill to the `## Skill Catalog` table above.
 5. Run the sync and validation commands. The sync script discovers consumers
    from skill instructions that reference `references/conventions.md`:

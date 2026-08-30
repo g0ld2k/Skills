@@ -8,7 +8,9 @@ license: MIT
 
 ## Goal
 
-Produce a high-quality commit message based on staged changes only.
+Produce a high-quality Conventional Commit message from staged changes. When
+committing, bind approval to a staged-tree identity and confirm it is unchanged
+immediately before invoking normal `git commit`.
 
 **Commit gate (single source for this skill):** two modes exist.
 - `message-only` (default): never commit. A recorded approval scope alone does
@@ -20,23 +22,26 @@ Produce a high-quality commit message based on staged changes only.
 
 ## Workflow
 
-### 0) Preflight checks (required)
+### 0) Preflight and snapshot
 
-Run these first:
+Confirm the repository with `git rev-parse --is-inside-work-tree`. Stop and
+report its error if the command fails or does not return `true`.
+
+Run `git diff --cached --quiet` and preserve its exit status directly:
+
+- `0`: no staged changes; stop and ask the user to stage the intended files.
+- `1`: staged changes exist; continue.
+- Any other status: report the command, status, and Git error, then stop.
+
+For status `1`, run `git write-tree`. Stop on failure and keep its returned
+`staged_tree` identity with the draft.
+
+Then inspect the staged paths and summary:
 
 ```bash
-# Confirm repo and staged content
-git rev-parse --is-inside-work-tree
-git diff --cached --quiet; echo $?
-
-# List staged files and stats
 git --no-pager diff --cached --name-only
 git --no-pager diff --cached --stat
 ```
-
-Rules:
-- If not in a git repo, stop and report the issue.
-- If no staged changes, stop and ask user to stage files before generating a message.
 
 ### 1) Collect evidence from staged diff
 
@@ -112,46 +117,54 @@ Here's a suggested commit message:
 
 <show formatted message>
 
+Staged tree: <staged_tree>
+
 Ready to commit when you confirm.
 ```
 
 If the commit gate (see Goal) passes on the preauthorized path, state that the
 commit is preauthorized and continue to step 6 without another prompt.
 
-### 6) Commit (gate in Goal must pass)
+### 6) Re-check and commit (gate in Goal must pass)
 
-Use safe file-based commit message flow (preferred across CLIs):
-```bash
-commit_msg_file="$(mktemp "${TMPDIR:-/tmp}/commit-msg.XXXXXX")"
-cat > "$commit_msg_file" <<'MSG'
-<full commit message>
-MSG
-git commit -F "$commit_msg_file"
-rm -f "$commit_msg_file"
-```
+Create one unique message file with `mktemp`. Before writing the approved
+message, register cleanup on normal exit and failure; handlers for `HUP`,
+`INT`, and `TERM` must clean up and exit nonzero. A setup or write failure
+stops the workflow and reports its command, status, and error.
 
-Alternative (subject only):
-```bash
-git commit -m "<subject>"
-```
+Immediately before `git commit -F "$commit_msg_file"`, repeat the staged-status
+check from Step 0 and run `git write-tree` again:
 
-Do not auto-push after commit unless separately requested.
+- If no staged changes remain, discard the draft and ask for the intended files
+  to be staged.
+- If the new tree differs from `staged_tree`, discard the draft, repeat staged
+  evidence collection, and apply the same approval gate to the new tree and
+  message. Attended approval requires fresh confirmation; recorded
+  preauthorization must be re-evaluated for the new draft.
+- If either Git command fails, report its command, status, and error, then stop.
+
+Use normal `git commit -F` after the check. Repository hooks run normally and
+may modify the index under repository policy; the drift gate covers changes
+observed before the commit invocation. If the commit fails, report its command,
+status, and Git error without reporting commit metadata. Cleanup runs on
+success, failure, or interruption.
+
+Only after a successful commit, read and report the SHA and subject with
+`git --no-pager log -1 --pretty=format:'%h %s'`. Never auto-push unless
+separately requested.
 
 ## Output contract
 
 ### A) `message-only` (default)
-Return:
-1. Proposed commit message
-2. 1-3 line rationale (type/scope choice)
-3. "Ready to commit when you confirm."
+Return the Step 5 proposal plus a 1-3 line rationale for the type and scope.
 
 ### B) `message+commit` (commit gate passed)
-1. Commit using `git commit -F`
-2. Return commit SHA and subject from:
-```bash
-git --no-pager log -1 --pretty=format:'%h %s'
-```
+After the final tree check and successful normal `git commit -F`, return the
+checked SHA and subject. On failure, return the failing command, status, and Git
+error without implying that a commit exists.
 
 ## References
 
 - references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.
+- When changing this skill, validate the behavior against
+  [references/validation-scenarios.md](references/validation-scenarios.md).
