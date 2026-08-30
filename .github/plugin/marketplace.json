@@ -12,12 +12,6 @@
       "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
       "version": "0.1.0",
       "source": "./plugins/g0ld2k-skills"
-    },
-    {
-      "name": "g0ld2k-apple-design",
-      "description": "Package reserved for Apple-platform design decision skills.",
-      "version": "0.1.0",
-      "source": "./plugins/g0ld2k-apple-design"
     }
   ]
 }

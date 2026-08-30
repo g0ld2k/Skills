@@ -2,7 +2,6 @@
 name: integration-branch-orchestrator
 description: Use when supervising autonomous multi-PR closeout through an integration branch with a human promotion gate.
 license: MIT
-disable-model-invocation: true
 ---
 
 # Integration Branch Orchestrator
