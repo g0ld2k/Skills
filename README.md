@@ -19,14 +19,19 @@ release notes, and work orchestration.
 
 ## Repository Shape
 
-- `skills/<skill-name>/SKILL.md` contains the canonical skill instructions.
+- `plugin.json` is the Agent Plugins v1 manifest for this repository.
+- `skills/<skill-name>/SKILL.md` contains the canonical skill instructions and
+  is discovered directly by plugin clients.
 - `skills/<skill-name>/references/` contains optional supporting notes.
 - `skills/<skill-name>/scripts/` contains optional helper scripts used by the skill.
 - `skills/<skill-name>/agents/openai.yaml` contains Codex/OpenAI UI metadata.
-- `packaging/<plugin-name>.json` defines one portable plugin and its member skills.
-- `plugins/<plugin-name>/` contains generated Agent Plugins v1 packaging: `plugin.json` and the fixed `skills/` directory.
-- `.agents/plugins/marketplace.json` and `.github/plugin/marketplace.json` are thin Codex and GitHub Copilot adapters that point to the same package directories.
+- `.agents/plugins/marketplace.json` and `.github/plugin/marketplace.json` are
+  thin Codex and GitHub Copilot adapters that point to the repository root.
 - `schemas/agent-plugins/1.0.0/plugin.schema.json` is the pinned Agent Plugins v1 manifest schema used by the validator.
+
+The repository is one self-contained plugin. There is no generated copy of
+`skills/`: the root manifest and canonical skill tree are the distributable
+artifact described by the [Agent Plugins v1 specification](https://agent-plugins.org/specification).
 
 ## Add a New Skill
 
@@ -44,15 +49,12 @@ release notes, and work orchestration.
    are temporarily exempt only while their owning follow-up issues add richer
    scenarios: `commit-message` (#39), `pr-generator` (#42), and
    `testflight-notes` (#43).
-4. Add the skill to exactly one `packaging/<plugin-name>.json` `skills` array.
-   Add it to that config's `shared_conventions_consumers` array too if the
-   skill keeps the template's `references/conventions.md` link.
-5. Add a row for the skill to the `## Skill Catalog` table above.
-6. Run the sync + generate + validate commands:
+4. Add a row for the skill to the `## Skill Catalog` table above.
+5. Run the sync and validation commands. The sync script discovers consumers
+   from skill instructions that reference `references/conventions.md`:
 
 ```bash
 python3 scripts/sync-shared-conventions.py
-python3 scripts/generate-plugin-packages.py
 python3 scripts/validate-skills-repo.py
 ```
 
@@ -76,8 +78,8 @@ gh skill install g0ld2k/Skills skills/pr-generator/SKILL.md --agent claude-code 
 gh skill install g0ld2k/Skills skills/pr-comment-review/SKILL.md --agent github-copilot --scope project
 ```
 
-Use exact `skills/<skill-name>/SKILL.md` paths for direct installs so `gh skill`
-does not also install a generated plugin bundle under `plugins/`.
+Use exact `skills/<skill-name>/SKILL.md` paths to install one skill instead of
+the complete plugin.
 
 Validate the direct publisher shape:
 
@@ -107,7 +109,7 @@ Validation has two deliberately separate layers:
 
 | Layer | Checks | Reason |
 | --- | --- | --- |
-| Agent Skills specification | Required fields, field types, name syntax and directory matching, length limits, supported frontmatter, and canonical/generated copies | Keep every published skill interoperable with the portable format. Validation uses the vendored `skills-ref` API from `agentskills/agentskills` revision `69ef37e9424c0a7ea9dd2293b559e43ec8176379` plus explicit checks for documented constraints omitted by that demonstration validator. Exact paths and hashes are anchored in the validator; provenance and dependency licenses are recorded in [`vendor/README.md`](vendor/README.md) and [`vendor/manifest.json`](vendor/manifest.json), so CI never downloads code. |
+| Agent Skills specification | Required fields, field types, name syntax and directory matching, length limits, and supported frontmatter | Keep every published skill interoperable with the portable format. Validation uses the vendored `skills-ref` API from `agentskills/agentskills` revision `69ef37e9424c0a7ea9dd2293b559e43ec8176379` plus explicit checks for documented constraints omitted by that demonstration validator. Exact paths and hashes are anchored in the validator; provenance and dependency licenses are recorded in [`vendor/README.md`](vendor/README.md) and [`vendor/manifest.json`](vendor/manifest.json), so CI never downloads code. |
 | House policy | `description` starts with `Use when`, `license: MIT`, experimental `allowed-tools` is absent, and required scenario coverage for new skills and `catch-me-up` | Make activation routing, distribution licensing, client portability, and output behavior consistent for this repository. |
 
 Spec errors are reported as `Agent Skills spec`; repository choices are
@@ -124,21 +126,20 @@ Run the same structural checks used by CI:
 
 ```bash
 python3 scripts/validate-skills-repo.py
-python3 scripts/generate-plugin-packages.py
+python3 scripts/sync-shared-conventions.py
 git diff --exit-code
 status="$(git status --porcelain)"
 if [ -n "$status" ]; then echo "$status"; exit 1; fi
-find plugins .agents .github schemas -name '*.json' -print |
+find plugin.json .agents .github schemas -name '*.json' -print |
   while IFS= read -r file; do python3 -m json.tool "$file" >/dev/null; done
-find skills plugins scripts -type f -name '*.sh' -print |
+find skills scripts -type f -name '*.sh' -print |
   while IFS= read -r file; do bash -n "$file"; done
 gh skill publish --dry-run
 ```
 
-CI validates repository structure, generated packaging freshness, the pinned
-Agent Plugins v1 manifest schema, JSON syntax, shell script syntax, and the
-`gh skill` publisher shape. It does not run client runtime validation or skill
-evals.
+CI validates repository structure, shared-conventions freshness, the pinned
+Agent Plugins v1 manifest schema, JSON syntax, shell script syntax, and the `gh
+skill` publisher shape. It does not run client runtime validation or skill evals.
 
 Optional local checks:
 

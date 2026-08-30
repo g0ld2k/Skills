@@ -1,5 +1,9 @@
 # Skill Library Hardening Implementation Plan
 
+> **Historical plan:** This records work completed under the former generated
+> packaging layout. Its paths and commands are not current instructions; use
+> the repository README for the root-plugin workflow.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Harden the skill library so lower-reasoning models can execute every skill reliably: fix broken cross-references, make the validator catch reference/drift regressions, operationalize judgment predicates, restructure prose conditionals into checkable gates, and add shared-conventions and authoring infrastructure.

@@ -134,12 +134,11 @@ Reference the vendored shape rather than restating it:
     references/conventions.md for the exact Blocked Report format, capability
     ladder, temp-file rule, and external-text rule.
 
-> If this skill keeps the `references/conventions.md` link, add its name to
-> `shared_conventions_consumers` in `packaging/g0ld2k-skills.json` and run
-> `python3 scripts/sync-shared-conventions.py` before validating — the
-> validator checks that every listed consumer's vendored copy matches
-> `_shared/conventions.md`. If the skill doesn't need the shared file, remove
-> the reference and the link instead of leaving it dangling.
+> If this skill keeps the `references/conventions.md` link, run `python3
+> scripts/sync-shared-conventions.py` before validating. The sync script
+> discovers consumers from that link, and the validator checks that each copy
+> matches `_shared/conventions.md`. If the skill doesn't need the shared file,
+> remove the reference instead of leaving it dangling.
 
 ## `## Validation Scenarios`
 

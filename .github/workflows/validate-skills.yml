@@ -25,10 +25,9 @@ jobs:
       - name: Validate Agent Skills conformance and repository structure
         run: python3 scripts/validate-skills-repo.py
 
-      - name: Validate generated packaging is current
+      - name: Validate shared conventions are current
         run: |
           python3 scripts/sync-shared-conventions.py
-          python3 scripts/generate-plugin-packages.py
           git diff --exit-code
           status="$(git status --porcelain)"
           if [ -n "$status" ]; then
@@ -41,7 +40,7 @@ jobs:
 
       - name: Validate JSON manifests
         run: |
-          find plugins .agents .github schemas -name '*.json' -print |
+          find plugin.json .agents .github schemas -name '*.json' -print |
             while IFS= read -r file; do
               echo "$file"
               python3 -m json.tool "$file" >/dev/null
@@ -49,7 +48,7 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          find skills plugins scripts -type f -name '*.sh' -print |
+          find skills scripts -type f -name '*.sh' -print |
             while IFS= read -r file; do
               echo "$file"
               bash -n "$file"

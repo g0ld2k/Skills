@@ -26,7 +26,11 @@ def load_validator() -> ModuleType:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
     return module
 
 
@@ -90,6 +94,10 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 ROOT / "scripts" / "validate-skills-repo.py",
                 temp_root / "scripts" / "validate-skills-repo.py",
             )
+            shutil.copy2(
+                ROOT / "scripts" / "shared_conventions.py",
+                temp_root / "scripts" / "shared_conventions.py",
+            )
             shutil.copytree(ROOT / "vendor", temp_root / "vendor")
             marker = temp_root / "unverified-code-ran"
             shadow_wheel = temp_root / "vendor" / "wheels" / "000-shadow.whl"
@@ -124,6 +132,10 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             (temp_root / "scripts").mkdir()
             script = temp_root / "scripts" / "validate-skills-repo.py"
             shutil.copy2(ROOT / "scripts" / "validate-skills-repo.py", script)
+            shutil.copy2(
+                ROOT / "scripts" / "shared_conventions.py",
+                temp_root / "scripts" / "shared_conventions.py",
+            )
             shutil.copytree(ROOT / "vendor", temp_root / "vendor")
             command = (
                 "import runpy, sys; "
@@ -440,56 +452,35 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn("missing required file: SKILL.md", "\n".join(errors))
 
-    def test_regular_generated_skill_path_fails_cleanly(self) -> None:
+    def test_regular_skill_path_fails_cleanly(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
-            generated_skill = Path(temp) / "plugins" / "pkg" / "skills" / "example"
-            generated_skill.parent.mkdir(parents=True)
-            generated_skill.write_text("not a directory", encoding="utf-8")
+            skill_path = Path(temp) / "skills" / "example"
+            skill_path.parent.mkdir(parents=True)
+            skill_path.write_text("not a directory", encoding="utf-8")
             errors: list[str] = []
 
-            result = self.validator.validate_agent_skill_spec(generated_skill, errors)
+            result = self.validator.validate_agent_skill_spec(skill_path, errors)
 
         self.assertIsNone(result)
         self.assertIn("must be a directory", "\n".join(errors))
 
-    def test_regular_generated_skills_root_fails_cleanly(self) -> None:
+    def test_regular_skills_root_fails_cleanly(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             temp_root = Path(temp)
-            plugin_dir = temp_root / "plugins" / "pkg"
-            plugin_dir.mkdir(parents=True)
-            (plugin_dir / "plugin.json").write_text(
-                json.dumps(
-                    {
-                        "$schema": self.validator.PLUGIN_SCHEMA_URL,
-                        "name": "pkg",
-                        "version": "0.1.0",
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (plugin_dir / "skills").write_text("not a directory", encoding="utf-8")
-            (temp_root / "skills").mkdir()
-            (temp_root / "packaging").mkdir()
-            original_globals = {
-                name: getattr(self.validator, name)
-                for name in ("ROOT", "SKILLS_DIR", "PACKAGING_DIR", "PLUGINS_DIR")
-            }
+            (temp_root / "skills").write_text("not a directory", encoding="utf-8")
+            original_root = self.validator.ROOT
+            original_skills_dir = self.validator.SKILLS_DIR
             self.validator.ROOT = temp_root
             self.validator.SKILLS_DIR = temp_root / "skills"
-            self.validator.PACKAGING_DIR = temp_root / "packaging"
-            self.validator.PLUGINS_DIR = temp_root / "plugins"
             errors: list[str] = []
             try:
-                self.validator.validate_packaging(
-                    [],
-                    errors,
-                    [{"name": "pkg", "version": "0.1.0", "skills": []}],
-                )
+                names = self.validator.validate_skills(errors)
             finally:
-                for name, value in original_globals.items():
-                    setattr(self.validator, name, value)
+                self.validator.ROOT = original_root
+                self.validator.SKILLS_DIR = original_skills_dir
 
-        self.assertIn("plugins/pkg/skills: must be a directory", "\n".join(errors))
+        self.assertEqual(names, [])
+        self.assertIn("skills/: must be a directory", "\n".join(errors))
 
     def test_name_whitespace_is_not_trimmed_into_validity(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
@@ -684,7 +675,7 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             {"7": "value", "owner": "42", "nested": "{'team': 'platform'}"},
         )
 
-    def test_generated_skill_copies_are_independently_traversed(self) -> None:
+    def test_canonical_skills_are_each_traversed_once(self) -> None:
         calls: list[Path] = []
         original = self.validator.validate_agent_skill_spec
 
@@ -694,23 +685,11 @@ class AgentSkillsConformanceTests(unittest.TestCase):
 
         self.validator.validate_agent_skill_spec = record
         errors: list[str] = []
-        configs = self.validator.load_package_configs(errors)
-        canonical_names = [
-            path.name for path in (ROOT / "skills").iterdir() if path.is_dir()
-        ]
-        self.validator.validate_packaging(canonical_names, errors, configs)
+        canonical_names = self.validator.validate_skills(errors)
 
-        generated = {path for path in calls if "plugins" in path.parts}
-        expected = {
-            ROOT / "plugins" / config["name"] / "skills" / name
-            for config in configs
-            for name in config["skills"]
-        }
-        self.assertTrue(expected <= generated)
-        self.assertIn("g0ld2k-apple-design", {config["name"] for config in configs})
-        self.assertTrue(
-            (ROOT / "plugins" / "g0ld2k-apple-design" / "skills").is_dir()
-        )
+        expected = {ROOT / "skills" / name for name in canonical_names}
+        self.assertEqual(calls, sorted(expected))
+        self.assertEqual(errors, [])
 
     def test_scenario_convention_covers_non_exempt_canonical_skills(self) -> None:
         self.assertEqual(
