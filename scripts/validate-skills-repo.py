@@ -46,6 +46,10 @@ COMPANION_REF_RE = re.compile(
     r"^\s*-\s+\x60([a-z0-9][a-z0-9:-]*[a-z0-9])\x60\s+(?:for|to|when|before|after)\b",
     re.MULTILINE,
 )
+SCENARIO_MARKUP_TOKEN_RE = re.compile(r"<!--|`+")
+INLINE_BLOCK_BOUNDARY_RE = re.compile(
+    r"^ {0,3}(?:`{3,}|~{3,}|#{1,6}(?:[ \t]+|$)|<!--)"
+)
 
 
 def exact_child(parent: Path, name: str) -> Path | None:
@@ -604,36 +608,200 @@ def validate_house_policies(
         )
 
 
-def _mask_fenced_scenario_lines(text: str) -> str:
-    """Hide fence markers and label-like lines inside fenced Markdown."""
+def _closing_backtick_run_end(
+    text: str,
+    start: int,
+    run_length: int,
+    end: int | None = None,
+) -> int | None:
+    """Return the end of the next exact-length closing backtick run."""
+    closing = re.compile(rf"(?<!`)`{{{run_length}}}(?!`)").search(
+        text,
+        start,
+        len(text) if end is None else end,
+    )
+    if closing is None:
+        return None
+    return closing.end()
+
+
+def _is_backslash_escaped(text: str, index: int) -> bool:
+    """Return whether punctuation at index follows an odd backslash run."""
+    backslash_count = 0
+    while index > backslash_count and text[index - backslash_count - 1] == "\\":
+        backslash_count += 1
+    return backslash_count % 2 == 1
+
+
+def _find_unescaped_markup_token(text: str, start: int) -> re.Match[str] | None:
+    """Return the next unescaped comment marker or backtick run."""
+    candidate = SCENARIO_MARKUP_TOKEN_RE.search(text, start)
+    while candidate is not None and _is_backslash_escaped(text, candidate.start()):
+        next_start = (
+            candidate.start() + 1
+            if candidate.group(0).startswith("`")
+            else candidate.end()
+        )
+        candidate = SCENARIO_MARKUP_TOKEN_RE.search(text, next_start)
+    return candidate
+
+
+def _blank_markup(text: str) -> str:
+    """Blank Markdown syntax while preserving its line boundaries."""
+    return "".join(character if character in "\r\n" else " " for character in text)
+
+
+def _inline_code_limits(text: str, lines: list[str]) -> list[int]:
+    """Return the enclosing inline Markdown block end for every line."""
+    offsets: list[int] = []
+    offset = 0
+    for line in lines:
+        offsets.append(offset)
+        offset += len(line)
+
+    limits = [len(text)] * len(lines)
+    index = 0
+    while index < len(lines):
+        content = lines[index].rstrip("\r\n")
+        if not content.strip() or INLINE_BLOCK_BOUNDARY_RE.match(content):
+            limits[index] = offsets[index] + len(lines[index])
+            index += 1
+            continue
+
+        block_end = index + 1
+        while block_end < len(lines):
+            content = lines[block_end].rstrip("\r\n")
+            if not content.strip() or INLINE_BLOCK_BOUNDARY_RE.match(content):
+                break
+            block_end += 1
+        limit = offsets[block_end] if block_end < len(lines) else len(text)
+        for block_index in range(index, block_end):
+            limits[block_index] = limit
+        index = block_end
+    return limits
+
+
+def _mask_comments_and_inline_code(
+    line: str,
+    document: str,
+    line_offset: int,
+    inline_code_limit: int,
+    in_comment: bool,
+    inline_code_ticks: int,
+) -> tuple[str, bool, int]:
+    """Blank comments and code spans while preserving line boundaries."""
+    masked: list[str] = []
+    cursor = 0
+    while cursor < len(line):
+        if in_comment:
+            comment_end = line.find("-->", cursor)
+            end = len(line) if comment_end < 0 else comment_end + 3
+            masked.append(_blank_markup(line[cursor:end]))
+            cursor = end
+            if comment_end < 0:
+                break
+            in_comment = False
+            continue
+
+        if inline_code_ticks:
+            code_end = _closing_backtick_run_end(
+                line, cursor, inline_code_ticks
+            )
+            end = len(line) if code_end is None else code_end
+            masked.append(_blank_markup(line[cursor:end]))
+            cursor = end
+            if code_end is None:
+                break
+            inline_code_ticks = 0
+            continue
+
+        token = _find_unescaped_markup_token(line, cursor)
+        if token is None:
+            masked.append(line[cursor:])
+            break
+        token_start = token.start()
+        if token.group(0).startswith("`"):
+            run_length = len(token.group(0))
+            opening_end = token.end()
+            has_closing_run = _closing_backtick_run_end(
+                document,
+                line_offset + opening_end,
+                run_length,
+                inline_code_limit,
+            )
+            masked.append(line[cursor:token_start])
+            masked.append(
+                _blank_markup(line[token_start:opening_end])
+                if has_closing_run is not None
+                else line[token_start:opening_end]
+            )
+            cursor = opening_end
+            if has_closing_run is not None:
+                inline_code_ticks = run_length
+            continue
+        masked.append(line[cursor:token_start])
+        cursor = token_start
+        in_comment = True
+    return "".join(masked), in_comment, inline_code_ticks
+
+
+def _mask_scenario_markup(text: str) -> str:
+    """Hide comments, code spans, and fenced structural lookalikes."""
     masked: list[str] = []
     in_fence = False
+    in_html_comment = False
+    inline_code_ticks = 0
     fence_character = ""
     fence_length = 0
-    for line in text.splitlines(keepends=True):
-        fence = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-        if not in_fence and fence:
-            in_fence = True
-            fence_character = fence.group(1)[0]
-            fence_length = len(fence.group(1))
-            masked.append("\n" if line.endswith("\n") else "")
-            continue
+    lines = text.splitlines(keepends=True)
+    inline_code_limits = _inline_code_limits(text, lines)
+    line_offset = 0
+    for line_index, raw_line in enumerate(lines):
+        # Fenced content is opaque Markdown: comment-like text in its info
+        # string or body must not change the surrounding HTML-comment state.
         if in_fence:
             closing_fence = re.match(
                 rf"^ {{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*$",
-                line.rstrip("\r\n"),
+                raw_line.rstrip("\r\n"),
             )
             if closing_fence:
                 in_fence = False
-                masked.append("\n" if line.endswith("\n") else "")
-            elif re.match(r"^\s*## Scenario \d+:", line) or re.match(
-                r"^\s*(?:Setup|Prompt|Pass):[ \t]*", line
-            ):
-                masked.append("\n" if line.endswith("\n") else "")
+            structural_lookalike = closing_fence or re.match(
+                r"^\s*## Scenario \d+:", raw_line
+            ) or re.match(
+                r"^\s*(?:Setup|Prompt|Pass):[ \t]*", raw_line
+            )
+            masked.append(_blank_markup(raw_line) if structural_lookalike else raw_line)
+        elif not in_html_comment and not inline_code_ticks:
+            fence = re.match(r"^ {0,3}(`{3,}|~{3,})", raw_line)
+            if fence:
+                in_fence = True
+                fence_character = fence.group(1)[0]
+                fence_length = len(fence.group(1))
+                masked.append(_blank_markup(raw_line))
             else:
+                line, in_html_comment, inline_code_ticks = (
+                    _mask_comments_and_inline_code(
+                        raw_line,
+                        text,
+                        line_offset,
+                        inline_code_limits[line_index],
+                        in_html_comment,
+                        inline_code_ticks,
+                    )
+                )
                 masked.append(line)
-            continue
-        masked.append(line)
+        else:
+            line, in_html_comment, inline_code_ticks = _mask_comments_and_inline_code(
+                raw_line,
+                text,
+                line_offset,
+                inline_code_limits[line_index],
+                in_html_comment,
+                inline_code_ticks,
+            )
+            masked.append(line)
+        line_offset += len(raw_line)
     return "".join(masked)
 
 
@@ -652,7 +820,7 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
     except OSError as exc:
         _policy_error(errors, scenario_file, f"cannot read validation scenarios: {exc}")
         return
-    structural_text = _mask_fenced_scenario_lines(text)
+    structural_text = _mask_scenario_markup(text)
     heading_matches = list(
         re.finditer(r"^## Scenario \d+:[^\n]*", structural_text, re.MULTILINE)
     )

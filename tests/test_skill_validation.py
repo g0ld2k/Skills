@@ -812,6 +812,112 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("must define at least 3 scenarios", joined)
         self.assertIn("must include a adversarial scenario", joined)
 
+    def test_scenarios_inside_html_comments_do_not_count(self) -> None:
+        wrappers = (
+            ("<!--\n", "-->\n"),
+            ("\\\\<!--\n", "-->\n"),
+        )
+        for opening, closing in wrappers:
+            with self.subTest(opening=opening), tempfile.TemporaryDirectory(
+                prefix="skill-validation-"
+            ) as temp:
+                skill_dir = Path(temp)
+                references_dir = skill_dir / "references"
+                references_dir.mkdir()
+                (references_dir / "validation-scenarios.md").write_text(
+                    "# Validation Scenarios\n\n"
+                    + opening
+                    + "## Scenario 1: Happy path\n"
+                    "Setup: a repository is available\n"
+                    "Prompt: Use the skill on the repository.\n"
+                    "Pass: the skill handles the repository.\n\n"
+                    "## Scenario 2: Edge case\n"
+                    "Setup: an edge case is available\n"
+                    "Prompt: Use the skill for the edge case.\n"
+                    "Pass: the edge case is handled.\n\n"
+                    "## Scenario 3: Adversarial\n"
+                    "Setup: adversarial input is available\n"
+                    "Prompt: Use the skill for adversarial input.\n"
+                    "Pass: the input is handled safely.\n"
+                    + closing,
+                    encoding="utf-8",
+                )
+                errors: list[str] = []
+                self.validator.validate_validation_scenarios(skill_dir, errors)
+
+                joined = "\n".join(errors)
+                self.assertIn("must define at least 3 scenarios", joined)
+                self.assertIn("must include a happy path scenario", joined)
+                self.assertIn("must include a edge case scenario", joined)
+                self.assertIn("must include a adversarial scenario", joined)
+
+    def test_labels_inside_multiline_inline_code_do_not_count(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp)
+            references_dir = skill_dir / "references"
+            references_dir.mkdir()
+            scenarios = []
+            for number, category in enumerate(
+                ("Happy path", "Edge case", "Adversarial"), start=1
+            ):
+                scenarios.append(
+                    f"## Scenario {number}: {category}\n"
+                    "Example: `literal\n"
+                    "Setup: fake setup\n"
+                    "Prompt: fake prompt\n"
+                    "Pass: fake result\n"
+                    "marker`\n"
+                )
+            (references_dir / "validation-scenarios.md").write_text(
+                "# Validation Scenarios\n\n" + "\n".join(scenarios),
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        joined = "\n".join(errors)
+        for number in range(1, 4):
+            self.assertIn(f"Scenario {number}: missing Setup label", joined)
+            self.assertIn(f"Scenario {number}: missing Prompt label", joined)
+            self.assertIn(f"Scenario {number}: missing Pass label", joined)
+
+    def test_literal_html_comment_markers_do_not_hide_scenarios(self) -> None:
+        prefixes = (
+            "```html <!-- literal fence info\n<p>example</p>\n```\n\n",
+            "Use the literal marker `<!--` in documentation.\n\n",
+            "Use a multiline code span: `literal\ninside <!-- marker`.\n\n",
+            "Use the escaped marker \\<!-- in documentation.\n\n",
+            "Unmatched ` literal\n\n```md\n` fence content\n```\n\n",
+        )
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix), tempfile.TemporaryDirectory(
+                prefix="skill-validation-"
+            ) as temp:
+                skill_dir = Path(temp)
+                references_dir = skill_dir / "references"
+                references_dir.mkdir()
+                (references_dir / "validation-scenarios.md").write_text(
+                    "# Validation Scenarios\n\n"
+                    + prefix
+                    + "## Scenario 1: Happy path\n"
+                    "Setup: a repository is available\n"
+                    "Prompt: Use the skill on the repository.\n"
+                    "Pass: the skill handles the repository.\n\n"
+                    "## Scenario 2: Edge case\n"
+                    "Setup: an edge case is available\n"
+                    "Prompt: Use the skill for the edge case.\n"
+                    "Pass: the edge case is handled.\n\n"
+                    "## Scenario 3: Adversarial\n"
+                    "Setup: adversarial input is available\n"
+                    "Prompt: Use the skill for adversarial input.\n"
+                    "Pass: the input is handled safely.\n",
+                    encoding="utf-8",
+                )
+                errors: list[str] = []
+                self.validator.validate_validation_scenarios(skill_dir, errors)
+
+                self.assertEqual(errors, [])
+
     def test_validation_scenario_categories_require_complete_phrases(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             skill_dir = Path(temp)
