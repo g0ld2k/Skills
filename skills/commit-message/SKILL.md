@@ -9,7 +9,8 @@ license: MIT
 ## Goal
 
 Produce an evidence-based Conventional Commit message from staged changes and,
-after the gate passes, commit exactly the approved staged tree.
+after the gate passes, commit the approved draft after a final staged-tree
+check.
 
 **Commit gate (single source for this skill):** two modes exist.
 - `message-only` (default): never commit. A recorded approval scope alone does
@@ -23,7 +24,7 @@ after the gate passes, commit exactly the approved staged tree.
 
 - `git diff --cached --quiet` status `0` means no staged changes, `1` means staged changes, and any status greater than `1` is a Git error that stops.
 - `git write-tree` returns the immutable, non-empty staged-tree identity used to draft the message; keep it attached to the draft.
-- Immediately before `git commit`, re-read the status and run `git write-tree`
+- Immediately before invoking `git commit`, re-read the status and run `git write-tree`
   again. An empty or different tree means staged content changed: discard the
   draft, re-read evidence, and repeat the applicable approval gate. Never
   commit a stale message.
@@ -32,7 +33,8 @@ after the gate passes, commit exactly the approved staged tree.
   staged content changed, attended approval needs fresh confirmation and
   recorded preauthorization is re-evaluated; this is the same approval gate.
 - Report the exact failing command, status, and Git error. Report SHA/subject
-  only after `git commit` succeeds; a failed commit never produces metadata.
+  only after `git commit` succeeds; a failed commit never produces success
+  metadata.
 
 ## Workflow
 
@@ -130,7 +132,9 @@ Choose the commit type, optional scope, subject, and body from captured
 evidence. Use Conventional Commit types (`feat`, `fix`, `refactor`, `perf`,
 `docs`, `test`, `build`, `ci`, `chore`, `style`, or `revert`); use a top-level
 scope when one area dominates, omit it for mixed areas, and keep the subject
-imperative at 50–72 characters with a wrapped why-body.
+imperative at 50–72 characters with a wrapped why-body. For breaking changes,
+use `type(scope)!:` and add `BREAKING CHANGE: <impact>`. `style` means
+formatting/whitespace, not functional visual style changes.
 
 Do not claim test counts, issue IDs, or changes outside the staged diff.
 
@@ -150,12 +154,13 @@ In `message-only` mode, return the proposal and stop. In `message+commit` mode,
 require attended approval or verify recorded preauthorization. On every
 re-draft, state that staged content changed and apply the same approval gate.
 
-### 5) Re-check immediately before committing
+### 5) Re-check immediately before invoking `git commit`
 
-After approval and immediately before `git commit`, preserve the staged-diff
-status again. Status `0` means staged content changed to an empty index: throw
-away the draft and ask the caller to stage intended files. Status `1` requires
-a fresh tree identity; every other status is a Git error that stops:
+After approval and immediately before invoking `git commit`, preserve the
+staged-diff status again. Status `0` means staged content changed to an empty
+index: throw away the draft and ask the caller to stage intended files. Status
+`1` requires a fresh tree identity; every other status is a Git error that
+stops:
 
 ```bash
 if git diff --cached --quiet; then
@@ -256,6 +261,9 @@ fi
 ```
 
 The final log lookup is the first point where SHA and subject may be reported.
+Normal repository hooks run as part of `git commit` after the final staged-tree
+check and may modify the index. This skill binds the draft and approval to
+`staged_tree`, but does not claim that the final commit tree must equal it.
 Never auto-push.
 
 ## Output contract
@@ -267,9 +275,10 @@ Return the proposed message, a 1–3 line type/scope rationale, and:
 
 ### `message+commit`
 
-After successful `git commit`, return the checked `git --no-pager log -1 --pretty=format:'%h %s'`
-result. For any failed gate or command, report its exact command, status, and
-Git error; never report SHA/subject as though the commit succeeded.
+After successful `git commit`, return the checked
+`git --no-pager log -1 --pretty=format:'%h %s'` result. For any failed gate or
+command, report its exact command, status, and Git error; never report
+SHA/subject as though the commit succeeded.
 
 ## References
 

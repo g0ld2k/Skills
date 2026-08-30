@@ -779,6 +779,31 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             skill_text.index("git --no-pager log -1 --pretty=format:'%h %s'"),
         )
 
+    def test_commit_message_documents_normal_hook_boundary(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        ).lower()
+
+        self.assertIn('if git commit -f "$commit_msg_file"', skill_text)
+        self.assertIn("normal repository hooks run as part of `git commit`", skill_text)
+        self.assertIn("may modify the index", skill_text)
+        self.assertIn("does not claim", skill_text)
+        self.assertNotIn("snapshot_index", skill_text)
+        self.assertNotIn("commit-tree", skill_text)
+        self.assertNotIn("update-ref", skill_text)
+        self.assertNotIn("--no-verify", skill_text)
+        self.assertNotIn("core.hookspath", skill_text)
+
+    def test_commit_message_restores_conventional_commit_edge_guidance(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("type(scope)!:", skill_text)
+        self.assertIn("BREAKING CHANGE: <impact>", skill_text)
+        self.assertIn("style` means", skill_text)
+        self.assertIn("formatting/whitespace, not functional visual style", skill_text)
+
     def test_commit_message_scenarios_cover_required_outcomes_and_modes(self) -> None:
         scenario_text = (
             ROOT
@@ -794,9 +819,13 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "index drift during approval",
             "commit failure",
             "successful commit",
+            "normal git hooks",
+            "before invocation",
             "attended",
             "recorded preauthorization",
             "staged content changed",
+            "breaking change",
+            "formatting/whitespace",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, scenario_text)
