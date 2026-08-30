@@ -137,6 +137,27 @@ class AgentSkillsConformanceTests(unittest.TestCase):
 
         self.assertIn("symlink", "\n".join(errors))
 
+    def test_symlinked_vendor_manifest_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            temp_root = Path(temp)
+            vendor_root = temp_root / "vendor"
+            shutil.copytree(ROOT / "vendor", vendor_root)
+            manifest_path = vendor_root / "manifest.json"
+            external_manifest = temp_root / "manifest.json"
+            manifest_path.rename(external_manifest)
+            manifest_path.symlink_to(external_manifest)
+            original_root = self.validator.VENDOR_ROOT
+            original_manifest = self.validator.SKILLS_REF_MANIFEST
+            self.validator.VENDOR_ROOT = vendor_root
+            self.validator.SKILLS_REF_MANIFEST = manifest_path
+            try:
+                errors = self.validator.verify_vendored_artifacts()
+            finally:
+                self.validator.VENDOR_ROOT = original_root
+                self.validator.SKILLS_REF_MANIFEST = original_manifest
+
+        self.assertIn("symlink", "\n".join(errors))
+
     def test_incomplete_vendor_manifest_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             vendor_root = Path(temp) / "vendor"
@@ -264,19 +285,19 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertEqual(frontmatter["metadata"], {"answer": "42", "enabled": "true"})
 
     def test_deep_frontmatter_recursion_is_a_deterministic_spec_error(self) -> None:
-        original = self.validator.reference_parse_frontmatter
+        original = self.validator.reference_yaml_load
 
-        def recurse(_: str) -> tuple[dict[object, object], str]:
+        def recurse(_: str) -> object:
             raise RecursionError("maximum recursion depth exceeded")
 
-        self.validator.reference_parse_frontmatter = recurse
+        self.validator.reference_yaml_load = recurse
         try:
             errors: list[str] = []
             self.validator.validate_agent_skill_spec(
                 FIXTURES / "house-policy-violations", errors
             )
         finally:
-            self.validator.reference_parse_frontmatter = original
+            self.validator.reference_yaml_load = original
 
         joined = "\n".join(errors)
         self.assertIn("Agent Skills spec", joined)
@@ -517,6 +538,32 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertEqual(frontmatter, {})
         self.assertIn("Invalid YAML in frontmatter", parse_error or "")
 
+    def test_frontmatter_delimiters_must_be_standalone_lines(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp) / "delimiter-probe"
+            write_skill(
+                skill_dir,
+                "---\n"
+                "name: delimiter-probe\n"
+                "license: MIT\n"
+                "description: Use when foo---bar is present.\n"
+                "tools: forbidden\n"
+                "---\n",
+            )
+            frontmatter, parse_error = self.validator.parse_frontmatter(
+                skill_dir / "SKILL.md"
+            )
+            errors: list[str] = []
+            self.validator.validate_agent_skill_spec(skill_dir, errors)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(
+            frontmatter.get("description"),
+            "Use when foo---bar is present.",
+        )
+        self.assertEqual(frontmatter.get("tools"), "forbidden")
+        self.assertIn("Unexpected fields in frontmatter: tools", "\n".join(errors))
+
     def test_reference_block_scalar_indicators_and_chomping(self) -> None:
         expected = {
             ">": "first\nsecond\n",
@@ -704,6 +751,36 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         joined = "\n".join(errors)
         self.assertIn("Scenario 1: Pass content must be non-empty", joined)
         self.assertIn("Scenario 2: duplicate Setup label", joined)
+
+    def test_validation_scenario_categories_require_distinct_headings(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp)
+            references_dir = skill_dir / "references"
+            references_dir.mkdir()
+            (references_dir / "validation-scenarios.md").write_text(
+                "# Validation Scenarios\n\n"
+                "## Scenario 1: Happy path / edge case / adversarial\n"
+                "Setup: a repository is available\n"
+                "Prompt: Use the skill on the repository.\n"
+                "Pass: the skill handles the repository.\n\n"
+                "## Scenario 2: Alternate input\n"
+                "Setup: alternate input is available\n"
+                "Prompt: Use the skill for alternate input.\n"
+                "Pass: the alternate input is handled.\n\n"
+                "## Scenario 3: Another input\n"
+                "Setup: another input is available\n"
+                "Prompt: Use the skill for another input.\n"
+                "Pass: the other input is handled safely.\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        self.assertIn(
+            "must associate happy path, edge case, and adversarial coverage "
+            "with distinct scenario headings",
+            "\n".join(errors),
+        )
 
     def test_validation_scenario_headings_inside_fences_do_not_count(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:

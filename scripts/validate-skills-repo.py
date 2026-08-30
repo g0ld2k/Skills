@@ -70,7 +70,28 @@ def strip_quotes(value: str) -> str:
     return value
 
 
-def _manifest() -> dict[str, object] | None:
+def _vendor_path_error(path: Path, label: str) -> str | None:
+    """Return an error when a vendored path escapes or crosses a symlink."""
+    try:
+        relative = path.relative_to(VENDOR_ROOT)
+    except ValueError:
+        return f"{path}: vendored {label} must remain inside {VENDOR_ROOT}"
+
+    current = VENDOR_ROOT
+    if current.is_symlink():
+        return f"{current}: symlinks are not allowed in vendored paths"
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return f"{current}: symlinks are not allowed in vendored paths"
+    return None
+
+
+def _manifest(errors: list[str]) -> dict[str, object] | None:
+    path_error = _vendor_path_error(SKILLS_REF_MANIFEST, "manifest")
+    if path_error:
+        errors.append(path_error)
+        return None
     try:
         manifest = json.loads(SKILLS_REF_MANIFEST.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -169,20 +190,10 @@ def _vendor_files(relative_root: str) -> set[str]:
 
 
 def _hash_file(path: Path, errors: list[str], label: str) -> str | None:
-    try:
-        relative = path.relative_to(VENDOR_ROOT)
-    except ValueError:
-        errors.append(f"{path}: vendored {label} must remain inside {VENDOR_ROOT}")
+    path_error = _vendor_path_error(path, label)
+    if path_error:
+        errors.append(path_error)
         return None
-    current = VENDOR_ROOT
-    if current.is_symlink():
-        errors.append(f"{current}: symlinks are not allowed in vendored paths")
-        return None
-    for part in relative.parts:
-        current /= part
-        if current.is_symlink():
-            errors.append(f"{current}: symlinks are not allowed in vendored paths")
-            return None
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as exc:
@@ -193,9 +204,11 @@ def _hash_file(path: Path, errors: list[str], label: str) -> str | None:
 def verify_vendored_artifacts() -> list[str]:
     """Verify the pinned reference source and dependency archives before use."""
     errors: list[str] = []
-    manifest = _manifest()
+    manifest = _manifest(errors)
     if manifest is None:
-        return [f"{SKILLS_REF_MANIFEST}: missing or invalid vendored manifest"]
+        if not errors:
+            errors.append(f"{SKILLS_REF_MANIFEST}: missing or invalid vendored manifest")
+        return errors
 
     if set(manifest) != EXPECTED_MANIFEST_KEYS:
         errors.append(
@@ -310,9 +323,7 @@ def _vendor_import_paths() -> None:
 _REFERENCE_IMPORT_ERROR: str | None = None
 reference_validate = None
 reference_validate_metadata = None
-reference_parse_frontmatter = None
 reference_yaml_load = None
-ReferenceParseError = Exception
 _VENDOR_VERIFICATION_ERRORS = verify_vendored_artifacts()
 if not _VENDOR_VERIFICATION_ERRORS:
     # A normal source import writes __pycache__ beside skills_ref. That would
@@ -322,10 +333,6 @@ if not _VENDOR_VERIFICATION_ERRORS:
     _vendor_import_paths()
     try:
         from skills_ref import validate as reference_validate
-        from skills_ref.parser import (
-            ParseError as ReferenceParseError,
-            parse_frontmatter as reference_parse_frontmatter,
-        )
         from skills_ref.parser import strictyaml as reference_strictyaml
         from skills_ref.validator import validate_metadata as reference_validate_metadata
 
@@ -333,9 +340,19 @@ if not _VENDOR_VERIFICATION_ERRORS:
     except Exception as exc:  # pragma: no cover - exercised by missing-artifact gate
         reference_validate = None
         reference_validate_metadata = None
-        reference_parse_frontmatter = None
         reference_yaml_load = None
         _REFERENCE_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+
+
+def _frontmatter_payload(text: str) -> tuple[str | None, str | None]:
+    """Extract frontmatter using only standalone delimiter lines."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        return None, "SKILL.md must start with YAML frontmatter (---)"
+    for index, line in enumerate(lines[1:], start=1):
+        if line.rstrip("\r\n") == "---":
+            return "".join(lines[1:index]), None
+    return None, "SKILL.md frontmatter not properly closed with ---"
 
 
 def _parse_frontmatter_data(
@@ -348,28 +365,31 @@ def _parse_frontmatter_data(
             {},
             "vendored skills-ref unavailable: " + "; ".join(_VENDOR_VERIFICATION_ERRORS),
         )
-    if reference_parse_frontmatter is None or reference_yaml_load is None:
+    if reference_yaml_load is None:
         return {}, {}, f"vendored skills-ref import failed: {_REFERENCE_IMPORT_ERROR}"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         return {}, {}, f"cannot read SKILL.md: {exc}"
+    frontmatter_text, delimiter_error = _frontmatter_payload(text)
+    if delimiter_error:
+        return {}, {}, delimiter_error
+    assert frontmatter_text is not None
     try:
-        data, _ = reference_parse_frontmatter(text)
-        # skills-ref stringifies metadata values after parsing. Parse the same
-        # verified StrictYAML payload once more to retain collection shapes for
-        # the spec's string-to-string metadata contract.
-        raw_data = reference_yaml_load(text.split("---", 2)[1]).data
+        raw_data = reference_yaml_load(frontmatter_text).data
     except RecursionError:
         return {}, {}, "SKILL.md frontmatter exceeds supported nesting depth"
-    except ReferenceParseError as exc:
-        return {}, {}, str(exc)
     except Exception as exc:
-        return {}, {}, f"invalid YAML frontmatter: {exc}"
-    if not isinstance(data, dict):
-        return {}, {}, "SKILL.md frontmatter must be a YAML mapping"
+        return {}, {}, f"Invalid YAML in frontmatter: {exc}"
     if not isinstance(raw_data, dict):
         return {}, {}, "SKILL.md frontmatter must be a YAML mapping"
+
+    # Match skills-ref's only post-parse normalization while retaining the raw
+    # mapping for supplemental string-shape checks.
+    data = dict(raw_data)
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        data["metadata"] = {str(key): str(value) for key, value in metadata.items()}
     return data, raw_data, None
 
 
@@ -644,10 +664,32 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
             "must define at least 3 scenarios (happy path, edge case, and adversarial)",
         )
     lowered_headings = [heading.lower() for heading in headings]
+    category_matches: list[set[int]] = []
     for label in ("happy path", "edge case", "adversarial"):
         phrase = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)")
-        if not any(phrase.search(heading) for heading in lowered_headings):
+        matches = {
+            index
+            for index, heading in enumerate(lowered_headings)
+            if phrase.search(heading)
+        }
+        category_matches.append(matches)
+        if not matches:
             _policy_error(errors, scenario_file, f"must include a {label} scenario")
+    if all(category_matches):
+        happy_matches, edge_matches, adversarial_matches = category_matches
+        has_distinct_assignment = any(
+            len({happy, edge, adversarial}) == 3
+            for happy in happy_matches
+            for edge in edge_matches
+            for adversarial in adversarial_matches
+        )
+        if not has_distinct_assignment:
+            _policy_error(
+                errors,
+                scenario_file,
+                "must associate happy path, edge case, and adversarial coverage "
+                "with distinct scenario headings",
+            )
 
     for index, heading_match in enumerate(heading_matches):
         scenario_number = re.match(r"^## Scenario (\d+):", heading_match.group(0))
