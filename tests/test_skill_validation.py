@@ -715,7 +715,7 @@ class AgentSkillsConformanceTests(unittest.TestCase):
     def test_scenario_convention_covers_non_exempt_canonical_skills(self) -> None:
         self.assertEqual(
             self.validator.VALIDATION_SCENARIO_EXEMPTIONS,
-            {"commit-message", "pr-generator", "testflight-notes"},
+            {"pr-generator", "testflight-notes"},
         )
         for skill_dir in sorted(
             path for path in (ROOT / "skills").iterdir() if path.is_dir()
