@@ -59,6 +59,15 @@ comment_fields='
   replyTo{ id }
 '
 
+merge_json_array_files() {
+  local accumulator_file="$1"
+  local page_file="$2"
+  local merged_file="$3"
+
+  jq -c -s '.[0] + .[1]' "$accumulator_file" "$page_file" > "$merged_file"
+  mv "$merged_file" "$accumulator_file"
+}
+
 query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$pr){
@@ -84,10 +93,28 @@ query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
 # outer reviewThreads.pageInfo — that defeats pagination across >100-thread
 # PRs. Paginate the outer reviewThreads connection manually instead,
 # accumulating thread nodes across pages until hasNextPage is false.
+threads_file=""
+page_file=""
+merge_file=""
+thread_input_file=""
+enriched_file=""
+extra_file=""
+cleanup() {
+  [[ -z "$threads_file" ]] || rm -f "$threads_file"
+  [[ -z "$page_file" ]] || rm -f "$page_file"
+  [[ -z "$merge_file" ]] || rm -f "$merge_file"
+  [[ -z "$thread_input_file" ]] || rm -f "$thread_input_file"
+  [[ -z "$enriched_file" ]] || rm -f "$enriched_file"
+  [[ -z "$extra_file" ]] || rm -f "$extra_file"
+}
+trap cleanup EXIT
+
 threads_file="$(mktemp "${TMPDIR:-/tmp}/fetch-threads.XXXXXX")"
 page_file="$(mktemp "${TMPDIR:-/tmp}/fetch-page.XXXXXX")"
 merge_file="$(mktemp "${TMPDIR:-/tmp}/fetch-merge.XXXXXX")"
-trap 'rm -f "$threads_file" "$page_file" "$merge_file"' EXIT
+thread_input_file="$(mktemp "${TMPDIR:-/tmp}/fetch-thread-input.XXXXXX")"
+enriched_file="$(mktemp "${TMPDIR:-/tmp}/fetch-enriched.XXXXXX")"
+extra_file="$(mktemp "${TMPDIR:-/tmp}/fetch-extra.XXXXXX")"
 printf '%s' "[]" > "$threads_file"
 
 outer_cursor="null"
@@ -104,15 +131,17 @@ while [[ "$outer_has_next" == "true" ]]; do
   # Merge via files, never argv: a single 100-thread page with large comment
   # bodies can exceed the OS argument-size limit as an --argjson value.
   jq -c '.data.repository.pullRequest.reviewThreads.nodes // []' <<<"$page_result" > "$page_file"
-  jq -c -s '.[0] + .[1]' "$threads_file" "$page_file" > "$merge_file"
-  mv "$merge_file" "$threads_file"
+  merge_json_array_files "$threads_file" "$page_file" "$merge_file"
   outer_has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' <<<"$page_result")"
   outer_cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // "null"' <<<"$page_result")"
 done
 
-# Drop resolved threads before the per-thread reply pagination below so we
-# never spend follow-up queries completing threads the transform will discard.
-threads_json="$(jq -c '[ .[] | select(.isResolved == false) ]' "$threads_file")"
+# Materialize unresolved threads as NDJSON so jq extraction failures are
+# checked by the parent shell. A process substitution would hide that failure
+# and could make an incomplete iteration look like a successful empty result.
+if ! jq -c '.[] | select(.isResolved == false)' "$threads_file" > "$thread_input_file"; then
+  die "could not enumerate unresolved review threads"
+fi
 
 # `gh api graphql --paginate` only follows the top-level reviewThreads cursor;
 # it does not paginate each thread's nested comments connection. Any thread
@@ -134,16 +163,15 @@ follow_up_query='query($id:ID!,$endCursor:String){
   }
 }'
 
-thread_count="$(jq 'length' <<<"$threads_json")"
-for ((i = 0; i < thread_count; i++)); do
-  thread_id="$(jq -r ".[$i].id" <<<"$threads_json")"
-  has_next="$(jq -r ".[$i].comments.pageInfo.hasNextPage" <<<"$threads_json")"
-  cursor="$(jq -r ".[$i].comments.pageInfo.endCursor" <<<"$threads_json")"
+: > "$enriched_file"
+while IFS= read -r thread_json; do
+  thread_id="$(jq -r '.id' <<<"$thread_json")"
+  has_next="$(jq -r '.comments.pageInfo.hasNextPage' <<<"$thread_json")"
+  cursor="$(jq -r '.comments.pageInfo.endCursor' <<<"$thread_json")"
 
   fetch_failed=false
   # Accumulate reply pages via files for the same argv-limit reason as the
   # outer merge: --argjson values ride on the command line.
-  extra_file="$(mktemp "${TMPDIR:-/tmp}/fetch-extra.XXXXXX")"
   printf '%s' "[]" > "$extra_file"
 
   while [[ "$has_next" == "true" ]]; do
@@ -156,26 +184,26 @@ for ((i = 0; i < thread_count; i++)); do
     fi
 
     jq -c '.data.node.comments.nodes // []' <<<"$follow_up_result" > "$page_file"
-    jq -c -s '.[0] + .[1]' "$extra_file" "$page_file" > "$merge_file"
-    mv "$merge_file" "$extra_file"
+    merge_json_array_files "$extra_file" "$page_file" "$merge_file"
     has_next="$(jq -r '.data.node.comments.pageInfo.hasNextPage // false' <<<"$follow_up_result")"
     cursor="$(jq -r '.data.node.comments.pageInfo.endCursor // empty' <<<"$follow_up_result")"
   done
 
-  threads_json="$(printf '%s' "$threads_json" | jq --argjson idx "$i" --slurpfile extra "$extra_file" --argjson failed "$fetch_failed" '
-    .[$idx].comments.nodes += $extra[0]
-    | .[$idx].fetch_failed = $failed
-  ')"
-  rm -f "$extra_file"
-done
+  # Merge each thread independently so the accumulated document is never
+  # rebuilt once per thread. The thread JSON is piped via stdin rather than
+  # passed as a command-line argument, so large comment bodies remain safe.
+  jq -c --slurpfile extra "$extra_file" --argjson failed "$fetch_failed" '
+    .comments.nodes += $extra[0]
+    | .fetch_failed = $failed
+  ' <<<"$thread_json" >> "$enriched_file"
+done < "$thread_input_file"
 
-# threads_json can exceed OS arg-size limits on PRs with many threads/replies,
-# so it is piped via stdin (as the jq input) rather than passed as a
-# --argjson command-line argument.
-result="$(printf '%s' "$threads_json" | jq '
+# The enriched threads are one JSON object per line. Slurp them from the file
+# for the final transform so the complete document never travels through
+# argv or shell interpolation.
+result_filter='
   def id_from_url: (.url // "" | split("/") | last | tonumber?);
   [.[] as $thread
-   | select($thread.isResolved == false)
    | ($thread.comments.nodes // []) as $comments
    | ($comments[] | select(.replyTo == null)) as $root
    | {
@@ -200,10 +228,10 @@ result="$(printf '%s' "$threads_json" | jq '
    | select(.comment_id != null)
   ]
   | sort_by(.path, .line, .comment_id)
-')"
+'
 
 if [[ -n "$output_file" ]]; then
-  printf '%s\n' "$result" > "$output_file"
+  jq -s "$result_filter" "$enriched_file" > "$output_file"
 else
-  printf '%s\n' "$result"
+  jq -s "$result_filter" "$enriched_file"
 fi

@@ -81,8 +81,19 @@ require_cmd jq
 # entries are allowed through so the per-thread check can safely skip comments
 # whose threads were resolved after the replies file was prepared.
 fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
+unresolved_file=""
+reply_iterator_file=""
+reply_payload_file=""
+cleanup() {
+  [[ -z "$unresolved_file" ]] || rm -f "$unresolved_file"
+  [[ -z "$reply_iterator_file" ]] || rm -f "$reply_iterator_file"
+  [[ -z "$reply_payload_file" ]] || rm -f "$reply_payload_file"
+}
+trap cleanup EXIT
+
 unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
-trap 'rm -f "$unresolved_file"' EXIT
+reply_iterator_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-iterator.XXXXXX")"
+reply_payload_file="$(mktemp "${TMPDIR:-/tmp}/post-reply-payload.XXXXXX")"
 
 if ! bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$unresolved_file"; then
   echo "Failing replies file (could not fetch current unresolved review threads)" >&2
@@ -106,6 +117,14 @@ if ! jq -e --slurpfile unresolved "$unresolved_file" '
     and (($required_pairs - $reply_pairs) | length == 0)
 ' "$replies_file" >/dev/null; then
   echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
+  exit 2
+fi
+
+# Materialize the replies iterator so jq extraction failures are checked by
+# the parent shell. A process substitution would hide that failure and could
+# make an incomplete batch look like a successful empty run.
+if ! jq -c '.[]' "$replies_file" > "$reply_iterator_file"; then
+  echo "Failing replies file (could not enumerate reply entries)" >&2
   exit 2
 fi
 
@@ -201,7 +220,6 @@ failed=0
 while IFS= read -r reply_json; do
   comment_id="$(jq -r '.comment_id // empty' <<<"$reply_json")"
   thread_id="$(jq -r '.thread_id // empty' <<<"$reply_json")"
-  body="$(jq -r '.body // ""' <<<"$reply_json")"
 
   # Malformed input entries count as failed, not skipped: "skipped" is
   # reserved for well-formed entries correctly declined because of live
@@ -241,14 +259,23 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" -f body="$body" >/dev/null; then
+  # Keep the reply body off the command line. GitHub comment bodies can be
+  # large enough that passing body=... to gh risks the OS argument-size limit.
+  if ! jq -c '{body}' <<<"$reply_json" > "$reply_payload_file"; then
+    echo "Failing comment $comment_id (could not build reply payload)" >&2
+    failed=$((failed + 1))
+    continue
+  fi
+
+  if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" \
+    --input "$reply_payload_file" >/dev/null; then
     echo "Posted reply to comment $comment_id"
     posted=$((posted + 1))
   else
     echo "Failed posting reply to comment $comment_id" >&2
     failed=$((failed + 1))
   fi
-done < <(jq -c '.[]' "$replies_file")
+done < "$reply_iterator_file"
 
 echo "Summary: posted=$posted would_post=$would_post skipped=$skipped failed=$failed dry_run=$dry_run"
 
