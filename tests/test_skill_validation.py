@@ -86,6 +86,57 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("Agent Skills spec", "\n".join(errors))
         self.assertIn("invalid YAML frontmatter", "\n".join(errors))
 
+    def test_non_string_top_level_key_is_reported_through_spec_validation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp) / "top-level-key"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                "---\n"
+                "7: unexpected\n"
+                "name: top-level-key\n"
+                "description: Use when testing top-level key types.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_agent_skill_spec(skill_dir, errors)
+
+        self.assertIn(
+            "Field 'frontmatter' keys must be strings",
+            "\n".join(errors),
+        )
+
+    def test_deep_inline_and_block_nesting_returns_a_spec_error(self) -> None:
+        depth = 100
+        inline_value = '{"a":' * depth + '"leaf"' + "}" * depth
+        block_lines = ["metadata:"]
+        for level in range(depth):
+            block_lines.append("  " * (level + 1) + "a:")
+        block_lines.append("  " * (depth + 1) + "leaf: value")
+
+        for metadata in (f"metadata: {inline_value}", "\n".join(block_lines)):
+            with self.subTest(metadata_style="inline" if metadata.startswith("metadata: {") else "block"):
+                with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+                    skill_dir = Path(temp) / "deep-nesting"
+                    skill_dir.mkdir()
+                    (skill_dir / "SKILL.md").write_text(
+                        "---\n"
+                        "name: deep-nesting\n"
+                        "description: Use when testing nesting limits.\n"
+                        f"{metadata}\n"
+                        "license: MIT\n"
+                        "---\n",
+                        encoding="utf-8",
+                    )
+                    errors: list[str] = []
+                    try:
+                        self.validator.validate_agent_skill_spec(skill_dir, errors)
+                    except RecursionError as exc:
+                        self.fail(f"deep nesting raised RecursionError: {exc}")
+
+                self.assertIn("maximum YAML nesting depth", "\n".join(errors))
+
     def test_whitespace_values_are_rejected_and_exact_limits_are_accepted(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             temp_path = Path(temp)
@@ -124,7 +175,7 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         calls: list[Path] = []
         original = self.validator.validate_agent_skill_spec
 
-        def record(path: Path, errors: list[str]) -> dict[str, object] | None:
+        def record(path: Path, errors: list[str]) -> dict[object, object] | None:
             calls.append(path)
             return original(path, errors)
 

@@ -41,6 +41,7 @@ AGENT_SKILLS_FIELDS = {
 MAX_SKILL_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_COMPATIBILITY_LENGTH = 500
+MAX_YAML_NESTING_DEPTH = 32
 VALIDATION_SCENARIO_PATH = Path("references") / "validation-scenarios.md"
 # Existing skills remain exempt only under their owning follow-up issue: #39
 # (commit-message), #42 (pr-generator), and #43 (testflight-notes). New skills
@@ -111,7 +112,11 @@ def _split_inline_yaml(value: str) -> list[str]:
     return [part for part in parts if part]
 
 
-def _parse_yaml_scalar(value: str) -> object:
+def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
+    if depth > MAX_YAML_NESTING_DEPTH:
+        raise ValueError(
+            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
+        )
     value = value.strip()
     if not value:
         return None
@@ -128,16 +133,19 @@ def _parse_yaml_scalar(value: str) -> object:
     if lowered in {"null", "~"}:
         return None
     if value.startswith("[") and value.endswith("]"):
-        return [_parse_yaml_scalar(item) for item in _split_inline_yaml(value[1:-1])]
+        return [
+            _parse_yaml_scalar(item, depth + 1)
+            for item in _split_inline_yaml(value[1:-1])
+        ]
     if value.startswith("{") and value.endswith("}"):
         mapping: dict[object, object] = {}
         for item in _split_inline_yaml(value[1:-1]):
             key, separator, child = item.partition(":")
             if not separator:
                 raise ValueError(f"invalid inline mapping entry: {item}")
-            parsed_key = _parse_yaml_scalar(key)
+            parsed_key = _parse_yaml_scalar(key, depth + 1)
             try:
-                mapping[parsed_key] = _parse_yaml_scalar(child)
+                mapping[parsed_key] = _parse_yaml_scalar(child, depth + 1)
             except TypeError as exc:
                 raise ValueError("mapping keys must be scalar values") from exc
         return mapping
@@ -163,8 +171,12 @@ def _next_content_line(lines: list[str], start: int) -> int:
 
 
 def _parse_yaml_sequence(
-    lines: list[str], start: int, indent: int
+    lines: list[str], start: int, indent: int, depth: int = 0
 ) -> tuple[list[object], int]:
+    if depth > MAX_YAML_NESTING_DEPTH:
+        raise ValueError(
+            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
+        )
     values: list[object] = []
     index = start
     while index < len(lines):
@@ -176,15 +188,19 @@ def _parse_yaml_sequence(
             break
         if line_indent != indent or not lines[index][indent:].startswith("- "):
             raise ValueError("expected a YAML list item")
-        values.append(_parse_yaml_scalar(lines[index][indent + 2 :]))
+        values.append(_parse_yaml_scalar(lines[index][indent + 2 :], depth + 1))
         index += 1
     return values, index
 
 
 def _parse_yaml_mapping(
-    lines: list[str], start: int, indent: int, *, string_keys: bool = True
-) -> tuple[dict[str, object], int]:
-    values: dict[str, object] = {}
+    lines: list[str], start: int, indent: int, depth: int = 0
+) -> tuple[dict[object, object], int]:
+    if depth > MAX_YAML_NESTING_DEPTH:
+        raise ValueError(
+            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
+        )
+    values: dict[object, object] = {}
     index = start
     while index < len(lines):
         if not lines[index].strip() or lines[index].lstrip().startswith("#"):
@@ -199,9 +215,7 @@ def _parse_yaml_mapping(
         key = key.strip()
         if not separator or not key:
             raise ValueError("expected a YAML key followed by ':'")
-        parsed_key = _parse_yaml_scalar(key)
-        if string_keys and not isinstance(parsed_key, str):
-            raise ValueError("mapping keys must be strings")
+        parsed_key = _parse_yaml_scalar(key, depth + 1)
         try:
             hash(parsed_key)
         except TypeError as exc:
@@ -232,27 +246,26 @@ def _parse_yaml_mapping(
             continue
 
         if raw_value:
-            values[key] = _parse_yaml_scalar(raw_value)
+            values[key] = _parse_yaml_scalar(raw_value, depth)
             continue
 
         child = _next_content_line(lines, index)
         if child < len(lines) and _line_indent(lines[child]) > indent:
             child_indent = _line_indent(lines[child])
             if lines[child][child_indent:].startswith("- "):
-                values[key], index = _parse_yaml_sequence(lines, child, child_indent)
+                values[key], index = _parse_yaml_sequence(
+                    lines, child, child_indent, depth + 1
+                )
             else:
                 values[key], index = _parse_yaml_mapping(
-                    lines,
-                    child,
-                    child_indent,
-                    string_keys=key != "metadata",
+                    lines, child, child_indent, depth + 1
                 )
         else:
             values[key] = None
     return values, index
 
 
-def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
+def parse_frontmatter(path: Path) -> tuple[dict[object, object], str | None]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -367,7 +380,7 @@ def _spec_error(errors: list[str], skill_file: Path, message: str) -> None:
 
 def validate_agent_skill_spec(
     skill_dir: Path, errors: list[str]
-) -> dict[str, object] | None:
+) -> dict[object, object] | None:
     """Validate one skill using the pinned, repository-owned spec rules."""
     skill_file = exact_skill_file(skill_dir)
     if skill_file is None:
@@ -382,7 +395,7 @@ def validate_agent_skill_spec(
 
     for key in frontmatter:
         if not isinstance(key, str):
-            _spec_error(errors, skill_file, "frontmatter keys must be strings")
+            _spec_error(errors, skill_file, "Field 'frontmatter' keys must be strings")
         elif key not in AGENT_SKILLS_FIELDS:
             _spec_error(errors, skill_file, f"unsupported frontmatter field '{key}'")
 
@@ -475,7 +488,7 @@ def _policy_error(errors: list[str], skill_file: Path, message: str) -> None:
 
 
 def validate_house_policies(
-    skill_dir: Path, frontmatter: dict[str, object], errors: list[str]
+    skill_dir: Path, frontmatter: dict[object, object], errors: list[str]
 ) -> None:
     """Validate choices made by this repository, separate from the spec."""
     skill_file = skill_dir / "SKILL.md"
