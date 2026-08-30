@@ -52,6 +52,36 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         )
         self.assertEqual(self.validator.SKILLS_REF_VERSION, "0.1.0")
 
+    def test_vendored_checkout_attributes_preserve_pinned_bytes(self) -> None:
+        text_paths = sorted(
+            {
+                "vendor/manifest.json",
+                *(f"vendor/{path}" for path in self.validator.EXPECTED_SKILLS_REF_FILES),
+                *(f"vendor/{path}" for path in self.validator.EXPECTED_VENDOR_DOCUMENTS),
+            }
+        )
+        wheel_paths = sorted(
+            f"vendor/{path}"
+            for path in self.validator.EXPECTED_DEPENDENCY_ARTIFACTS
+        )
+        result = subprocess.run(
+            ["git", "check-attr", "text", "eol", "--", *text_paths, *wheel_paths],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        attributes: dict[tuple[str, str], str] = {}
+        for line in result.stdout.splitlines():
+            path, attribute, value = line.split(": ", 2)
+            attributes[(path, attribute)] = value
+
+        for path in text_paths:
+            self.assertEqual(attributes[(path, "text")], "set", path)
+            self.assertEqual(attributes[(path, "eol")], "lf", path)
+        for path in wheel_paths:
+            self.assertEqual(attributes[(path, "text")], "unset", path)
+
     def test_vendored_code_is_not_imported_before_artifact_verification(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             temp_root = Path(temp)

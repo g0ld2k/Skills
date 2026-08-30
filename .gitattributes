@@ -1,0 +1,6 @@
+vendor/README.md text eol=lf
+vendor/manifest.json text eol=lf
+vendor/licenses/** text eol=lf
+vendor/skills_ref/LICENSE text eol=lf
+vendor/skills_ref/src/** text eol=lf
+vendor/wheels/** binary
