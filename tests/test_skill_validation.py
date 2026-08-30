@@ -80,6 +80,26 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         errors = self.validate_spec("wrong-skill-file-case")
         self.assertIn("missing required file: SKILL.md", "\n".join(errors))
 
+    def test_name_whitespace_is_not_trimmed_into_validity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp) / "skill"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                "---\n"
+                "name: ' skill '\n"
+                "description: Use when testing exact skill names.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_agent_skill_spec(skill_dir, errors)
+
+        joined = "\n".join(errors)
+        self.assertIn("must not have leading or trailing whitespace", joined)
+        self.assertIn("contains invalid characters", joined)
+        self.assertIn("Directory name 'skill' must match skill name ' skill '", joined)
+
     def test_skill_names_reject_unicode_and_nfkc_lookalikes(self) -> None:
         for name in ("café", "ｔｅｓｔ"):
             with self.subTest(name=name), tempfile.TemporaryDirectory(
@@ -106,6 +126,24 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("Agent Skills spec", "\n".join(errors))
         self.assertIn("invalid YAML frontmatter", "\n".join(errors))
 
+    def test_indented_block_delimiters_are_content_not_frontmatter_closers(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: indented-delimiter\n"
+                "description: |\n"
+                "  ---\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["description"], "---\n")
+
     def test_malformed_quoted_scalar_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             skill_file = Path(temp) / "SKILL.md"
@@ -123,6 +161,258 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertEqual(frontmatter, {})
         self.assertIsNotNone(parse_error)
         self.assertIn("invalid YAML frontmatter", parse_error or "")
+
+    def test_quoted_scalars_use_yaml_escape_rules(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: yaml-quotes\n"
+                "description: 'Use O''Reilly.'\n"
+                + r'compatibility: "\N \x41"' + "\n"
+                + "license: MIT\n"
+                + "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["description"], "Use O'Reilly.")
+        self.assertEqual(frontmatter["compatibility"], "\u0085 A")
+
+    def test_quoted_scalars_reject_non_scalar_unicode_escapes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: invalid-unicode-escape\n"
+                + r'description: "Use when testing unicode escapes."' + "\n"
+                + r'compatibility: "\uD800"' + "\n"
+                + "license: MIT\n"
+                + "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertEqual(frontmatter, {})
+        self.assertIn("invalid YAML frontmatter", parse_error or "")
+
+    def test_block_scalar_indicator_accepts_an_inline_comment(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: block-comment\n"
+                "description: > # folded description\n"
+                "  Use when testing block comments.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["description"], "Use when testing block comments.\n")
+
+    def test_block_scalars_preserve_folding_indentation_and_chomping(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "fold-clip: >\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "fold-strip: >-\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "fold-keep: >+\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "fold-blank: >\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "  third\n"
+                "fold-leading: >\n"
+                "\n"
+                "  first\n"
+                "  second\n"
+                "fold-indented-blank: >\n"
+                "  first\n"
+                "    \n"
+                "  second\n"
+                "fold-more-indented-blank: >\n"
+                "  first\n"
+                "    second\n"
+                "\n"
+                "  third\n"
+                "fold-inferred-indent: |\n"
+                "      first\n"
+                "    # this is a mapping comment\n"
+                "literal-clip: |\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "literal-strip: |-\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "literal-keep: |+\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "literal-indent: |\n"
+                "    first\n"
+                "      indented\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["fold-clip"], "first second\n")
+        self.assertEqual(frontmatter["fold-strip"], "first second")
+        self.assertEqual(frontmatter["fold-keep"], "first second\n\n")
+        self.assertEqual(frontmatter["fold-blank"], "first second\nthird\n")
+        self.assertEqual(frontmatter["fold-leading"], "\nfirst second\n")
+        self.assertEqual(frontmatter["fold-indented-blank"], "first\n  \nsecond\n")
+        self.assertEqual(
+            frontmatter["fold-more-indented-blank"], "first\n  second\n\nthird\n"
+        )
+        self.assertEqual(frontmatter["fold-inferred-indent"], "first\n")
+        self.assertEqual(frontmatter["literal-clip"], "first\nsecond\n")
+        self.assertEqual(frontmatter["literal-strip"], "first\nsecond")
+        self.assertEqual(frontmatter["literal-keep"], "first\nsecond\n\n")
+        self.assertEqual(frontmatter["literal-indent"], "first\n  indented\n")
+
+    def test_block_scalars_support_explicit_indentation_indicators(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "literal-explicit: |2\n"
+                "    first\n"
+                "      indented\n"
+                "fold-plus-before: >+2\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "fold-minus-after: >2-\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "literal-minus-before: |-2\n"
+                "  first\n"
+                "  second\n"
+                "\n"
+                "fold-clip-explicit: >2\n"
+                "  first\n"
+                "  second\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["literal-explicit"], "  first\n    indented\n")
+        self.assertEqual(frontmatter["fold-plus-before"], "first second\n\n")
+        self.assertEqual(frontmatter["fold-minus-after"], "first second")
+        self.assertEqual(frontmatter["literal-minus-before"], "first\nsecond")
+        self.assertEqual(frontmatter["fold-clip-explicit"], "first second\n")
+
+    def test_block_scalars_reject_invalid_indentation_indicators(self) -> None:
+        for header in ("|0", "|10", "|22", "|++", "|--", "|2+-", "|0+"):
+            with self.subTest(header=header), tempfile.TemporaryDirectory(
+                prefix="skill-validation-"
+            ) as temp:
+                skill_file = Path(temp) / "SKILL.md"
+                skill_file.write_text(
+                    "---\n"
+                    "name: invalid-block-header\n"
+                    "description: Use when testing invalid block headers.\n"
+                    f"compatibility: {header}\n"
+                    "  unsupported\n"
+                    "license: MIT\n"
+                    "---\n",
+                    encoding="utf-8",
+                )
+
+                _, parse_error = self.validator.parse_frontmatter(skill_file)
+
+            self.assertIn("invalid block scalar header", parse_error or "")
+
+    def test_block_mappings_use_quote_aware_key_separators(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: block-map-separators\n"
+                "description: Use when testing block mapping keys.\n"
+                "metadata:\n"
+                "  'owner:name': quoted\n"
+                "  a:b: plain\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(
+            frontmatter["metadata"], {"owner:name": "quoted", "a:b": "plain"}
+        )
+
+    def test_inline_mappings_use_quote_aware_key_separators(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: inline-map-separators\n"
+                "description: Use when testing inline mapping keys.\n"
+                "metadata: {'owner:name': quoted, a:b: plain}\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(
+            frontmatter["metadata"], {"owner:name": "quoted", "a:b": "plain"}
+        )
+
+    def test_folded_scalars_handle_a_long_blank_run(self) -> None:
+        blank_count = 2048
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: long-folded-blank-run\n"
+                "description: >\n"
+                "  first\n"
+                + "\n" * blank_count
+                + "  second\n"
+                + "license: MIT\n"
+                + "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(
+            frontmatter["description"], "first" + "\n" * blank_count + "second\n"
+        )
 
     def test_inline_comments_are_stripped_only_outside_quotes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
@@ -143,6 +433,60 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertEqual(
             frontmatter["description"], "Use # literally when testing comments."
         )
+
+    def test_apostrophes_in_plain_scalars_do_not_hide_inline_comments(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: plain-apostrophe\n"
+                "description: Use user's tool # trailing comment\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["description"], "Use user's tool")
+
+    def test_apostrophes_in_flow_scalars_do_not_break_comma_splitting(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: flow-apostrophe\n"
+                "description: Use flow metadata.\n"
+                "metadata: {owner: O'Reilly, team: tools}\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(
+            frontmatter["metadata"], {"owner": "O'Reilly", "team": "tools"}
+        )
+
+    def test_inline_comment_after_double_quoted_escaped_backslash_is_stripped(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_file = Path(temp) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: escaped-backslash\n"
+                + r'description: "Use when testing slash\\" # trailing comment' + "\n"
+                + "license: MIT\n"
+                + "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, parse_error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(parse_error)
+        self.assertEqual(frontmatter["description"], "Use when testing slash\\")
 
     def test_non_string_top_level_key_is_reported_through_spec_validation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
@@ -323,6 +667,97 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 f"Scenario 1: {empty_label} content must be non-empty",
                 "\n".join(errors),
             )
+
+    def test_validation_scenario_labels_are_unique_and_ignore_fenced_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp)
+            references_dir = skill_dir / "references"
+            references_dir.mkdir()
+            (references_dir / "validation-scenarios.md").write_text(
+                "# Validation Scenarios\n\n"
+                "## Scenario 1: Happy path\n"
+                "Setup: a repository is available\n"
+                "Prompt: Use the skill on the repository.\n"
+                "Pass:\n"
+                "```text\n"
+                "Pass: this example must not satisfy the real section.\n"
+                "```\n\n"
+                "## Scenario 2: Edge case\n"
+                "Setup: an edge case is available\n"
+                "Setup: a duplicate label is present\n"
+                "Prompt: Use the skill for the edge case.\n"
+                "Pass: the edge case is handled.\n\n"
+                "## Scenario 3: Adversarial\n"
+                "Setup: adversarial input is available\n"
+                "Prompt: Use the skill for adversarial input.\n"
+                "Pass: the input is handled safely.\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        joined = "\n".join(errors)
+        self.assertIn("Scenario 1: Pass content must be non-empty", joined)
+        self.assertIn("Scenario 2: duplicate Setup label", joined)
+
+    def test_validation_scenario_headings_inside_fences_do_not_count(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp)
+            references_dir = skill_dir / "references"
+            references_dir.mkdir()
+            (references_dir / "validation-scenarios.md").write_text(
+                "# Validation Scenarios\n\n"
+                "## Scenario 1: Happy path\n"
+                "Setup: a repository is available\n"
+                "Prompt: Use the skill on the repository.\n"
+                "Pass: the skill handles the repository.\n\n"
+                "## Scenario 2: Edge case\n"
+                "Setup: an edge case is available\n"
+                "Prompt: Use the skill for the edge case.\n"
+                "Pass: the edge case is handled.\n\n"
+                "```markdown\n"
+                "## Scenario 3: Adversarial\n"
+                "Setup: this is only an example\n"
+                "Prompt: this is only an example\n"
+                "Pass: this is only an example\n"
+                "```\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        joined = "\n".join(errors)
+        self.assertIn("must define at least 3 scenarios", joined)
+        self.assertIn("must include a adversarial scenario", joined)
+
+    def test_validation_scenario_categories_require_complete_phrases(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            skill_dir = Path(temp)
+            references_dir = skill_dir / "references"
+            references_dir.mkdir()
+            (references_dir / "validation-scenarios.md").write_text(
+                "# Validation Scenarios\n\n"
+                "## Scenario 1: Unhappy path\n"
+                "Setup: a repository is available\n"
+                "Prompt: Use the skill on the repository.\n"
+                "Pass: the skill handles the repository.\n\n"
+                "## Scenario 2: Edge cases\n"
+                "Setup: an edge case is available\n"
+                "Prompt: Use the skill for the edge case.\n"
+                "Pass: the edge case is handled.\n\n"
+                "## Scenario 3: Adversarially\n"
+                "Setup: adversarial input is available\n"
+                "Prompt: Use the skill for adversarial input.\n"
+                "Pass: the input is handled safely.\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        joined = "\n".join(errors)
+        self.assertIn("must include a happy path scenario", joined)
+        self.assertIn("must include a edge case scenario", joined)
+        self.assertIn("must include a adversarial scenario", joined)
 
     def test_house_policy_diagnostics_are_separate_from_spec_errors(self) -> None:
         frontmatter, parse_error = self.validator.parse_frontmatter(

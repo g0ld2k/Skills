@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-from ast import literal_eval
 from pathlib import Path
 
 
@@ -64,20 +63,19 @@ COMPANION_REF_RE = re.compile(
 )
 
 
-def has_exact_child(parent: Path, name: str) -> bool:
+def exact_child(parent: Path, name: str) -> Path | None:
     if not parent.exists():
-        return False
-    return any(child.name == name for child in parent.iterdir())
+        return None
+    return next((child for child in parent.iterdir() if child.name == name), None)
+
+
+def has_exact_child(parent: Path, name: str) -> bool:
+    return exact_child(parent, name) is not None
 
 
 def exact_skill_file(skill_dir: Path) -> Path | None:
     """Return SKILL.md only when its filename casing is exact."""
-    if not skill_dir.exists():
-        return None
-    return next(
-        (child for child in skill_dir.iterdir() if child.name == "SKILL.md"),
-        None,
-    )
+    return exact_child(skill_dir, "SKILL.md")
 
 
 def strip_quotes(value: str) -> str:
@@ -87,21 +85,47 @@ def strip_quotes(value: str) -> str:
     return value
 
 
+def _is_escaped(value: str, index: int) -> bool:
+    backslashes = 0
+    index -= 1
+    while index >= 0 and value[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
+def _quote_starts_yaml_token(value: str, index: int) -> bool:
+    previous = index - 1
+    while previous >= 0 and value[previous].isspace():
+        previous -= 1
+    return previous < 0 or value[previous] in "[{,:"
+
+
+def _iter_yaml_unquoted(value: str):
+    """Yield characters that occur outside YAML quoted scalars."""
+    quote: str | None = None
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote is None:
+            if character in {"'", '"'} and _quote_starts_yaml_token(value, index):
+                quote = character
+            else:
+                yield index, character
+        elif quote == "'" and character == "'":
+            if index + 1 < len(value) and value[index + 1] == "'":
+                index += 1
+            else:
+                quote = None
+        elif quote == '"' and character == '"' and not _is_escaped(value, index):
+            quote = None
+        index += 1
+
+
 def _strip_inline_yaml_comment(value: str) -> str:
     """Remove a YAML comment that starts outside a quoted scalar."""
-    quote: str | None = None
-    for index, character in enumerate(value):
-        if quote:
-            if quote == "'" and character == quote:
-                if index + 1 < len(value) and value[index + 1] == quote:
-                    continue
-                quote = None
-            elif quote == '"' and character == quote and value[index - 1] != "\\":
-                quote = None
-            continue
-        if character in {"'", '"'}:
-            quote = character
-        elif character == "#" and (index == 0 or value[index - 1].isspace()):
+    for index, character in _iter_yaml_unquoted(value):
+        if character == "#" and (index == 0 or value[index - 1].isspace()):
             return value[:index].rstrip()
     return value.rstrip()
 
@@ -110,16 +134,9 @@ def _split_inline_yaml(value: str) -> list[str]:
     """Split a simple inline YAML collection without evaluating its contents."""
     parts: list[str] = []
     start = 0
-    quote: str | None = None
     depth = 0
-    for index, character in enumerate(value):
-        if quote:
-            if character == quote and (index == 0 or value[index - 1] != "\\"):
-                quote = None
-            continue
-        if character in {"'", '"'}:
-            quote = character
-        elif character in "[{":
+    for index, character in _iter_yaml_unquoted(value):
+        if character in "[{":
             depth += 1
         elif character in "]}":
             depth -= 1
@@ -128,6 +145,109 @@ def _split_inline_yaml(value: str) -> list[str]:
             start = index + 1
     parts.append(value[start:].strip())
     return [part for part in parts if part]
+
+
+def _find_yaml_mapping_separator(
+    value: str, allow_no_whitespace: bool = False
+) -> int | None:
+    fallback: int | None = None
+    for index, character in _iter_yaml_unquoted(value):
+        if character != ":":
+            continue
+        if fallback is None:
+            fallback = index
+        if index + 1 == len(value) or value[index + 1].isspace():
+            return index
+    return fallback if allow_no_whitespace else None
+
+
+def _parse_yaml_block_header(value: str) -> tuple[str, str, int | None] | None:
+    if not value or value[0] not in "|>":
+        return None
+    match = re.fullmatch(r"([>|])([+-]?)([1-9]?)([+-]?)", value)
+    if match is None:
+        raise ValueError("invalid block scalar header")
+    style, first_chomping, indent_text, second_chomping = match.groups()
+    if first_chomping and second_chomping:
+        raise ValueError("invalid block scalar header")
+    chomping = first_chomping or second_chomping
+    indent = int(indent_text) if indent_text else None
+    return style, chomping, indent
+
+
+YAML_DOUBLE_QUOTE_ESCAPES = {
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "t": "\t",
+    "n": "\n",
+    "v": "\v",
+    "f": "\f",
+    "r": "\r",
+    "e": "\x1b",
+    " ": " ",
+    '"': '"',
+    "/": "/",
+    "\\": "\\",
+    "N": "\u0085",
+    "_": "\u00a0",
+    "L": "\u2028",
+    "P": "\u2029",
+}
+YAML_DOUBLE_QUOTE_HEX_ESCAPES = {"x": 2, "u": 4, "U": 8}
+
+
+def _decode_yaml_quoted_scalar(value: str) -> str:
+    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"'}:
+        raise ValueError("invalid quoted scalar")
+    body = value[1:-1]
+    if value[0] == "'":
+        decoded: list[str] = []
+        index = 0
+        while index < len(body):
+            if body[index] == "'":
+                if index + 1 >= len(body) or body[index + 1] != "'":
+                    raise ValueError("invalid quoted scalar")
+                decoded.append("'")
+                index += 2
+            else:
+                decoded.append(body[index])
+                index += 1
+        return "".join(decoded)
+
+    decoded = []
+    index = 0
+    while index < len(body):
+        character = body[index]
+        if character == '"':
+            raise ValueError("invalid quoted scalar")
+        if character != "\\":
+            decoded.append(character)
+            index += 1
+            continue
+        index += 1
+        if index >= len(body):
+            raise ValueError("invalid quoted scalar")
+        escape = body[index]
+        if escape in YAML_DOUBLE_QUOTE_ESCAPES:
+            decoded.append(YAML_DOUBLE_QUOTE_ESCAPES[escape])
+            index += 1
+            continue
+        width = YAML_DOUBLE_QUOTE_HEX_ESCAPES.get(escape)
+        if width is None:
+            raise ValueError("invalid quoted scalar")
+        digits = body[index + 1 : index + 1 + width]
+        if len(digits) != width or re.fullmatch(r"[0-9a-fA-F]+", digits) is None:
+            raise ValueError("invalid quoted scalar")
+        try:
+            code_point = int(digits, 16)
+            if code_point > 0x10FFFF or 0xD800 <= code_point <= 0xDFFF:
+                raise ValueError("invalid Unicode scalar value")
+            decoded.append(chr(code_point))
+        except ValueError as exc:
+            raise ValueError("invalid quoted scalar") from exc
+        index += 1 + width
+    return "".join(decoded)
 
 
 def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
@@ -139,16 +259,7 @@ def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
     if not value:
         return None
     if value[0:1] in {"'", '"'}:
-        if value[-1:] != value[0]:
-            raise ValueError("invalid quoted scalar")
-        if value[0] == '"' and re.search(
-            r'\\(?![0abtnvfre"\\/N_LPxXuU])', value
-        ):
-            raise ValueError("invalid quoted scalar")
-        try:
-            return literal_eval(value)
-        except (SyntaxError, ValueError):
-            raise ValueError("invalid quoted scalar")
+        return _decode_yaml_quoted_scalar(value)
     lowered = value.lower()
     if lowered == "true":
         return True
@@ -164,12 +275,14 @@ def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
     if value.startswith("{") and value.endswith("}"):
         mapping: dict[object, object] = {}
         for item in _split_inline_yaml(value[1:-1]):
-            key, separator, child = item.partition(":")
-            if not separator:
+            separator = _find_yaml_mapping_separator(item, allow_no_whitespace=True)
+            if separator is None:
                 raise ValueError(f"invalid inline mapping entry: {item}")
-            parsed_key = _parse_yaml_scalar(key, depth + 1)
+            parsed_key = _parse_yaml_scalar(item[:separator], depth + 1)
             try:
-                mapping[parsed_key] = _parse_yaml_scalar(child, depth + 1)
+                mapping[parsed_key] = _parse_yaml_scalar(
+                    item[separator + 1 :], depth + 1
+                )
             except TypeError as exc:
                 raise ValueError("mapping keys must be scalar values") from exc
         return mapping
@@ -217,6 +330,119 @@ def _parse_yaml_sequence(
     return values, index
 
 
+def _apply_block_chomping(value: str, chomping: str) -> str:
+    if chomping == "-":
+        return value.rstrip("\n")
+    if chomping == "+":
+        return value
+    if not value or value.strip("\n") == "":
+        return ""
+    return value.rstrip("\n") + "\n"
+
+
+def _parse_yaml_block_scalar(
+    lines: list[str],
+    start: int,
+    parent_indent: int,
+    style: str,
+    chomping: str,
+    explicit_indent: int | None,
+) -> tuple[str, int]:
+    raw_lines: list[str] = []
+    index = start
+    if explicit_indent is None:
+        first_content = None
+        for line_index in range(start, len(lines)):
+            if not lines[line_index].strip():
+                continue
+            if _line_indent(lines[line_index]) <= parent_indent:
+                break
+            first_content = line_index
+            break
+        if first_content is None:
+            while index < len(lines) and not lines[index].strip():
+                raw_lines.append(lines[index])
+                index += 1
+            return _apply_block_chomping("\n" * len(raw_lines), chomping), index
+        content_indent = _line_indent(lines[first_content])
+        leading_blank = start
+        while leading_blank < first_content:
+            content_indent = max(content_indent, _line_indent(lines[leading_blank]))
+            leading_blank += 1
+    else:
+        content_indent = parent_indent + explicit_indent
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            raw_lines.append(line)
+            index += 1
+            continue
+        line_indent = _line_indent(line)
+        if line_indent <= parent_indent:
+            break
+        if line_indent < content_indent:
+            break
+        raw_lines.append(line)
+        index += 1
+
+    if not any(line.strip() for line in raw_lines):
+        return _apply_block_chomping("\n" * len(raw_lines), chomping), index
+
+    content_lines: list[str] = []
+    more_indented: list[bool] = []
+    for line in raw_lines:
+        line_indent = _line_indent(line)
+        if not line.strip() and line_indent < content_indent:
+            content_lines.append("")
+            more_indented.append(False)
+        else:
+            content_lines.append(line[content_indent:])
+            more_indented.append(line_indent > content_indent)
+
+    last_content = max(
+        index
+        for index, line in enumerate(content_lines)
+        if line or more_indented[index]
+    )
+    core_lines = content_lines[: last_content + 1]
+    trailing_blank_count = len(content_lines) - len(core_lines)
+    if style == "|":
+        value = "\n".join(core_lines) + "\n"
+    else:
+        folded: list[str] = []
+        core_more_indented = more_indented[: last_content + 1]
+        # Remember the nearest non-empty line so blank runs stay linear.
+        previous_nonempty_more_indented: bool | None = None
+        for line_index, line in enumerate(core_lines):
+            folded.append(line)
+            if line_index == len(core_lines) - 1:
+                continue
+            next_line = core_lines[line_index + 1]
+            if not line:
+                if (
+                    previous_nonempty_more_indented is None
+                    or previous_nonempty_more_indented
+                ):
+                    folded.append("\n")
+                elif core_more_indented[line_index + 1]:
+                    folded.append("\n")
+                elif next_line:
+                    continue
+                else:
+                    folded.append("\n")
+            elif not next_line:
+                folded.append("\n")
+            elif core_more_indented[line_index] or core_more_indented[line_index + 1]:
+                folded.append("\n")
+            else:
+                folded.append(" ")
+            if line:
+                previous_nonempty_more_indented = core_more_indented[line_index]
+        value = "".join(folded) + "\n"
+    value += "\n" * trailing_blank_count
+    return _apply_block_chomping(value, chomping), index
+
+
 def _parse_yaml_mapping(
     lines: list[str], start: int, indent: int, depth: int = 0
 ) -> tuple[dict[object, object], int]:
@@ -235,9 +461,13 @@ def _parse_yaml_mapping(
             break
         if line_indent != indent:
             raise ValueError("unexpected indentation")
-        key, separator, raw_value = lines[index][indent:].partition(":")
-        key = key.strip()
-        if not separator or not key:
+        mapping_line = lines[index][indent:]
+        separator = _find_yaml_mapping_separator(mapping_line)
+        if separator is None:
+            raise ValueError("expected a YAML key followed by ':'")
+        key = mapping_line[:separator].strip()
+        raw_value = mapping_line[separator + 1 :]
+        if not key:
             raise ValueError("expected a YAML key followed by ':'")
         parsed_key = _parse_yaml_scalar(key, depth + 1)
         try:
@@ -247,25 +477,16 @@ def _parse_yaml_mapping(
         key = parsed_key
         if key in values:
             raise ValueError(f"duplicate frontmatter key '{key}'")
-        raw_value = raw_value.strip()
+        raw_value = _strip_inline_yaml_comment(raw_value).strip()
         index += 1
 
-        if raw_value in {">", ">-", ">+", "|", "|-", "|+"}:
-            block_lines: list[str] = []
-            while index < len(lines):
-                if not lines[index].strip():
-                    block_lines.append("")
-                    index += 1
-                    continue
-                child_indent = _line_indent(lines[index])
-                if child_indent <= indent:
-                    break
-                block_lines.append(lines[index].strip())
-                index += 1
-            values[key] = (
-                " ".join(block_lines).strip()
-                if raw_value.startswith(">")
-                else "\n".join(block_lines).strip()
+        block_header = _parse_yaml_block_header(raw_value)
+        if block_header:
+            values[key], index = _parse_yaml_block_scalar(
+                lines,
+                index,
+                indent,
+                *block_header,
             )
             continue
 
@@ -299,7 +520,11 @@ def parse_frontmatter(path: Path) -> tuple[dict[object, object], str | None]:
         return {}, "missing YAML frontmatter"
 
     try:
-        end = next(index for index in range(1, len(lines)) if lines[index].strip() == "---")
+        end = next(
+            index
+            for index in range(1, len(lines))
+            if lines[index].rstrip(" \t") == "---"
+        )
     except StopIteration:
         return {}, "unterminated YAML frontmatter"
 
@@ -431,7 +656,13 @@ def validate_agent_skill_spec(
     if not isinstance(name, str) or not name.strip():
         _spec_error(errors, skill_file, "Field 'name' must be a non-empty string")
     else:
-        skill_name = name.strip()
+        skill_name = name
+        if skill_name != skill_name.strip():
+            _spec_error(
+                errors,
+                skill_file,
+                "Skill name must not have leading or trailing whitespace",
+            )
         if len(skill_name) > MAX_SKILL_NAME_LENGTH:
             _spec_error(
                 errors,
@@ -528,6 +759,39 @@ def validate_house_policies(
         )
 
 
+def _mask_fenced_scenario_lines(text: str) -> str:
+    """Hide fence markers and label-like lines inside fenced Markdown."""
+    masked: list[str] = []
+    in_fence = False
+    fence_character = ""
+    fence_length = 0
+    for line in text.splitlines(keepends=True):
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if not in_fence and fence:
+            in_fence = True
+            fence_character = fence.group(1)[0]
+            fence_length = len(fence.group(1))
+            masked.append("\n" if line.endswith("\n") else "")
+            continue
+        if in_fence:
+            closing_fence = re.match(
+                rf"^ {{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*$",
+                line.rstrip("\r\n"),
+            )
+            if closing_fence:
+                in_fence = False
+                masked.append("\n" if line.endswith("\n") else "")
+            elif re.match(r"^\s*## Scenario \d+:", line) or re.match(
+                r"^\s*(?:Setup|Prompt|Pass):[ \t]*", line
+            ):
+                masked.append("\n" if line.endswith("\n") else "")
+            else:
+                masked.append(line)
+            continue
+        masked.append(line)
+    return "".join(masked)
+
+
 def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
     """Require activation/output scenarios for a skill covered by policy."""
     scenario_file = skill_dir / VALIDATION_SCENARIO_PATH
@@ -543,8 +807,9 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
     except OSError as exc:
         _policy_error(errors, scenario_file, f"cannot read validation scenarios: {exc}")
         return
+    structural_text = _mask_fenced_scenario_lines(text)
     heading_matches = list(
-        re.finditer(r"^## Scenario \d+:[^\n]*", text, re.MULTILINE)
+        re.finditer(r"^## Scenario \d+:[^\n]*", structural_text, re.MULTILINE)
     )
     headings = [match.group(0) for match in heading_matches]
     if len(headings) < 3:
@@ -555,7 +820,8 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
         )
     lowered_headings = [heading.lower() for heading in headings]
     for label in ("happy path", "edge case", "adversarial"):
-        if not any(label in heading for heading in lowered_headings):
+        phrase = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)")
+        if not any(phrase.search(heading) for heading in lowered_headings):
             _policy_error(errors, scenario_file, f"must include a {label} scenario")
 
     for index, heading_match in enumerate(heading_matches):
@@ -565,9 +831,9 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
         scenario_end = (
             heading_matches[index + 1].start()
             if index + 1 < len(heading_matches)
-            else len(text)
+            else len(structural_text)
         )
-        scenario_text = text[heading_match.end() : scenario_end]
+        scenario_text = structural_text[heading_match.end() : scenario_end]
         labels = list(
             re.finditer(r"^(Setup|Prompt|Pass):[ \t]*", scenario_text, re.MULTILINE)
         )
@@ -582,6 +848,12 @@ def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
                     f"Scenario {scenario_number.group(1)}: missing {expected_label} label",
                 )
                 continue
+            if len(label_matches) > 1:
+                _policy_error(
+                    errors,
+                    scenario_file,
+                    f"Scenario {scenario_number.group(1)}: duplicate {expected_label} label",
+                )
             label_match = label_matches[0]
             label_end = next(
                 (
