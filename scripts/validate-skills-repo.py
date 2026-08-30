@@ -14,6 +14,8 @@ SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
 PACKAGING_DIR = ROOT / "packaging"
 PLUGINS_DIR = ROOT / "plugins"
+PLUGIN_SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+PLUGIN_SCHEMA_PATH = ROOT / "schemas" / "agent-plugins" / "1.0.0" / "plugin.schema.json"
 EXPLICIT_ONLY_SKILLS = {
     "integration-branch-orchestrator",
     "work-request-orchestration",
@@ -182,6 +184,96 @@ def load_json(path: Path, errors: list[str]) -> dict[str, object] | None:
         return None
 
 
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def schema_type_matches(value: object, expected: str) -> bool:
+    return {
+        "array": isinstance(value, list),
+        "object": isinstance(value, dict),
+        "string": isinstance(value, str),
+    }.get(expected, True)
+
+
+def schema_error(errors: list[str], path: Path, message: str) -> None:
+    errors.append(f"{display_path(path)}: schema validation failed: {message}")
+
+
+def validate_schema_value(
+    value: object,
+    schema: dict[str, object],
+    path: Path,
+    errors: list[str],
+) -> None:
+    expected_type = schema.get("type")
+    if isinstance(expected_type, str) and not schema_type_matches(value, expected_type):
+        schema_error(errors, path, f"expected {expected_type}")
+        return
+
+    if "const" in schema and value != schema["const"]:
+        schema_error(errors, path, f"must equal {schema['const']!r}")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            schema_error(errors, path, f"must contain at least {min_length} characters")
+        max_length = schema.get("maxLength")
+        if isinstance(max_length, int) and len(value) > max_length:
+            schema_error(errors, path, f"must contain at most {max_length} characters")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and not re.match(pattern, value):
+            schema_error(errors, path, "does not match the required pattern")
+
+    if isinstance(value, dict):
+        required = schema.get("required", [])
+        if isinstance(required, list):
+            for name in required:
+                if isinstance(name, str) and name not in value:
+                    schema_error(errors, path, f"missing required property '{name}'")
+
+        properties = schema.get("properties", {})
+        known_properties = properties if isinstance(properties, dict) else {}
+        if schema.get("additionalProperties") is False:
+            for name in value:
+                if name not in known_properties:
+                    schema_error(errors, path, f"additional property '{name}'")
+        additional_schema = schema.get("additionalProperties")
+        for name, child in value.items():
+            child_schema = known_properties.get(name)
+            if not isinstance(child_schema, dict) and isinstance(additional_schema, dict):
+                child_schema = additional_schema
+            if isinstance(child_schema, dict):
+                validate_schema_value(child, child_schema, path, errors)
+
+    if isinstance(value, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for item in value:
+                validate_schema_value(item, item_schema, path, errors)
+
+
+def validate_portable_manifest(
+    manifest: object,
+    path: Path,
+    errors: list[str],
+    schema: dict[str, object] | None = None,
+) -> None:
+    if schema is None:
+        try:
+            schema = json.loads(PLUGIN_SCHEMA_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            schema_error(errors, PLUGIN_SCHEMA_PATH, f"cannot load pinned schema: {exc}")
+            return
+    if not isinstance(schema, dict):
+        schema_error(errors, PLUGIN_SCHEMA_PATH, "pinned schema must be an object")
+        return
+    validate_schema_value(manifest, schema, path, errors)
+
+
 def load_package_configs(errors: list[str]) -> list[dict[str, object]]:
     configs: list[dict[str, object]] = []
     paths = sorted(PACKAGING_DIR.glob("*.json"))
@@ -251,10 +343,7 @@ def validate_skills(errors: list[str]) -> list[str]:
         if "user-invocable" in frontmatter:
             errors.append(f"skills/{name}/SKILL.md: user-invocable must be absent")
 
-        has_disable = frontmatter.get("disable-model-invocation") is True
-        if name in EXPLICIT_ONLY_SKILLS and not has_disable:
-            errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be true")
-        if name not in EXPLICIT_ONLY_SKILLS and "disable-model-invocation" in frontmatter:
+        if "disable-model-invocation" in frontmatter:
             errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be absent")
 
         openai, policy, openai_error = parse_openai_yaml(skill_dir / "agents" / "openai.yaml")
@@ -314,6 +403,7 @@ def validate_packaging(
     configs: list[dict[str, object]] | None = None,
 ) -> None:
     configs = configs if configs is not None else load_package_configs(errors)
+    pinned_schema = load_json(PLUGIN_SCHEMA_PATH, errors)
     expected_plugin_names: list[str] = []
     skill_memberships: dict[str, list[str]] = {}
 
@@ -340,19 +430,22 @@ def validate_packaging(
 
         version = config.get("version")
         plugin_dir = PLUGINS_DIR / plugin_name
-        manifest_paths = [
-            plugin_dir / "plugin.json",
+        manifest_path = plugin_dir / "plugin.json"
+        manifest = load_json(manifest_path, errors)
+        if manifest is not None:
+            validate_portable_manifest(manifest, manifest_path, errors, pinned_schema)
+            if isinstance(manifest, dict):
+                if manifest.get("name") != plugin_name:
+                    errors.append(f"{manifest_path.relative_to(ROOT)}: name must be {plugin_name}")
+                if manifest.get("version") != version:
+                    errors.append(f"{manifest_path.relative_to(ROOT)}: version must match package config")
+
+        for legacy_path in [
             plugin_dir / ".claude-plugin" / "plugin.json",
             plugin_dir / ".codex-plugin" / "plugin.json",
-        ]
-        for path in manifest_paths:
-            manifest = load_json(path, errors)
-            if not manifest:
-                continue
-            if manifest.get("name") != plugin_name:
-                errors.append(f"{path.relative_to(ROOT)}: name must be {plugin_name}")
-            if manifest.get("version") != version:
-                errors.append(f"{path.relative_to(ROOT)}: version must match package config")
+        ]:
+            if legacy_path.exists():
+                errors.append(f"{legacy_path.relative_to(ROOT)}: legacy manifest must not exist")
 
         generated_skills_dir = plugin_dir / "skills"
         if not generated_skills_dir.exists():
@@ -411,11 +504,18 @@ def validate_packaging(
             errors.append("plugins/: generated plugin directories must match package configs")
 
     config_by_name = {str(config.get("name")): config for config in configs}
+    publishable_plugin_names = sorted(
+        str(config.get("name"))
+        for config in configs
+        if isinstance(config.get("skills"), list) and config.get("skills")
+    )
     marketplace_paths = [
-        ROOT / ".claude-plugin" / "marketplace.json",
         ROOT / ".agents" / "plugins" / "marketplace.json",
         ROOT / ".github" / "plugin" / "marketplace.json",
     ]
+    legacy_marketplace_path = ROOT / ".claude-plugin" / "marketplace.json"
+    if legacy_marketplace_path.exists():
+        errors.append(f"{legacy_marketplace_path.relative_to(ROOT)}: legacy marketplace must not exist")
     for path in marketplace_paths:
         marketplace = load_json(path, errors)
         if not marketplace:
@@ -438,8 +538,8 @@ def validate_packaging(
             if name in entries:
                 errors.append(f"{path.relative_to(ROOT)}: duplicate plugin entry: {name}")
             entries[name] = entry
-        if sorted(entries) != sorted(expected_plugin_names):
-            errors.append(f"{path.relative_to(ROOT)}: plugin entries must match package configs")
+        if sorted(entries) != publishable_plugin_names:
+            errors.append(f"{path.relative_to(ROOT)}: plugin entries must match publishable package configs")
 
         for plugin_name, entry in entries.items():
             if path.parts[-3:-1] == (".agents", "plugins"):
@@ -458,6 +558,24 @@ def validate_packaging(
             if config and "version" in entry and entry.get("version") != config.get("version"):
                 errors.append(
                     f"{path.relative_to(ROOT)}: {plugin_name} version must match package config"
+                )
+
+        if path.parts[-3:-1] == (".agents", "plugins"):
+            interface = marketplace.get("interface")
+            expected_display_name = next(
+                (
+                    config.get("marketplace", {}).get("display_name")
+                    for config in configs
+                    if isinstance(config.get("marketplace"), dict)
+                ),
+                None,
+            )
+            if (
+                not isinstance(interface, dict)
+                or interface.get("displayName") != expected_display_name
+            ):
+                errors.append(
+                    f"{path.relative_to(ROOT)}: interface.displayName must match marketplace display metadata"
                 )
 
 

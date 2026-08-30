@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "g0ld2k-skills",
   "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
   "version": "0.1.0",
@@ -15,7 +16,5 @@
     "commit-messages",
     "release-notes",
     "workflow"
-  ],
-  "category": "Developer Tools",
-  "skills": "./skills/"
+  ]
 }

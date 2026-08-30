@@ -2,7 +2,6 @@
 name: <kebab-case-skill-name>
 description: Use when <trigger 1>, <trigger 2>, or <trigger 3>.
 license: MIT
-# disable-model-invocation: true   # only after updating EXPLICIT_ONLY_SKILLS
 ---
 
 <!-- DOCS-ONLY: this file is a blueprint, not content to keep. The quoted
@@ -38,12 +37,11 @@ Fill in the placeholder values before validating.
 - `license: MIT` is required verbatim.
 - Do not add `tools:`, `allowed-tools`, or `user-invocable` — the validator
   rejects those frontmatter keys.
-- Add `disable-model-invocation: true` only if this skill must never be
-  auto-invoked by the model (explicit-only, user-must-name-it skills). Before
-  adding it, add the skill name to `EXPLICIT_ONLY_SKILLS` in
-  `scripts/validate-skills-repo.py`. If present, the matching
-  `agents/openai.yaml` needs `policy.allow_implicit_invocation: false` in the
-  block form shown in the stub below.
+- Keep client-specific invocation policy out of portable frontmatter. For an
+  explicit-only skill, add its name to `EXPLICIT_ONLY_SKILLS` in
+  `scripts/validate-skills-repo.py`; the matching `agents/openai.yaml` then
+  needs `policy.allow_implicit_invocation: false` in the block form shown in
+  the stub below. `disable-model-invocation` is not an Agent Skills field.
 
 ## `# Title`
 
@@ -166,15 +164,15 @@ interface:
   short_description: "<25-64 character description of what this does>"
   default_prompt: "Use $<skill-name> to <one-line task description>."
 # policy:
-#   allow_implicit_invocation: false   # required if disable-model-invocation: true above
+#   allow_implicit_invocation: false   # required for explicit-only skills
 ```
 
 - `display_name`, `short_description`, and `default_prompt` are all required.
 - `short_description` must be 25-64 characters (validator-enforced).
 - `default_prompt` must contain the literal token `$<skill-name>` (e.g.
   `$commit-message`) — the validator checks for this exact substring.
-- If SKILL.md sets `disable-model-invocation: true`, add
-  the skill name to `EXPLICIT_ONLY_SKILLS` and use this block form here:
+- For explicit-only skills, add the skill name to `EXPLICIT_ONLY_SKILLS` and use
+  this block form here:
 
 ```yaml
 policy:

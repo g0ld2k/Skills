@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate product plugin manifests and bundled skill copies."""
+"""Generate portable Agent Plugins and thin marketplace adapters."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGING_DIR = ROOT / "packaging"
 SKILLS_DIR = ROOT / "skills"
 PLUGINS_DIR = ROOT / "plugins"
+PLUGIN_SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -33,6 +34,11 @@ def load_package_configs() -> list[dict]:
 
 def plugin_dir(config: dict) -> Path:
     return PLUGINS_DIR / config["name"]
+
+
+def is_publishable(config: dict) -> bool:
+    skills = config.get("skills")
+    return isinstance(skills, list) and bool(skills)
 
 
 def safe_remove_plugin_dir(config: dict) -> None:
@@ -60,6 +66,7 @@ def copy_skills(config: dict) -> None:
 
 def base_manifest(config: dict) -> dict:
     return {
+        "$schema": PLUGIN_SCHEMA_URL,
         "name": config["name"],
         "description": config["description"],
         "version": config["version"],
@@ -73,45 +80,20 @@ def base_manifest(config: dict) -> dict:
 
 def generate_plugin(config: dict) -> None:
     destination = plugin_dir(config)
-    interface = config["interface"]
 
     safe_remove_plugin_dir(config)
     copy_skills(config)
+    write_json(destination / "plugin.json", base_manifest(config))
 
-    copilot_manifest = {
-        **base_manifest(config),
-        "category": config["category"],
-        "skills": "./skills/",
-    }
-    write_json(destination / "plugin.json", copilot_manifest)
 
-    claude_manifest = base_manifest(config)
-    write_json(destination / ".claude-plugin" / "plugin.json", claude_manifest)
-
-    codex_manifest = {
-        "name": config["name"],
-        "version": config["version"],
-        "description": config["description"],
-        "author": config["author"],
-        "homepage": config["homepage"],
-        "repository": config["repository"],
-        "license": config["license"],
-        "keywords": config["keywords"],
-        "skills": "./skills/",
-        "interface": {
-            "displayName": interface["display_name"],
-            "shortDescription": interface["short_description"],
-            "longDescription": config["description"],
-            "developerName": config["author"]["name"],
-            "category": config["category"],
-            "capabilities": interface["capabilities"],
-            "defaultPrompt": interface["default_prompts"],
-            "websiteURL": config["homepage"],
-            "brandColor": interface["brand_color"],
-            "screenshots": []
-        }
-    }
-    write_json(destination / ".codex-plugin" / "plugin.json", codex_manifest)
+def remove_legacy_marketplace() -> None:
+    legacy_marketplace = ROOT / ".claude-plugin" / "marketplace.json"
+    if legacy_marketplace.exists():
+        legacy_marketplace.unlink()
+    try:
+        legacy_marketplace.parent.rmdir()
+    except OSError:
+        pass
 
 
 def generate_marketplaces(configs: list[dict]) -> None:
@@ -120,24 +102,8 @@ def generate_marketplaces(configs: list[dict]) -> None:
         raise ValueError("exactly one package config must define marketplace metadata")
     marketplace = marketplace_configs[0]["marketplace"]
 
-    claude_marketplace = {
-        "name": marketplace["name"],
-        "description": marketplace["description"],
-        "owner": {
-            "name": marketplace["owner_name"]
-        },
-        "plugins": [
-            {
-                "name": config["name"],
-                "description": config["description"],
-                "version": config["version"],
-                "source": f"./plugins/{config['name']}",
-                "author": config["author"]
-            }
-            for config in configs
-        ]
-    }
-    write_json(ROOT / ".claude-plugin" / "marketplace.json", claude_marketplace)
+    publishable_configs = [config for config in configs if is_publishable(config)]
+    remove_legacy_marketplace()
 
     codex_marketplace = {
         "name": marketplace["name"],
@@ -157,7 +123,7 @@ def generate_marketplaces(configs: list[dict]) -> None:
                 },
                 "category": config["category"]
             }
-            for config in configs
+            for config in publishable_configs
         ]
     }
     write_json(ROOT / ".agents" / "plugins" / "marketplace.json", codex_marketplace)
@@ -177,7 +143,7 @@ def generate_marketplaces(configs: list[dict]) -> None:
                 "version": config["version"],
                 "source": f"./plugins/{config['name']}"
             }
-            for config in configs
+            for config in publishable_configs
         ]
     }
     write_json(ROOT / ".github" / "plugin" / "marketplace.json", copilot_marketplace)

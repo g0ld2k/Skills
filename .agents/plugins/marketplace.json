@@ -1,7 +1,7 @@
 {
   "name": "g0ld2k-skills",
   "interface": {
-    "displayName": "g0ld2k Skills"
+    "displayName": "g0ld2k skills"
   },
   "plugins": [
     {
@@ -9,18 +9,6 @@
       "source": {
         "source": "local",
         "path": "./plugins/g0ld2k-skills"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Developer Tools"
-    },
-    {
-      "name": "g0ld2k-apple-design",
-      "source": {
-        "source": "local",
-        "path": "./plugins/g0ld2k-apple-design"
       },
       "policy": {
         "installation": "AVAILABLE",

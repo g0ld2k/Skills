@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "g0ld2k-apple-design",
   "description": "Package reserved for Apple-platform design decision skills.",
   "version": "0.1.0",
@@ -13,7 +14,5 @@
     "agent-skills",
     "apple-platforms",
     "product-design"
-  ],
-  "category": "Developer Tools",
-  "skills": "./skills/"
+  ]
 }
