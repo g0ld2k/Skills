@@ -144,21 +144,21 @@ EXPECTED_DEPENDENCY_ARTIFACTS: dict[str, dict[str, str]] = {
         "license_file": "six-1.17.0.dist-info/LICENSE",
     },
 }
-EXPECTED_VENDOR_FILES = {
-    "skills_ref": frozenset(
-        path.removeprefix("skills_ref/")
-        for path in EXPECTED_SKILLS_REF_FILES
-        if path.startswith("skills_ref/")
-    ),
-    "licenses": frozenset(
-        path.removeprefix("licenses/")
-        for path in EXPECTED_SKILLS_REF_FILES
-        if path.startswith("licenses/")
-    ),
-    "wheels": frozenset(
-        path.removeprefix("wheels/") for path in EXPECTED_DEPENDENCY_ARTIFACTS
-    ),
+EXPECTED_DEPENDENCY_HASHES = {
+    relative: metadata["sha256"]
+    for relative, metadata in EXPECTED_DEPENDENCY_ARTIFACTS.items()
 }
+EXPECTED_VENDOR_DOCUMENTS = {
+    "README.md": "3f76b4600c5f82fd7ab85dcd97dc1b41eef35719345ac945cde7059f9da6da75",
+}
+EXPECTED_VENDOR_FILES = frozenset(
+    {
+        "manifest.json",
+        *EXPECTED_SKILLS_REF_FILES,
+        *EXPECTED_DEPENDENCY_ARTIFACTS,
+        *EXPECTED_VENDOR_DOCUMENTS,
+    }
+)
 EXPECTED_SOURCE_PROVENANCE = {
     "repository": "https://github.com/agentskills/agentskills.git",
     "revision": AGENT_SKILLS_SPEC_REVISION,
@@ -182,8 +182,8 @@ def _is_safe_manifest_path(relative: str) -> bool:
     return not path.is_absolute() and all(part not in {"", ".", ".."} for part in path.parts)
 
 
-def _vendor_files(relative_root: str) -> set[str]:
-    root = VENDOR_ROOT / relative_root
+def _vendor_files() -> set[str]:
+    root = VENDOR_ROOT
     if not root.is_dir():
         return set()
     files: set[str] = set()
@@ -203,6 +203,18 @@ def _hash_file(path: Path, errors: list[str], label: str) -> str | None:
     except OSError as exc:
         errors.append(f"{path}: cannot verify vendored {label}: {exc}")
         return None
+
+
+def _verify_expected_hashes(
+    expected_hashes: dict[str, str],
+    errors: list[str],
+    label: str,
+) -> None:
+    """Verify one category of allowlisted vendored paths."""
+    for relative, expected in expected_hashes.items():
+        actual = _hash_file(VENDOR_ROOT / relative, errors, label)
+        if actual is not None and actual != expected:
+            errors.append(f"{VENDOR_ROOT / relative}: vendored {label} hash mismatch")
 
 
 def verify_vendored_artifacts() -> list[str]:
@@ -291,23 +303,17 @@ def verify_vendored_artifacts() -> list[str]:
                         f"vendor/manifest.json: dependency {key} is not pinned for {relative}"
                     )
 
-    for tree, expected_files in EXPECTED_VENDOR_FILES.items():
-        actual_files = _vendor_files(tree)
-        for unexpected in sorted(actual_files - expected_files):
-            errors.append(f"vendor/{tree}/{unexpected}: unexpected vendored file")
-        for missing in sorted(expected_files - actual_files):
-            errors.append(f"vendor/{tree}/{missing}: missing vendored file")
+    actual_files = _vendor_files()
+    for unexpected in sorted(actual_files - EXPECTED_VENDOR_FILES):
+        errors.append(f"vendor/{unexpected}: unexpected vendored file")
+    for missing in sorted(EXPECTED_VENDOR_FILES - actual_files):
+        errors.append(f"vendor/{missing}: missing vendored file")
 
-    # Hash only code/artifacts named by the validator's fixed allowlist. This
-    # happens after all manifest paths have been checked for traversal.
-    for relative, expected in EXPECTED_SKILLS_REF_FILES.items():
-        actual = _hash_file(VENDOR_ROOT / relative, errors, "file")
-        if actual is not None and actual != expected:
-            errors.append(f"{VENDOR_ROOT / relative}: vendored file hash mismatch")
-    for relative, metadata in EXPECTED_DEPENDENCY_ARTIFACTS.items():
-        actual = _hash_file(VENDOR_ROOT / relative, errors, "artifact")
-        if actual is not None and actual != metadata["sha256"]:
-            errors.append(f"{VENDOR_ROOT / relative}: vendored artifact hash mismatch")
+    # Hash allowlisted source files, artifacts, and documentation after all
+    # manifest paths have been checked for traversal.
+    _verify_expected_hashes(EXPECTED_SKILLS_REF_FILES, errors, "file")
+    _verify_expected_hashes(EXPECTED_DEPENDENCY_HASHES, errors, "artifact")
+    _verify_expected_hashes(EXPECTED_VENDOR_DOCUMENTS, errors, "documentation")
     return errors
 
 

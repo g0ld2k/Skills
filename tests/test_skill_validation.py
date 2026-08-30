@@ -208,6 +208,29 @@ class AgentSkillsConformanceTests(unittest.TestCase):
 
         self.assertTrue(any("vendored artifact hash mismatch" in error for error in errors))
 
+    def test_unrecognized_vendor_subtree_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            vendor_root = Path(temp) / "vendor"
+            shutil.copytree(ROOT / "vendor", vendor_root)
+            unexpected = vendor_root / "unexpected" / "artifact.py"
+            unexpected.parent.mkdir()
+            unexpected.write_text("untrusted = True\n", encoding="utf-8")
+            manifest_path = vendor_root / "manifest.json"
+            original_root = self.validator.VENDOR_ROOT
+            original_manifest = self.validator.SKILLS_REF_MANIFEST
+            self.validator.VENDOR_ROOT = vendor_root
+            self.validator.SKILLS_REF_MANIFEST = manifest_path
+            try:
+                errors = self.validator.verify_vendored_artifacts()
+            finally:
+                self.validator.VENDOR_ROOT = original_root
+                self.validator.SKILLS_REF_MANIFEST = original_manifest
+
+        self.assertIn(
+            "vendor/unexpected/artifact.py: unexpected vendored file",
+            "\n".join(errors),
+        )
+
     def test_manifest_must_match_pinned_file_set_and_reject_traversal(self) -> None:
         with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
             vendor_root = Path(temp) / "vendor"
