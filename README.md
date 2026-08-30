@@ -42,8 +42,7 @@ release notes, and work orchestration.
    template's Validation Scenarios section points at it. Every scenario must
    include non-empty `Setup:`, `Prompt:`, and `Pass:` sections. Existing skills
    are temporarily exempt only while their owning follow-up issues add richer
-   scenarios: `commit-message` (#39), `pr-generator` (#42), and
-   `testflight-notes` (#43).
+   scenarios: `pr-generator` (#42) and `testflight-notes` (#43).
 4. Add the skill to exactly one `packaging/<plugin-name>.json` `skills` array.
    Add it to that config's `shared_conventions_consumers` array too if the
    skill keeps the template's `references/conventions.md` link.

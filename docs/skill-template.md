@@ -147,9 +147,9 @@ New skills must point to `references/validation-scenarios.md` rather than
 inlining scenarios in SKILL.md. Include at least 3 scenarios: happy path, edge
 case, and adversarial, covering activation and output behavior. The current
 repository validator temporarily exempts only the existing skills whose
-owning follow-up issues add richer scenarios: `commit-message` (#39),
-`pr-generator` (#42), and `testflight-notes` (#43); all other skills are
-checked. Per `superpowers:writing-skills`, write each scenario RED first —
+owning follow-up issues add richer scenarios: `pr-generator` (#42) and
+`testflight-notes` (#43); all other skills are checked. Per
+`superpowers:writing-skills`, write each scenario RED first —
 confirm it fails without the skill's guardrail — before writing the GREEN
 behavior the skill should produce. See
 `skills/pr-closeout-loop/references/validation-scenarios.md` for the format

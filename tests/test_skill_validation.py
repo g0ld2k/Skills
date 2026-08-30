@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -715,7 +716,7 @@ class AgentSkillsConformanceTests(unittest.TestCase):
     def test_scenario_convention_covers_non_exempt_canonical_skills(self) -> None:
         self.assertEqual(
             self.validator.VALIDATION_SCENARIO_EXEMPTIONS,
-            {"commit-message", "pr-generator", "testflight-notes"},
+            {"pr-generator", "testflight-notes"},
         )
         for skill_dir in sorted(
             path for path in (ROOT / "skills").iterdir() if path.is_dir()
@@ -726,6 +727,149 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 errors: list[str] = []
                 self.validator.validate_validation_scenarios(skill_dir, errors)
                 self.assertEqual(errors, [])
+
+    def test_commit_message_scenarios_cover_git_failure_and_drift_gates(self) -> None:
+        scenario_file = (
+            ROOT / "skills" / "commit-message" / "references" / "validation-scenarios.md"
+        )
+        scenario_text = scenario_file.read_text(encoding="utf-8").lower()
+
+        for marker in (
+            "no staged changes",
+            "git error",
+            "index drift",
+            "commit failure",
+            "successful commit",
+            "head drift",
+            "broken ref",
+            "empty index",
+            "final metadata",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, scenario_text)
+
+    def test_commit_message_captures_tree_before_immutable_evidence(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        tree_capture = skill_text.index('if staged_tree="$(git write-tree)"; then')
+
+        for live_index_evidence in (
+            "git --no-pager diff --cached --name-only",
+            "git --no-pager diff --cached --stat",
+            "git --no-pager diff --cached\n",
+            "git --no-pager diff --cached --name-status",
+        ):
+            with self.subTest(command=live_index_evidence):
+                self.assertNotIn(live_index_evidence, skill_text)
+
+        self.assertIn("HEAD^{tree}", skill_text)
+        self.assertIn("unborn head", skill_text.lower())
+        for evidence_args in ("--name-only", "--stat", "", "--name-status"):
+            evidence_command = f"run_git_evidence {evidence_args}".rstrip()
+            with self.subTest(evidence=evidence_args or "full patch"):
+                evidence_position = skill_text.index(evidence_command)
+                self.assertGreater(evidence_position, tree_capture)
+
+    def test_commit_message_checks_every_immutable_evidence_read(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("run_git_evidence()", skill_text)
+        self.assertIn("evidence_status=$?", skill_text)
+        self.assertIn("return \"$evidence_status\"", skill_text)
+        self.assertIn("Every evidence read uses `run_git_evidence`", skill_text)
+        for evidence_args in ("--name-only", "--stat", "", "--name-status"):
+            call = f"run_git_evidence {evidence_args}".rstrip()
+            with self.subTest(evidence=evidence_args or "full patch"):
+                self.assertIn(call, skill_text)
+
+    def test_commit_message_bounds_index_drift_retries_and_blocks(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertRegex(skill_text.lower(), r"(?:at most|maximum of|limit of) 3")
+        self.assertIn("drift_retries", skill_text)
+        self.assertIn("BLOCKED: staged-tree-drift", skill_text)
+        self.assertIn("Last completed step:", skill_text)
+        self.assertIn("Would unblock:", skill_text)
+        self.assertIn("no stale content may be committed", skill_text.lower())
+
+    def test_commit_message_uses_one_sha_subject_output_format(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        formats = re.findall(
+            r"git --no-pager log -1 --pretty=format:'([^']+)'", skill_text
+        )
+        self.assertGreaterEqual(len(formats), 2)
+        self.assertEqual(set(formats), {"%h %s"})
+
+    def test_commit_message_rechecks_head_identity_before_commit(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("resolve_head_and_tree", skill_text)
+        self.assertIn("draft_head", skill_text)
+        self.assertIn("current_head", skill_text)
+        self.assertIn("current_base_tree", skill_text)
+        self.assertIn("HEAD or baseline changed", skill_text)
+        self.assertIn("git rev-parse --verify HEAD", skill_text)
+        self.assertIn(
+            '[ "$current_head" != "$draft_head" ]',
+            skill_text,
+        )
+        self.assertIn(
+            '[ "$current_base_tree" != "$base_tree" ]',
+            skill_text,
+        )
+
+    def test_commit_message_distinguishes_broken_refs_from_unborn_head(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("git symbolic-ref --quiet HEAD", skill_text)
+        self.assertIn("git show-ref --verify", skill_text)
+        self.assertIn("git show-ref --verify --quiet", skill_text)
+        self.assertIn("show_ref_status=$?", skill_text)
+        self.assertIn("git rev-parse --git-path", skill_text)
+        self.assertIn('[ -e "$head_ref_path" ]', skill_text)
+        self.assertIn('case "$show_ref_status" in', skill_text)
+        self.assertIn("1)", skill_text)
+        self.assertIn("*)", skill_text)
+        self.assertIn("broken ref", skill_text.lower())
+        self.assertIn("unborn HEAD", skill_text)
+
+    def test_commit_message_stops_when_index_becomes_empty(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        case_start = skill_text.index('case "$current_status" in')
+        case_end = skill_text.index("esac", case_start)
+        empty_index_branch = skill_text[case_start:case_end]
+
+        self.assertIn("No staged changes remain", empty_index_branch)
+        self.assertIn("exit 0", empty_index_branch)
+
+    def test_commit_message_checks_final_sha_subject_lookup(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "if commit_result=\"$(git --no-pager log -1 --pretty=format:'%h %s')\"; then",
+            skill_text,
+        )
+        self.assertIn("log_status=$?", skill_text)
+        self.assertIn(
+            "commit succeeded but SHA/subject unavailable",
+            skill_text,
+        )
 
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):
