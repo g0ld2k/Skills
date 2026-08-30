@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,9 @@ SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
 PACKAGING_DIR = ROOT / "packaging"
 PLUGINS_DIR = ROOT / "plugins"
+VENDOR_ROOT = ROOT / "vendor"
+SKILLS_REF_SOURCE_DIR = VENDOR_ROOT / "skills_ref" / "src"
+SKILLS_REF_MANIFEST = VENDOR_ROOT / "manifest.json"
 PLUGIN_SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 PLUGIN_SCHEMA_PATH = ROOT / "schemas" / "agent-plugins" / "1.0.0" / "plugin.schema.json"
 EXPLICIT_ONLY_SKILLS = {
@@ -25,46 +30,26 @@ LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
 AGENT_SKILLS_SPEC_URL = "https://agentskills.io/specification"
-# Pinned to the official skills-ref source revision used to derive this
-# repository-owned, network-independent conformance check.
 AGENT_SKILLS_SPEC_REVISION = "69ef37e9424c0a7ea9dd2293b559e43ec8176379"
-AGENT_SKILLS_FIELDS = {
-    "name",
-    "description",
-    "license",
-    "compatibility",
-    "metadata",
-    "allowed-tools",
-}
-MAX_SKILL_NAME_LENGTH = 64
-MAX_DESCRIPTION_LENGTH = 1024
-MAX_COMPATIBILITY_LENGTH = 500
-MAX_YAML_NESTING_DEPTH = 32
+SKILLS_REF_VERSION = "0.1.0"
 VALIDATION_SCENARIO_PATH = Path("references") / "validation-scenarios.md"
-# Existing skills remain exempt only under their owning follow-up issue: #39
-# (commit-message), #42 (pr-generator), and #43 (testflight-notes). New skills
-# and catch-me-up use the convention immediately.
 VALIDATION_SCENARIO_EXEMPTIONS = {
     "commit-message",
     "pr-generator",
     "testflight-notes",
 }
-# Single-word command tokens that legitimately follow Use/run/invoke in prose.
-# Extend only with commands/tools, never with skill names.
 NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
-# Matches: Use `name`, use `name`, Invoke `name`, delegating to `name`, Run `name`
 SKILL_REF_CONTEXT_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"
+    r"(?<![A-Za-z0-9_-])(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+\x60([a-z0-9][a-z0-9:-]*[a-z0-9])\x60"
 )
-# Companion-list bullets like: - `pr-comment-review` for triaging...
 COMPANION_REF_RE = re.compile(
-    r"^\s*-\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`\s+(?:for|to|when|before|after)\b",
+    r"^\s*-\s+\x60([a-z0-9][a-z0-9:-]*[a-z0-9])\x60\s+(?:for|to|when|before|after)\b",
     re.MULTILINE,
 )
 
 
 def exact_child(parent: Path, name: str) -> Path | None:
-    if not parent.exists():
+    if not parent.is_dir():
         return None
     return next((child for child in parent.iterdir() if child.name == name), None)
 
@@ -85,457 +70,314 @@ def strip_quotes(value: str) -> str:
     return value
 
 
-def _is_escaped(value: str, index: int) -> bool:
-    backslashes = 0
-    index -= 1
-    while index >= 0 and value[index] == "\\":
-        backslashes += 1
-        index -= 1
-    return backslashes % 2 == 1
-
-
-def _quote_starts_yaml_token(value: str, index: int) -> bool:
-    previous = index - 1
-    while previous >= 0 and value[previous].isspace():
-        previous -= 1
-    return previous < 0 or value[previous] in "[{,:"
-
-
-def _iter_yaml_unquoted(value: str):
-    """Yield characters that occur outside YAML quoted scalars."""
-    quote: str | None = None
-    index = 0
-    while index < len(value):
-        character = value[index]
-        if quote is None:
-            if character in {"'", '"'} and _quote_starts_yaml_token(value, index):
-                quote = character
-            else:
-                yield index, character
-        elif quote == "'" and character == "'":
-            if index + 1 < len(value) and value[index + 1] == "'":
-                index += 1
-            else:
-                quote = None
-        elif quote == '"' and character == '"' and not _is_escaped(value, index):
-            quote = None
-        index += 1
-
-
-def _strip_inline_yaml_comment(value: str) -> str:
-    """Remove a YAML comment that starts outside a quoted scalar."""
-    for index, character in _iter_yaml_unquoted(value):
-        if character == "#" and (index == 0 or value[index - 1].isspace()):
-            return value[:index].rstrip()
-    return value.rstrip()
-
-
-def _split_inline_yaml(value: str) -> list[str]:
-    """Split a simple inline YAML collection without evaluating its contents."""
-    parts: list[str] = []
-    start = 0
-    depth = 0
-    for index, character in _iter_yaml_unquoted(value):
-        if character in "[{":
-            depth += 1
-        elif character in "]}":
-            depth -= 1
-        elif character == "," and depth == 0:
-            parts.append(value[start:index].strip())
-            start = index + 1
-    parts.append(value[start:].strip())
-    return [part for part in parts if part]
-
-
-def _find_yaml_mapping_separator(
-    value: str, allow_no_whitespace: bool = False
-) -> int | None:
-    fallback: int | None = None
-    for index, character in _iter_yaml_unquoted(value):
-        if character != ":":
-            continue
-        if fallback is None:
-            fallback = index
-        if index + 1 == len(value) or value[index + 1].isspace():
-            return index
-    return fallback if allow_no_whitespace else None
-
-
-def _parse_yaml_block_header(value: str) -> tuple[str, str, int | None] | None:
-    if not value or value[0] not in "|>":
+def _manifest() -> dict[str, object] | None:
+    try:
+        manifest = json.loads(SKILLS_REF_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return None
-    match = re.fullmatch(r"([>|])([+-]?)([1-9]?)([+-]?)", value)
-    if match is None:
-        raise ValueError("invalid block scalar header")
-    style, first_chomping, indent_text, second_chomping = match.groups()
-    if first_chomping and second_chomping:
-        raise ValueError("invalid block scalar header")
-    chomping = first_chomping or second_chomping
-    indent = int(indent_text) if indent_text else None
-    return style, chomping, indent
+    return manifest if isinstance(manifest, dict) else None
 
 
-YAML_DOUBLE_QUOTE_ESCAPES = {
-    "0": "\0",
-    "a": "\a",
-    "b": "\b",
-    "t": "\t",
-    "n": "\n",
-    "v": "\v",
-    "f": "\f",
-    "r": "\r",
-    "e": "\x1b",
-    " ": " ",
-    '"': '"',
-    "/": "/",
-    "\\": "\\",
-    "N": "\u0085",
-    "_": "\u00a0",
-    "L": "\u2028",
-    "P": "\u2029",
+# These values are the validator's trust anchor.  The manifest is useful
+# provenance/documentation, but cannot change which code or dependencies are
+# eligible for import.
+EXPECTED_SKILLS_REF_FILES: dict[str, str] = {
+    "skills_ref/LICENSE": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+    "licenses/python-dateutil-LICENSE.txt": "ba00f51a0d92823b5a1cde27d8b5b9d2321e67ed8da9bc163eff96d5e17e577e",
+    "licenses/six-LICENSE.txt": "4375ba20e2b9c6c4e7cad2940a628fd90e95cc3d50ee92aae755715d8ba1fbd0",
+    "licenses/strictyaml-LICENSE.txt": "288b0b2d89e16908047eb4d8b37c03da5895808920deddc381ae02b319f79d19",
+    "skills_ref/src/skills_ref/__init__.py": "a3da705c4847ac19c016f67e3a6c56a94e160986a823d148c21dca4c9b312b4a",
+    "skills_ref/src/skills_ref/errors.py": "dd4570964e82d7c8f57e76dd3a1e9e593e1530f22e36e633e8eadb9bd05d36f3",
+    "skills_ref/src/skills_ref/models.py": "c6645fcfc04c78e773657856e8c6058e43951ce283e9b303ca721df1acac6a7b",
+    "skills_ref/src/skills_ref/parser.py": "9a74c9a90eb217b82bec27570332eab74547acfbee2973c0a8bcd23f6c7bc211",
+    "skills_ref/src/skills_ref/prompt.py": "8ed90a61685b84050a8fde32e63d5f3f04c205b05bfc5f8ef4bb2f101cc9cf15",
+    "skills_ref/src/skills_ref/validator.py": "b5ee3d8537c83c959c31c2cb080a5227646ede5aea545f1ac835ed3c4645f6c5",
 }
-YAML_DOUBLE_QUOTE_HEX_ESCAPES = {"x": 2, "u": 4, "U": 8}
+EXPECTED_DEPENDENCY_ARTIFACTS: dict[str, dict[str, str]] = {
+    "wheels/strictyaml-1.7.3-py3-none-any.whl": {
+        "name": "strictyaml",
+        "version": "1.7.3",
+        "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+        "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+        "license": "MIT",
+        "license_file": "strictyaml-1.7.3.dist-info/LICENSE.txt",
+    },
+    "wheels/python_dateutil-2.9.0.post0-py2.py3-none-any.whl": {
+        "name": "python-dateutil",
+        "version": "2.9.0.post0",
+        "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+        "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+        "license": "Apache-2.0 OR BSD-3-Clause",
+        "license_file": "python_dateutil-2.9.0.post0.dist-info/LICENSE",
+    },
+    "wheels/six-1.17.0-py2.py3-none-any.whl": {
+        "name": "six",
+        "version": "1.17.0",
+        "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+        "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+        "license": "MIT",
+        "license_file": "six-1.17.0.dist-info/LICENSE",
+    },
+}
+EXPECTED_VENDOR_FILES = {
+    "skills_ref": frozenset(
+        path.removeprefix("skills_ref/")
+        for path in EXPECTED_SKILLS_REF_FILES
+        if path.startswith("skills_ref/")
+    ),
+    "licenses": frozenset(
+        path.removeprefix("licenses/")
+        for path in EXPECTED_SKILLS_REF_FILES
+        if path.startswith("licenses/")
+    ),
+    "wheels": frozenset(
+        path.removeprefix("wheels/") for path in EXPECTED_DEPENDENCY_ARTIFACTS
+    ),
+}
+EXPECTED_SOURCE_PROVENANCE = {
+    "repository": "https://github.com/agentskills/agentskills.git",
+    "revision": AGENT_SKILLS_SPEC_REVISION,
+    "source_url": "https://github.com/agentskills/agentskills/tree/69ef37e9424c0a7ea9dd2293b559e43ec8176379/skills-ref",
+    "version": SKILLS_REF_VERSION,
+    "license": "Apache-2.0",
+    "license_file": "skills_ref/LICENSE",
+}
+EXPECTED_MANIFEST_KEYS = frozenset({"skills_ref", "dependencies"})
+EXPECTED_SOURCE_KEYS = frozenset({*EXPECTED_SOURCE_PROVENANCE, "files"})
+EXPECTED_DEPENDENCY_KEYS = frozenset(
+    {"name", "version", "url", "path", "sha256", "license", "license_file"}
+)
 
 
-def _decode_yaml_quoted_scalar(value: str) -> str:
-    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"'}:
-        raise ValueError("invalid quoted scalar")
-    body = value[1:-1]
-    if value[0] == "'":
-        decoded: list[str] = []
-        index = 0
-        while index < len(body):
-            if body[index] == "'":
-                if index + 1 >= len(body) or body[index + 1] != "'":
-                    raise ValueError("invalid quoted scalar")
-                decoded.append("'")
-                index += 2
-            else:
-                decoded.append(body[index])
-                index += 1
-        return "".join(decoded)
-
-    decoded = []
-    index = 0
-    while index < len(body):
-        character = body[index]
-        if character == '"':
-            raise ValueError("invalid quoted scalar")
-        if character != "\\":
-            decoded.append(character)
-            index += 1
-            continue
-        index += 1
-        if index >= len(body):
-            raise ValueError("invalid quoted scalar")
-        escape = body[index]
-        if escape in YAML_DOUBLE_QUOTE_ESCAPES:
-            decoded.append(YAML_DOUBLE_QUOTE_ESCAPES[escape])
-            index += 1
-            continue
-        width = YAML_DOUBLE_QUOTE_HEX_ESCAPES.get(escape)
-        if width is None:
-            raise ValueError("invalid quoted scalar")
-        digits = body[index + 1 : index + 1 + width]
-        if len(digits) != width or re.fullmatch(r"[0-9a-fA-F]+", digits) is None:
-            raise ValueError("invalid quoted scalar")
-        try:
-            code_point = int(digits, 16)
-            if code_point > 0x10FFFF or 0xD800 <= code_point <= 0xDFFF:
-                raise ValueError("invalid Unicode scalar value")
-            decoded.append(chr(code_point))
-        except ValueError as exc:
-            raise ValueError("invalid quoted scalar") from exc
-        index += 1 + width
-    return "".join(decoded)
-
-
-def _parse_yaml_scalar(value: str, depth: int = 0) -> object:
-    if depth > MAX_YAML_NESTING_DEPTH:
-        raise ValueError(
-            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
-        )
-    value = _strip_inline_yaml_comment(value).strip()
-    if not value:
-        return None
-    if value[0:1] in {"'", '"'}:
-        return _decode_yaml_quoted_scalar(value)
-    lowered = value.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
+def _is_safe_manifest_path(relative: str) -> bool:
+    """Accept only normalized, relative POSIX paths inside vendor/."""
+    if not relative or "\\" in relative:
         return False
-    if lowered in {"null", "~"}:
+    path = PurePosixPath(relative)
+    return not path.is_absolute() and all(part not in {"", ".", ".."} for part in path.parts)
+
+
+def _vendor_files(relative_root: str) -> set[str]:
+    root = VENDOR_ROOT / relative_root
+    if not root.is_dir():
+        return set()
+    files: set[str] = set()
+    for path in root.rglob("*"):
+        if path.is_file() or path.is_symlink():
+            files.add(path.relative_to(root).as_posix())
+    return files
+
+
+def _hash_file(path: Path, errors: list[str], label: str) -> str | None:
+    try:
+        relative = path.relative_to(VENDOR_ROOT)
+    except ValueError:
+        errors.append(f"{path}: vendored {label} must remain inside {VENDOR_ROOT}")
         return None
-    if value.startswith("[") and value.endswith("]"):
-        return [
-            _parse_yaml_scalar(item, depth + 1)
-            for item in _split_inline_yaml(value[1:-1])
-        ]
-    if value.startswith("{") and value.endswith("}"):
-        mapping: dict[object, object] = {}
-        for item in _split_inline_yaml(value[1:-1]):
-            separator = _find_yaml_mapping_separator(item, allow_no_whitespace=True)
-            if separator is None:
-                raise ValueError(f"invalid inline mapping entry: {item}")
-            parsed_key = _parse_yaml_scalar(item[:separator], depth + 1)
-            try:
-                mapping[parsed_key] = _parse_yaml_scalar(
-                    item[separator + 1 :], depth + 1
-                )
-            except TypeError as exc:
-                raise ValueError("mapping keys must be scalar values") from exc
-        return mapping
-    if re.fullmatch(r"[-+]?\d+", value):
-        return int(value)
-    if re.fullmatch(r"[-+]?(?:\d+\.\d*|\.\d+)", value):
-        return float(value)
-    return value
+    current = VENDOR_ROOT
+    if current.is_symlink():
+        errors.append(f"{current}: symlinks are not allowed in vendored paths")
+        return None
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            errors.append(f"{current}: symlinks are not allowed in vendored paths")
+            return None
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        errors.append(f"{path}: cannot verify vendored {label}: {exc}")
+        return None
 
 
-def _line_indent(line: str) -> int:
-    prefix = line[: len(line) - len(line.lstrip(" \t"))]
-    if "\t" in prefix:
-        raise ValueError("tabs are not supported for frontmatter indentation")
-    return len(prefix)
+def verify_vendored_artifacts() -> list[str]:
+    """Verify the pinned reference source and dependency archives before use."""
+    errors: list[str] = []
+    manifest = _manifest()
+    if manifest is None:
+        return [f"{SKILLS_REF_MANIFEST}: missing or invalid vendored manifest"]
 
-
-def _next_content_line(lines: list[str], start: int) -> int:
-    index = start
-    while index < len(lines) and (not lines[index].strip() or lines[index].lstrip().startswith("#")):
-        index += 1
-    return index
-
-
-def _parse_yaml_sequence(
-    lines: list[str], start: int, indent: int, depth: int = 0
-) -> tuple[list[object], int]:
-    if depth > MAX_YAML_NESTING_DEPTH:
-        raise ValueError(
-            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
+    if set(manifest) != EXPECTED_MANIFEST_KEYS:
+        errors.append(
+            "vendor/manifest.json: manifest entries do not match pinned set "
+            f"{sorted(EXPECTED_MANIFEST_KEYS)}"
         )
-    values: list[object] = []
-    index = start
-    while index < len(lines):
-        if not lines[index].strip() or lines[index].lstrip().startswith("#"):
-            index += 1
-            continue
-        line_indent = _line_indent(lines[index])
-        if line_indent < indent:
-            break
-        if line_indent != indent or not lines[index][indent:].startswith("- "):
-            raise ValueError("expected a YAML list item")
-        values.append(_parse_yaml_scalar(lines[index][indent + 2 :], depth + 1))
-        index += 1
-    return values, index
 
-
-def _apply_block_chomping(value: str, chomping: str) -> str:
-    if chomping == "-":
-        return value.rstrip("\n")
-    if chomping == "+":
-        return value
-    if not value or value.strip("\n") == "":
-        return ""
-    return value.rstrip("\n") + "\n"
-
-
-def _parse_yaml_block_scalar(
-    lines: list[str],
-    start: int,
-    parent_indent: int,
-    style: str,
-    chomping: str,
-    explicit_indent: int | None,
-) -> tuple[str, int]:
-    raw_lines: list[str] = []
-    index = start
-    if explicit_indent is None:
-        first_content = None
-        for line_index in range(start, len(lines)):
-            if not lines[line_index].strip():
-                continue
-            if _line_indent(lines[line_index]) <= parent_indent:
-                break
-            first_content = line_index
-            break
-        if first_content is None:
-            while index < len(lines) and not lines[index].strip():
-                raw_lines.append(lines[index])
-                index += 1
-            return _apply_block_chomping("\n" * len(raw_lines), chomping), index
-        content_indent = _line_indent(lines[first_content])
-        leading_blank = start
-        while leading_blank < first_content:
-            content_indent = max(content_indent, _line_indent(lines[leading_blank]))
-            leading_blank += 1
+    source = manifest.get("skills_ref")
+    if not isinstance(source, dict):
+        errors.append("vendor/manifest.json: missing skills_ref provenance")
     else:
-        content_indent = parent_indent + explicit_indent
-    while index < len(lines):
-        line = lines[index]
-        if not line.strip():
-            raw_lines.append(line)
-            index += 1
-            continue
-        line_indent = _line_indent(line)
-        if line_indent <= parent_indent:
-            break
-        if line_indent < content_indent:
-            break
-        raw_lines.append(line)
-        index += 1
-
-    if not any(line.strip() for line in raw_lines):
-        return _apply_block_chomping("\n" * len(raw_lines), chomping), index
-
-    content_lines: list[str] = []
-    more_indented: list[bool] = []
-    for line in raw_lines:
-        line_indent = _line_indent(line)
-        if not line.strip() and line_indent < content_indent:
-            content_lines.append("")
-            more_indented.append(False)
-        else:
-            content_lines.append(line[content_indent:])
-            more_indented.append(line_indent > content_indent)
-
-    last_content = max(
-        index
-        for index, line in enumerate(content_lines)
-        if line or more_indented[index]
-    )
-    core_lines = content_lines[: last_content + 1]
-    trailing_blank_count = len(content_lines) - len(core_lines)
-    if style == "|":
-        value = "\n".join(core_lines) + "\n"
-    else:
-        folded: list[str] = []
-        core_more_indented = more_indented[: last_content + 1]
-        # Remember the nearest non-empty line so blank runs stay linear.
-        previous_nonempty_more_indented: bool | None = None
-        for line_index, line in enumerate(core_lines):
-            folded.append(line)
-            if line_index == len(core_lines) - 1:
-                continue
-            next_line = core_lines[line_index + 1]
-            if not line:
-                if (
-                    previous_nonempty_more_indented is None
-                    or previous_nonempty_more_indented
-                ):
-                    folded.append("\n")
-                elif core_more_indented[line_index + 1]:
-                    folded.append("\n")
-                elif next_line:
-                    continue
-                else:
-                    folded.append("\n")
-            elif not next_line:
-                folded.append("\n")
-            elif core_more_indented[line_index] or core_more_indented[line_index + 1]:
-                folded.append("\n")
-            else:
-                folded.append(" ")
-            if line:
-                previous_nonempty_more_indented = core_more_indented[line_index]
-        value = "".join(folded) + "\n"
-    value += "\n" * trailing_blank_count
-    return _apply_block_chomping(value, chomping), index
-
-
-def _parse_yaml_mapping(
-    lines: list[str], start: int, indent: int, depth: int = 0
-) -> tuple[dict[object, object], int]:
-    if depth > MAX_YAML_NESTING_DEPTH:
-        raise ValueError(
-            f"maximum YAML nesting depth of {MAX_YAML_NESTING_DEPTH} exceeded"
-        )
-    values: dict[object, object] = {}
-    index = start
-    while index < len(lines):
-        if not lines[index].strip() or lines[index].lstrip().startswith("#"):
-            index += 1
-            continue
-        line_indent = _line_indent(lines[index])
-        if line_indent < indent:
-            break
-        if line_indent != indent:
-            raise ValueError("unexpected indentation")
-        mapping_line = lines[index][indent:]
-        separator = _find_yaml_mapping_separator(mapping_line)
-        if separator is None:
-            raise ValueError("expected a YAML key followed by ':'")
-        key = mapping_line[:separator].strip()
-        raw_value = mapping_line[separator + 1 :]
-        if not key:
-            raise ValueError("expected a YAML key followed by ':'")
-        parsed_key = _parse_yaml_scalar(key, depth + 1)
-        try:
-            hash(parsed_key)
-        except TypeError as exc:
-            raise ValueError("mapping keys must be scalar values") from exc
-        key = parsed_key
-        if key in values:
-            raise ValueError(f"duplicate frontmatter key '{key}'")
-        raw_value = _strip_inline_yaml_comment(raw_value).strip()
-        index += 1
-
-        block_header = _parse_yaml_block_header(raw_value)
-        if block_header:
-            values[key], index = _parse_yaml_block_scalar(
-                lines,
-                index,
-                indent,
-                *block_header,
+        if set(source) != EXPECTED_SOURCE_KEYS:
+            errors.append(
+                "vendor/manifest.json: skills-ref provenance entries do not match pinned set"
             )
-            continue
-
-        if raw_value:
-            values[key] = _parse_yaml_scalar(raw_value, depth)
-            continue
-
-        child = _next_content_line(lines, index)
-        if child < len(lines) and _line_indent(lines[child]) > indent:
-            child_indent = _line_indent(lines[child])
-            if lines[child][child_indent:].startswith("- "):
-                values[key], index = _parse_yaml_sequence(
-                    lines, child, child_indent, depth + 1
-                )
-            else:
-                values[key], index = _parse_yaml_mapping(
-                    lines, child, child_indent, depth + 1
-                )
+        for key, expected in EXPECTED_SOURCE_PROVENANCE.items():
+            if source.get(key) != expected:
+                errors.append(f"vendor/manifest.json: skills-ref {key} is not pinned")
+        source_files = source.get("files")
+        if not isinstance(source_files, dict):
+            errors.append("vendor/manifest.json: missing skills-ref file hashes")
         else:
-            values[key] = None
-    return values, index
+            for relative in source_files:
+                if not isinstance(relative, str):
+                    errors.append("vendor/manifest.json: invalid skills-ref file hash entry")
+                elif not _is_safe_manifest_path(relative):
+                    errors.append(
+                        f"vendor/manifest.json: path traversal in skills-ref file path: {relative}"
+                    )
+            if set(source_files) != set(EXPECTED_SKILLS_REF_FILES):
+                errors.append(
+                    "vendor/manifest.json: manifest skills-ref file set does not match pinned set"
+                )
+            for relative, expected in EXPECTED_SKILLS_REF_FILES.items():
+                if source_files.get(relative) != expected:
+                    errors.append(
+                        f"vendor/manifest.json: skills-ref hash is not pinned for {relative}"
+                    )
+
+    dependencies = manifest.get("dependencies")
+    if not isinstance(dependencies, list):
+        errors.append("vendor/manifest.json: missing dependency artifact hashes")
+    else:
+        manifest_dependencies: dict[str, dict[str, object]] = {}
+        for dependency in dependencies:
+            if not isinstance(dependency, dict):
+                errors.append("vendor/manifest.json: invalid dependency artifact entry")
+                continue
+            relative = dependency.get("path")
+            if not isinstance(relative, str):
+                errors.append("vendor/manifest.json: invalid dependency artifact hash entry")
+                continue
+            if not _is_safe_manifest_path(relative):
+                errors.append(
+                    f"vendor/manifest.json: path traversal in dependency path: {relative}"
+                )
+                continue
+            if relative in manifest_dependencies:
+                errors.append(f"vendor/manifest.json: duplicate dependency path: {relative}")
+            manifest_dependencies[relative] = dependency
+        if set(manifest_dependencies) != set(EXPECTED_DEPENDENCY_ARTIFACTS):
+            errors.append(
+                "vendor/manifest.json: manifest dependency entries do not match pinned set"
+            )
+        for relative, expected in EXPECTED_DEPENDENCY_ARTIFACTS.items():
+            dependency = manifest_dependencies.get(relative)
+            if dependency is None:
+                continue
+            if set(dependency) != EXPECTED_DEPENDENCY_KEYS:
+                errors.append(
+                    f"vendor/manifest.json: dependency entries do not match pinned set for {relative}"
+                )
+            for key, expected_value in expected.items():
+                if dependency.get(key) != expected_value:
+                    errors.append(
+                        f"vendor/manifest.json: dependency {key} is not pinned for {relative}"
+                    )
+
+    for tree, expected_files in EXPECTED_VENDOR_FILES.items():
+        actual_files = _vendor_files(tree)
+        for unexpected in sorted(actual_files - expected_files):
+            errors.append(f"vendor/{tree}/{unexpected}: unexpected vendored file")
+        for missing in sorted(expected_files - actual_files):
+            errors.append(f"vendor/{tree}/{missing}: missing vendored file")
+
+    # Hash only code/artifacts named by the validator's fixed allowlist. This
+    # happens after all manifest paths have been checked for traversal.
+    for relative, expected in EXPECTED_SKILLS_REF_FILES.items():
+        actual = _hash_file(VENDOR_ROOT / relative, errors, "file")
+        if actual is not None and actual != expected:
+            errors.append(f"{VENDOR_ROOT / relative}: vendored file hash mismatch")
+    for relative, metadata in EXPECTED_DEPENDENCY_ARTIFACTS.items():
+        actual = _hash_file(VENDOR_ROOT / relative, errors, "artifact")
+        if actual is not None and actual != metadata["sha256"]:
+            errors.append(f"{VENDOR_ROOT / relative}: vendored artifact hash mismatch")
+    return errors
 
 
-def parse_frontmatter(path: Path) -> tuple[dict[object, object], str | None]:
+VENDORED_ARTIFACTS = tuple(EXPECTED_DEPENDENCY_ARTIFACTS.values())
+
+
+def _vendor_import_paths() -> None:
+    """Add only verified, exact paths to the import search path."""
+    paths = [VENDOR_ROOT / relative for relative in EXPECTED_DEPENDENCY_ARTIFACTS]
+    paths.append(SKILLS_REF_SOURCE_DIR)
+    for path in reversed(paths):
+        path_text = str(path)
+        if path_text not in sys.path:
+            sys.path.insert(0, path_text)
+
+
+_REFERENCE_IMPORT_ERROR: str | None = None
+reference_validate = None
+reference_validate_metadata = None
+reference_parse_frontmatter = None
+reference_yaml_load = None
+ReferenceParseError = Exception
+_VENDOR_VERIFICATION_ERRORS = verify_vendored_artifacts()
+if not _VENDOR_VERIFICATION_ERRORS:
+    # A normal source import writes __pycache__ beside skills_ref. That would
+    # mutate the exact vendored tree and make the post-import repository check
+    # fail on runners without an external pycache prefix.
+    sys.dont_write_bytecode = True
+    _vendor_import_paths()
+    try:
+        from skills_ref import validate as reference_validate
+        from skills_ref.parser import (
+            ParseError as ReferenceParseError,
+            parse_frontmatter as reference_parse_frontmatter,
+        )
+        from skills_ref.parser import strictyaml as reference_strictyaml
+        from skills_ref.validator import validate_metadata as reference_validate_metadata
+
+        reference_yaml_load = reference_strictyaml.load
+    except Exception as exc:  # pragma: no cover - exercised by missing-artifact gate
+        reference_validate = None
+        reference_validate_metadata = None
+        reference_parse_frontmatter = None
+        reference_yaml_load = None
+        _REFERENCE_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+
+
+def _parse_frontmatter_data(
+    path: Path,
+) -> tuple[dict[object, object], dict[object, object], str | None]:
+    """Return normalized and raw StrictYAML frontmatter from one skill file."""
+    if _VENDOR_VERIFICATION_ERRORS:
+        return (
+            {},
+            {},
+            "vendored skills-ref unavailable: " + "; ".join(_VENDOR_VERIFICATION_ERRORS),
+        )
+    if reference_parse_frontmatter is None or reference_yaml_load is None:
+        return {}, {}, f"vendored skills-ref import failed: {_REFERENCE_IMPORT_ERROR}"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        return {}, f"cannot read SKILL.md: {exc}"
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}, "missing YAML frontmatter"
-
+        return {}, {}, f"cannot read SKILL.md: {exc}"
     try:
-        end = next(
-            index
-            for index in range(1, len(lines))
-            if lines[index].rstrip(" \t") == "---"
-        )
-    except StopIteration:
-        return {}, "unterminated YAML frontmatter"
+        data, _ = reference_parse_frontmatter(text)
+        # skills-ref stringifies metadata values after parsing. Parse the same
+        # verified StrictYAML payload once more to retain collection shapes for
+        # the spec's string-to-string metadata contract.
+        raw_data = reference_yaml_load(text.split("---", 2)[1]).data
+    except RecursionError:
+        return {}, {}, "SKILL.md frontmatter exceeds supported nesting depth"
+    except ReferenceParseError as exc:
+        return {}, {}, str(exc)
+    except Exception as exc:
+        return {}, {}, f"invalid YAML frontmatter: {exc}"
+    if not isinstance(data, dict):
+        return {}, {}, "SKILL.md frontmatter must be a YAML mapping"
+    if not isinstance(raw_data, dict):
+        return {}, {}, "SKILL.md frontmatter must be a YAML mapping"
+    return data, raw_data, None
 
-    frontmatter_lines = lines[1:end]
-    try:
-        data, next_index = _parse_yaml_mapping(frontmatter_lines, 0, 0)
-        trailing = _next_content_line(frontmatter_lines, next_index)
-        if trailing < len(frontmatter_lines):
-            return {}, "invalid YAML frontmatter: unexpected content"
-    except ValueError as exc:
-        return {}, f"invalid YAML frontmatter: {exc}"
+
+def parse_frontmatter(path: Path) -> tuple[dict[object, object], str | None]:
+    """Parse SKILL.md frontmatter through the pinned skills-ref parser."""
+    data, _, error = _parse_frontmatter_data(path)
+    if error:
+        return {}, error
     return data, None
 
 
@@ -630,96 +472,59 @@ def _spec_error(errors: list[str], skill_file: Path, message: str) -> None:
 def validate_agent_skill_spec(
     skill_dir: Path, errors: list[str]
 ) -> dict[object, object] | None:
-    """Validate one skill using the pinned, repository-owned spec rules."""
-    skill_file = exact_skill_file(skill_dir)
-    if skill_file is None:
-        skill_file = skill_dir / "SKILL.md"
-        _spec_error(errors, skill_file, "missing required file: SKILL.md")
+    """Validate one skill with skills-ref, then apply repository identity rules."""
+    if not skill_dir.is_dir():
+        _spec_error(errors, skill_dir, "skill path must be a directory")
         return None
 
-    frontmatter, parse_error = parse_frontmatter(skill_file)
+    skill_file = exact_skill_file(skill_dir)
+    if skill_file is None:
+        _spec_error(errors, skill_dir / "SKILL.md", "missing required file: SKILL.md")
+        return None
+
+    if _VENDOR_VERIFICATION_ERRORS:
+        _spec_error(
+            errors,
+            skill_file,
+            "vendored skills-ref unavailable: " + "; ".join(_VENDOR_VERIFICATION_ERRORS),
+        )
+        return None
+    if reference_validate_metadata is None:
+        _spec_error(
+            errors,
+            skill_file,
+            f"vendored skills-ref import failed: {_REFERENCE_IMPORT_ERROR}",
+        )
+        return None
+
+    frontmatter, raw_frontmatter, parse_error = _parse_frontmatter_data(skill_file)
     if parse_error:
         _spec_error(errors, skill_file, parse_error)
         return None
 
-    for key in frontmatter:
-        if not isinstance(key, str):
-            _spec_error(errors, skill_file, "Field 'frontmatter' keys must be strings")
-        elif key not in AGENT_SKILLS_FIELDS:
-            _spec_error(errors, skill_file, f"unsupported frontmatter field '{key}'")
+    try:
+        reference_errors = reference_validate_metadata(frontmatter, skill_dir)
+    except RecursionError:
+        _spec_error(errors, skill_file, "frontmatter exceeds supported nesting depth")
+        return None
+    for message in reference_errors:
+        _spec_error(errors, skill_file, message)
 
-    for required in ("name", "description"):
-        if required not in frontmatter:
-            _spec_error(errors, skill_file, f"missing required field '{required}'")
-
-    name = frontmatter.get("name")
-    if not isinstance(name, str) or not name.strip():
-        _spec_error(errors, skill_file, "Field 'name' must be a non-empty string")
-    else:
-        skill_name = name
-        if skill_name != skill_name.strip():
-            _spec_error(
-                errors,
-                skill_file,
-                "Skill name must not have leading or trailing whitespace",
-            )
-        if len(skill_name) > MAX_SKILL_NAME_LENGTH:
-            _spec_error(
-                errors,
-                skill_file,
-                f"Skill name '{skill_name}' exceeds {MAX_SKILL_NAME_LENGTH} character limit ({len(skill_name)} chars)",
-            )
-        if skill_name != skill_name.lower():
-            _spec_error(errors, skill_file, f"Skill name '{skill_name}' must be lowercase")
-        if skill_name.startswith("-") or skill_name.endswith("-"):
-            _spec_error(errors, skill_file, "Skill name cannot start or end with a hyphen")
-        if "--" in skill_name:
-            _spec_error(errors, skill_file, "Skill name cannot contain consecutive hyphens")
-        if SKILL_NAME_RE.fullmatch(skill_name) is None:
-            _spec_error(
-                errors,
-                skill_file,
-                f"Skill name '{skill_name}' contains invalid characters; it must match the portable ASCII name grammar [a-z0-9-].",
-            )
-        if skill_dir.name != skill_name:
-            _spec_error(
-                errors,
-                skill_file,
-                f"Directory name '{skill_dir.name}' must match skill name '{skill_name}'",
-            )
-
-    description = frontmatter.get("description")
-    if not isinstance(description, str) or not description.strip():
-        _spec_error(errors, skill_file, "Field 'description' must be a non-empty string")
-    elif len(description) > MAX_DESCRIPTION_LENGTH:
-        _spec_error(
-            errors,
-            skill_file,
-            f"Description exceeds {MAX_DESCRIPTION_LENGTH} character limit ({len(description)} chars)",
-        )
-
-    if "license" in frontmatter and not isinstance(frontmatter["license"], str):
+    # The pinned demonstration validator omits several final Agent Skills
+    # field constraints. Check the raw StrictYAML shapes before skills-ref's
+    # metadata normalization stringifies nested values.
+    if "license" in raw_frontmatter and not isinstance(
+        raw_frontmatter["license"], str
+    ):
         _spec_error(errors, skill_file, "Field 'license' must be a string")
-
-    if "compatibility" in frontmatter:
-        compatibility = frontmatter["compatibility"]
-        if not isinstance(compatibility, str):
+    if "compatibility" in raw_frontmatter:
+        compatibility = raw_frontmatter["compatibility"]
+        if isinstance(compatibility, str) and not compatibility.strip():
             _spec_error(
-                errors,
-                skill_file,
-                "Field 'compatibility' must be a string",
+                errors, skill_file, "Field 'compatibility' must be a non-empty string"
             )
-        elif not compatibility.strip():
-            _spec_error(errors, skill_file, "Field 'compatibility' must be a non-empty string")
-        elif len(compatibility) > MAX_COMPATIBILITY_LENGTH:
-            _spec_error(
-                errors,
-                skill_file,
-                f"Compatibility exceeds {MAX_COMPATIBILITY_LENGTH} character limit ({len(compatibility)} chars)",
-            )
-
-    if "metadata" in frontmatter:
-        metadata = frontmatter["metadata"]
+    if "metadata" in raw_frontmatter:
+        metadata = raw_frontmatter["metadata"]
         if not isinstance(metadata, dict):
             _spec_error(errors, skill_file, "Field 'metadata' must be a mapping")
         else:
@@ -728,11 +533,31 @@ def validate_agent_skill_spec(
                     _spec_error(errors, skill_file, "Field 'metadata' keys must be strings")
                 if not isinstance(value, str):
                     _spec_error(errors, skill_file, "Field 'metadata' values must be strings")
-
-    if "allowed-tools" in frontmatter and not isinstance(
-        frontmatter["allowed-tools"], str
+    if "allowed-tools" in raw_frontmatter and not isinstance(
+        raw_frontmatter["allowed-tools"], str
     ):
         _spec_error(errors, skill_file, "Field 'allowed-tools' must be a string")
+
+    name = frontmatter.get("name")
+    if isinstance(name, str) and name.strip():
+        if name != name.strip():
+            _spec_error(
+                errors,
+                skill_file,
+                "Skill name must not have leading or trailing whitespace",
+            )
+        if SKILL_NAME_RE.fullmatch(name) is None:
+            _spec_error(
+                errors,
+                skill_file,
+                f"Skill name '{name}' contains invalid characters; it must match the portable ASCII name grammar [a-z0-9-].",
+            )
+        if skill_dir.name != name:
+            _spec_error(
+                errors,
+                skill_file,
+                f"Directory name '{skill_dir.name}' must match skill name '{name}'",
+            )
 
     return frontmatter
 
@@ -1107,6 +932,11 @@ def validate_packaging(
         if not generated_skills_dir.exists():
             errors.append(f"{generated_skills_dir.relative_to(ROOT)}: missing")
             generated_skill_names: list[str] = []
+        elif not generated_skills_dir.is_dir():
+            errors.append(
+                f"{generated_skills_dir.relative_to(ROOT)}: must be a directory"
+            )
+            generated_skill_names = []
         else:
             generated_skill_names = sorted(
                 path.name for path in generated_skills_dir.iterdir() if path.is_dir()
@@ -1121,6 +951,9 @@ def validate_packaging(
             generated_dir = generated_skills_dir / skill
             if not generated_dir.exists():
                 errors.append(f"{generated_dir.relative_to(ROOT)}: missing")
+                continue
+            if not generated_dir.is_dir():
+                errors.append(f"{generated_dir.relative_to(ROOT)}: must be a directory")
                 continue
             validate_agent_skill_spec(generated_dir, errors)
             canonical_files = {
@@ -1276,6 +1109,8 @@ def validate_shared_conventions(
 
 def main() -> int:
     errors: list[str] = []
+    for artifact_error in verify_vendored_artifacts():
+        errors.append(f"vendor/: {artifact_error}")
     configs = load_package_configs(errors)
     canonical_skill_names = validate_skills(errors)
     validate_cross_skill_references(canonical_skill_names, errors)

@@ -107,7 +107,7 @@ Validation has two deliberately separate layers:
 
 | Layer | Checks | Reason |
 | --- | --- | --- |
-| Agent Skills specification | Required fields, field types, name syntax and directory matching, length limits, supported frontmatter, and canonical/generated copies | Keep every published skill interoperable with the portable format. This repository-owned check is pinned to `agentskills/agentskills` revision `69ef37e9424c0a7ea9dd2293b559e43ec8176379` and never downloads the specification in CI. |
+| Agent Skills specification | Required fields, field types, name syntax and directory matching, length limits, supported frontmatter, and canonical/generated copies | Keep every published skill interoperable with the portable format. Validation uses the vendored `skills-ref` API from `agentskills/agentskills` revision `69ef37e9424c0a7ea9dd2293b559e43ec8176379` plus explicit checks for documented constraints omitted by that demonstration validator. Exact paths and hashes are anchored in the validator; provenance and dependency licenses are recorded in [`vendor/README.md`](vendor/README.md) and [`vendor/manifest.json`](vendor/manifest.json), so CI never downloads code. |
 | House policy | `description` starts with `Use when`, `license: MIT`, experimental `allowed-tools` is absent, and required scenario coverage for new skills and `catch-me-up` | Make activation routing, distribution licensing, client portability, and output behavior consistent for this repository. |
 
 Spec errors are reported as `Agent Skills spec`; repository choices are
@@ -116,7 +116,9 @@ an intentional local restriction.
 
 The validator deliberately enforces the public portable name grammar
 `[a-z0-9-]`, which is stricter than broader Unicode/NFKC handling in the
-reference library.
+reference library. YAML parsing otherwise follows the pinned reference:
+StrictYAML treats plain scalar spellings as strings and rejects flow
+collections.
 
 Run the same structural checks used by CI:
 

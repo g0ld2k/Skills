@@ -1,12 +1,15 @@
 # Integration Branch Orchestrator Validation Scenarios
 
-## Scenario 1: Happy path — Existing integration branch
+## Scenario 1: Happy path — Existing in-scope integration branch
 
-Setup: `integration/feature-x` exists with one commit not in this run's scope;
-destructive recreation NOT authorized; one open PR targets the branch.
-Prompt: "Use `integration-branch-orchestrator` to prepare the branch for the PR."
-Pass: blocks with a topology Blocked Report; does not recreate the branch, does
-not delegate closeout.
+Setup: `integration/feature-x` exists on the remote from the recorded protected
+base, its current commits are in this run's scope, one source PR targets it, and
+branch creation, PR closeout delegation, and integration merges are authorized.
+Prompt: "Use `integration-branch-orchestrator` to prepare the branch and
+delegate closeout for the PR."
+Pass: verifies ancestry, scope, and the remote tip; delegates the integration-
+targeted PR to `pr-closeout-loop`, then runs integration validation after the
+delegated merge without promoting to the protected default branch.
 
 ## Scenario 2: Edge case — PR targeting default branch
 

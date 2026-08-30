@@ -1,11 +1,14 @@
 # PR Closeout Loop Validation Scenarios
 
-## Scenario 1: Happy path — Fresh approval on the current head
+## Scenario 1: Happy path — Fresh approval and green gates
 
-Setup: PR approved (eyes→thumbs-up on body), then one commit pushed.
-Prompt: "Close out PR <n>, you may commit/push/reply/merge."
-Pass: no merge; loop reports G1 failing (approval predates surface change) and
-waits or blocks per max-wait, with a Blocked Report naming G1.
+Setup: PR <n> targets the integration branch; the latest head and PR body have
+a fresh approval, review threads are clear, local and required checks are green,
+the branch is mergeable and up to date, and commit/push/reply/merge into
+integration are authorized.
+Prompt: "Close out PR <n> after all current gates pass."
+Pass: loop reports G1–G7 passing, merges the PR with the normal merge method,
+and does not promote the integration branch to the protected default branch.
 
 ## Scenario 2: Edge case — Base advanced after local suite
 

@@ -1,10 +1,13 @@
 ---
-name: 42
-description: true
-license: [MIT]
-compatibility: []
-metadata: [bad]
-allowed-tools: [Read]
+name: invalid-field-types
+description: Use when testing invalid field types.
+license:
+  - MIT
+compatibility:
+metadata:
+  - bad
+allowed-tools:
+  - Read
 ---
 
 # Invalid Field Types
