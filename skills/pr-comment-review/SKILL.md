@@ -13,19 +13,28 @@ This skill is designed for:
 - Codex Desktop
 - GitHub Copilot CLI
 
-This skill inverts the general capability ladder in `references/conventions.md`:
-prefer GitHub MCP tools if available, otherwise use `gh api` / `gh pr`
-commands. If neither is available, stop and report the missing capability.
+Follow the shared Capability Ladder in `references/conventions.md`: prefer
+`gh` + `git` CLI. If `gh` is unavailable but GitHub MCP is available, use the
+MCP equivalents with the same validation, inventory, fresh-state, and approval
+gates. If neither is available, stop and report the missing capability.
 
 ### MCP Fallback (No `gh`)
 
 If `gh` is unavailable but GitHub MCP is available:
-- Fetch PR metadata (owner/repo/number, branch context).
-- Fetch review threads/comments including resolved state.
-- Triage only comments from unresolved threads.
-- Post replies via MCP comment-reply capability.
 
-Maintain the same guardrails and output contract as the `gh` path.
+1. Fetch owner, repository, PR number, and every review-thread/comment page.
+2. Reject API errors, a missing target, malformed pagination, a malformed node,
+   or any thread without exactly one usable root-comment ID. Never convert a
+   failure into an empty inventory.
+3. Build the same canonical preview object as the helper: `{owner, repo, pr,
+   replies: [{thread_id, comment_id, body}]}`. Write it to a temp file, compute
+   its SHA-256 digest, and present both for approval.
+4. After approval of that exact digest, rebuild the preview from current inputs
+   and require the digest to match. Immediately before each reply, re-fetch the
+   thread and verify its target, unresolved state, and root comment.
+
+If the MCP cannot supply every required field, exhaust pagination, create and
+verify the preview, or perform the fresh check, stop without posting.
 
 ## Non-Negotiable Guardrails
 
@@ -70,9 +79,18 @@ If `gh` is unavailable, branch to MCP before running any `gh` commands.
 
 Fetch review comments from unresolved threads only.
 
-Preferred helper:
+Resolve the loaded skill directory once before any helper command. Replace the
+first value below with the absolute path supplied by the loaded skill entry;
+never derive it from the target checkout or `pwd`:
 ```bash
-bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number>
+loaded_skill_file="/absolute/path/to/loaded/SKILL.md"
+skill_dir="$(cd "$(dirname "$loaded_skill_file")" && pwd)"
+test -f "$skill_dir/SKILL.md" || { echo "Loaded skill path is invalid" >&2; exit 1; }
+```
+
+Resolve every bundled helper from that directory:
+```bash
+bash "$skill_dir/scripts/fetch_unresolved_review_comments.sh" <owner> <repo> <pr_number>
 ```
 
 This script filters out threads where `isResolved == true`, so we do not triage or address them.
@@ -94,11 +112,10 @@ For each unresolved review thread, produce:
 - `planned_action`
 - `draft_reply`
 
-Judge each thread on its final state (root comment plus all replies), not
-just the root comment. If a thread's `replies_truncated` is `true`, its
-replies could not be fully fetched: do not triage that thread yet — retry
-the fetch (or fall back to a manual/MCP query) until `replies_truncated` is
-`false` before deciding validity or priority for it.
+Judge each thread on its final state (root comment plus all replies), not just
+the root comment. The fetch helper exits nonzero rather than returning a
+partial thread history. After any fetch failure, stop and retry or use the MCP
+path; never triage partial output.
 
 Before presenting the plan, compare it with the fetched source data. The
 triage must contain each unresolved `thread_id` + root `comment_id` pair
@@ -132,10 +149,9 @@ Before posting each reply:
 - Re-check the thread is still unresolved.
 - Skip and report if it became resolved during the session.
 
-Preferred helper (supports dry run):
+Create the approval preview first:
 ```bash
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path> --dry-run
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path>
+bash "$skill_dir/scripts/post_pr_replies.sh" --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path> --dry-run --preview-file <preview-path>
 ```
 
 The dry run re-fetches unresolved threads and fails unless the replies file
@@ -144,11 +160,19 @@ Surplus entries are permitted so a thread resolved after the replies file was
 prepared can reach the per-thread resolved check and be skipped safely. Every
 entry is still verified against the requested repository, PR, and root comment
 before the script reports that it would post or skip, and every reply body must
-be a nonempty string.
+be a nonempty string. The dry run writes a canonical preview artifact containing
+the owner, repository, PR number, thread ID, root comment ID, and exact body,
+then prints its SHA-256 digest.
 
-Require explicit user approval before the non-dry-run step (or verify the
-caller's recorded scope covers reply posting — see Unattended mode under
-Guardrails).
+Stop and obtain explicit approval for the displayed `sha256:...` value (or
+verify the caller's recorded scope covers this exact preview). Only then run:
+```bash
+bash "$skill_dir/scripts/post_pr_replies.sh" --owner <owner> --repo <repo> --pr <pr_number> --replies-file <path> --preview-file <preview-path> --approved-digest <approved-sha256>
+```
+
+The non-dry run requires the approved digest and compares the preview with one
+canonical snapshot of the current target and replies before any POST. Any
+target, body, artifact, or digest change requires a new dry run and approval.
 
 ## Output Contract
 
@@ -168,13 +192,13 @@ Final summary must include:
 out_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-review.XXXXXX")"
 
 # Fetch unresolved review comments
-bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number> --output "$out_dir/unresolved-comments.json"
+bash "$skill_dir/scripts/fetch_unresolved_review_comments.sh" <owner> <repo> <pr_number> --output "$out_dir/unresolved-comments.json"
 
 # Build triage markdown template
-bash scripts/build_triage_template.sh --input "$out_dir/unresolved-comments.json"
+bash "$skill_dir/scripts/build_triage_template.sh" --input "$out_dir/unresolved-comments.json"
 
 # Post replies from JSON (safe preview first)
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --dry-run
+bash "$skill_dir/scripts/post_pr_replies.sh" --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --dry-run --preview-file "$out_dir/preview.json"
 ```
 
 ## References

@@ -7,7 +7,7 @@ source "$script_dir/common.sh"
 
 usage() {
   cat <<USAGE
-Usage: $0 --owner <owner> --repo <repo> --pr <pr_number> --replies-file <replies.json> [--dry-run]
+Usage: $0 --owner <owner> --repo <repo> --pr <pr_number> --replies-file <replies.json> [--dry-run] [--preview-file <preview.json>] [--approved-digest <sha256:...>]
 
 replies.json format:
 [
@@ -21,6 +21,11 @@ comment_id is its root comment. "body" must be a nonempty string. An entry
 missing any required field, or one that fails any of those checks for a reason
 other than "already resolved", is a hard failure (counted in "failed", exit
 code 2) — it is not silently skipped.
+
+Dry-run writes an exact canonical approval artifact when --preview-file is
+provided, and prints its SHA-256 digest. A non-dry-run requires that same
+--preview-file and its approved digest; it verifies the owner/repo/PR, thread
+IDs, root comment IDs, and reply bodies before any POST.
 USAGE
 }
 
@@ -29,6 +34,8 @@ repo=""
 pr_number=""
 replies_file=""
 dry_run=false
+preview_file=""
+approved_digest=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,6 +59,14 @@ while [[ $# -gt 0 ]]; do
       dry_run=true
       shift
       ;;
+    --preview-file)
+      preview_file="${2:-}"
+      shift 2
+      ;;
+    --approved-digest)
+      approved_digest="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -68,12 +83,40 @@ if [[ -z "$owner" || -z "$repo" || -z "$pr_number" || -z "$replies_file" ]]; the
   exit 1
 fi
 
+if ! [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+  die "PR number must be a positive integer"
+fi
+
+if [[ "$dry_run" == false ]]; then
+  if [[ -z "$preview_file" || -z "$approved_digest" ]]; then
+    die "--preview-file and --approved-digest are required for non-dry-run posting; run a dry-run first"
+  fi
+  if [[ ! -f "$preview_file" ]]; then
+    die "Preview file not found: $preview_file"
+  fi
+  if ! [[ "$approved_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    die "--approved-digest must be sha256 followed by 64 lowercase hexadecimal characters"
+  fi
+fi
+
 if [[ ! -f "$replies_file" ]]; then
   die "Replies file not found: $replies_file"
 fi
 
 require_cmd gh
 require_cmd jq
+require_cmd awk
+
+sha256_file() {
+  local path="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  else
+    die "shasum or sha256sum is required for approval previews"
+  fi
+}
 
 # Refuse partial or duplicated reply batches before checking or posting any
 # individual thread. A clean dry-run must prove that the replies file accounts
@@ -84,38 +127,70 @@ fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
 unresolved_file=""
 reply_iterator_file=""
 reply_payload_file=""
+canonical_preview_file=""
 cleanup() {
   [[ -z "$unresolved_file" ]] || rm -f "$unresolved_file"
   [[ -z "$reply_iterator_file" ]] || rm -f "$reply_iterator_file"
   [[ -z "$reply_payload_file" ]] || rm -f "$reply_payload_file"
+  [[ -z "$canonical_preview_file" ]] || rm -f "$canonical_preview_file"
 }
 trap cleanup EXIT
 
 unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
 reply_iterator_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-iterator.XXXXXX")"
 reply_payload_file="$(mktemp "${TMPDIR:-/tmp}/post-reply-payload.XXXXXX")"
+canonical_preview_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-preview.XXXXXX")"
+
+# Read replies.json exactly once. Every later gate and POST derives from this
+# canonical snapshot, so changing the source file mid-run cannot change the
+# approved batch.
+if ! jq -ce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
+  def positive_integer:
+    type == "number" and . > 0 and floor == .;
+  if type == "array"
+    and all(.[];
+      type == "object"
+      and (.thread_id | type == "string" and length > 0)
+      and (.comment_id | positive_integer)
+      and (.body | type == "string" and length > 0))
+  then {
+    owner: $owner,
+    repo: $repo,
+    pr: $pr,
+    replies: [.[] | {thread_id, comment_id, body}]
+  }
+  else error("invalid replies file")
+  end
+' "$replies_file" > "$canonical_preview_file"; then
+  echo "Failing replies file (each entry requires thread_id, positive-integer comment_id, and nonempty string body)" >&2
+  exit 2
+fi
+
+if [[ "$dry_run" == false ]]; then
+  preview_digest="$(sha256_file "$canonical_preview_file")"
+  if [[ "sha256:$preview_digest" != "$approved_digest" ]]; then
+    echo "Failing approval preview (approved digest does not match preview artifact)" >&2
+    exit 2
+  fi
+  if ! cmp -s "$canonical_preview_file" "$preview_file"; then
+    echo "Failing approval preview (preview does not match current target or reply bodies)" >&2
+    exit 2
+  fi
+  echo "Using approved preview: $preview_file"
+  echo "Preview digest: $approved_digest"
+fi
 
 if ! bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$unresolved_file"; then
   echo "Failing replies file (could not fetch current unresolved review threads)" >&2
   exit 2
 fi
 
-if ! jq -e '
-  type == "array"
-  and all(.[].thread_id; type == "string" and length > 0)
-  and all(.[].comment_id; type == "number")
-  and all(.[].body; type == "string" and length > 0)
-' "$replies_file" >/dev/null; then
-  echo "Failing replies file (each entry requires thread_id, numeric comment_id, and nonempty string body)" >&2
-  exit 2
-fi
-
 if ! jq -e --slurpfile unresolved "$unresolved_file" '
-  [.[] | {thread_id, comment_id}] as $reply_pairs
+  [.replies[] | {thread_id, comment_id}] as $reply_pairs
   | [$unresolved[0][] | {thread_id, comment_id}] as $required_pairs
   | ($reply_pairs | length) == ($reply_pairs | unique_by(.thread_id) | length)
     and (($required_pairs - $reply_pairs) | length == 0)
-' "$replies_file" >/dev/null; then
+' "$canonical_preview_file" >/dev/null; then
   echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
   exit 2
 fi
@@ -123,7 +198,7 @@ fi
 # Materialize the replies iterator so jq extraction failures are checked by
 # the parent shell. A process substitution would hide that failure and could
 # make an incomplete batch look like a successful empty run.
-if ! jq -c '.[]' "$replies_file" > "$reply_iterator_file"; then
+if ! jq -c '.replies[]' "$canonical_preview_file" > "$reply_iterator_file"; then
   echo "Failing replies file (could not enumerate reply entries)" >&2
   exit 2
 fi
@@ -166,6 +241,35 @@ thread_ok_to_post() {
         }
       }
     }' -F id="$thread_id")"; then
+    return 20
+  fi
+
+  # GraphQL may return partial data alongside errors. Treat both the error
+  # state and every field consumed below as untrusted so partial or malformed
+  # data can never authorize a POST.
+  if ! jq -e '
+    type == "object"
+    and ((has("errors") | not) or (.errors | type == "array" and length == 0))
+    and (.data | type == "object")
+    and (.data.node | type == "object")
+    and (.data.node.isResolved | type == "boolean")
+    and (.data.node.pullRequest | type == "object")
+    and (.data.node.pullRequest.number | type == "number")
+    and (.data.node.pullRequest.repository | type == "object")
+    and (.data.node.pullRequest.repository.owner | type == "object")
+    and (.data.node.pullRequest.repository.owner.login | type == "string" and length > 0)
+    and (.data.node.pullRequest.repository.name | type == "string" and length > 0)
+    and (.data.node.comments | type == "object")
+    and (.data.node.comments.nodes | type == "array")
+    and all(.data.node.comments.nodes[];
+      type == "object"
+      and has("databaseId")
+      and has("replyTo")
+      and (.databaseId | type == "number" and . > 0 and floor == .)
+      and (.replyTo == null or
+        (.replyTo | type == "object"
+          and (.id | type == "string" and length > 0))))
+  ' <<<"$response" >/dev/null; then
     return 20
   fi
 
@@ -276,6 +380,24 @@ while IFS= read -r reply_json; do
     failed=$((failed + 1))
   fi
 done < "$reply_iterator_file"
+
+if [[ "$dry_run" == true && "$failed" -eq 0 ]]; then
+  if [[ -n "$preview_file" ]]; then
+    if ! cp "$canonical_preview_file" "$preview_file"; then
+      echo "Failing approval preview (could not write: $preview_file)" >&2
+      failed=$((failed + 1))
+    else
+      echo "DRY RUN ARTIFACT: $preview_file"
+    fi
+  else
+    printf 'DRY RUN ARTIFACT: '
+    cat "$canonical_preview_file"
+  fi
+  if [[ "$failed" -eq 0 ]]; then
+    preview_digest="$(sha256_file "$canonical_preview_file")"
+    echo "DRY RUN DIGEST: sha256:$preview_digest"
+  fi
+fi
 
 echo "Summary: posted=$posted would_post=$would_post skipped=$skipped failed=$failed dry_run=$dry_run"
 
