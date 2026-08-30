@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Regression tests for portable plugin packaging and marketplace adapters."""
+"""Regression tests for the root Agent Plugin and marketplace adapters."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PLUGIN_NAMES = {
-    path.stem for path in (ROOT / "packaging").glob("*.json")
-}
+PLUGIN_NAME = "g0ld2k-skills"
 
 
 def load_script(name: str) -> ModuleType:
@@ -22,50 +22,39 @@ def load_script(name: str) -> ModuleType:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
     return module
 
 
-class PluginPackagingTests(unittest.TestCase):
-    def test_generator_discovers_every_plugin_config(self) -> None:
-        generator = load_script("generate-plugin-packages")
+class RootPluginTests(unittest.TestCase):
+    def test_root_manifest_uses_the_portable_agent_plugins_contract(self) -> None:
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
 
-        configs = generator.load_package_configs()
+        self.assertEqual(
+            manifest.get("$schema"),
+            "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        )
+        self.assertEqual(manifest.get("name"), PLUGIN_NAME)
+        self.assertNotIn("skills", manifest)
+        self.assertNotIn("category", manifest)
+        self.assertFalse((ROOT / ".claude-plugin/plugin.json").exists())
+        self.assertFalse((ROOT / ".codex-plugin/plugin.json").exists())
 
-        self.assertEqual({config["name"] for config in configs}, EXPECTED_PLUGIN_NAMES)
-        self.assertIn("g0ld2k-apple-design", EXPECTED_PLUGIN_NAMES)
+    def test_repository_has_one_canonical_skill_tree(self) -> None:
+        skill_names = sorted(
+            path.name for path in (ROOT / "skills").iterdir() if path.is_dir()
+        )
 
-    def test_shared_conventions_sync_discovers_every_plugin_config(self) -> None:
-        sync = load_script("sync-shared-conventions")
+        self.assertTrue(skill_names)
+        self.assertFalse((ROOT / "plugins").exists())
+        self.assertFalse((ROOT / "packaging").exists())
+        self.assertFalse((ROOT / "scripts/generate-plugin-packages.py").exists())
 
-        configs = sync.load_package_configs()
-
-        self.assertEqual({config["name"] for config in configs}, EXPECTED_PLUGIN_NAMES)
-
-    def test_generated_manifests_use_the_portable_agent_plugins_contract(self) -> None:
-        generator = load_script("generate-plugin-packages")
-
-        for config in generator.load_package_configs():
-            manifest = json.loads(
-                (ROOT / "plugins" / config["name"] / "plugin.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            self.assertEqual(
-                manifest.get("$schema"),
-                "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-            )
-            self.assertNotIn("skills", manifest)
-            self.assertNotIn("category", manifest)
-            self.assertFalse(
-                (ROOT / "plugins" / config["name"] / ".claude-plugin").exists()
-            )
-            self.assertFalse(
-                (ROOT / "plugins" / config["name"] / ".codex-plugin").exists()
-            )
-
-    def test_catalogs_publish_only_componentful_plugins_and_share_sources(self) -> None:
+    def test_catalogs_publish_the_root_plugin(self) -> None:
         codex = json.loads(
             (ROOT / ".agents/plugins/marketplace.json").read_text(encoding="utf-8")
         )
@@ -74,31 +63,74 @@ class PluginPackagingTests(unittest.TestCase):
         )
 
         self.assertEqual(codex["interface"]["displayName"], "g0ld2k skills")
+        self.assertEqual([entry["name"] for entry in codex["plugins"]], [PLUGIN_NAME])
         self.assertEqual(
-            [entry["name"] for entry in codex["plugins"]], ["g0ld2k-skills"]
+            [entry["name"] for entry in copilot["plugins"]], [PLUGIN_NAME]
         )
-        self.assertEqual(
-            [entry["name"] for entry in copilot["plugins"]], ["g0ld2k-skills"]
-        )
-        self.assertEqual(
-            codex["plugins"][0]["source"]["path"], copilot["plugins"][0]["source"]
-        )
+        self.assertEqual(codex["plugins"][0]["source"]["path"], ".")
+        self.assertEqual(copilot["plugins"][0]["source"], ".")
         self.assertFalse((ROOT / ".claude-plugin/marketplace.json").exists())
+
+    def test_shared_convention_consumers_come_from_skill_instructions(self) -> None:
+        sync = load_script("sync-shared-conventions")
+
+        self.assertEqual(
+            sync.consumer_names(sync.SKILLS_DIR),
+            [
+                "commit-message",
+                "integration-branch-orchestrator",
+                "pr-closeout-loop",
+                "pr-comment-review",
+                "pr-generator",
+                "work-request-orchestration",
+            ],
+        )
+
+    def test_validator_accepts_the_root_plugin(self) -> None:
+        validator = load_script("validate-skills-repo")
+        errors: list[str] = []
+
+        canonical_names = validator.validate_skills(errors)
+        validator.validate_root_plugin(canonical_names, errors)
+        validator.validate_shared_conventions(errors)
+
+        self.assertEqual(errors, [])
 
     def test_validator_rejects_a_manifest_with_unknown_fields(self) -> None:
         validator = load_script("validate-skills-repo")
         errors: list[str] = []
 
         validator.validate_portable_manifest(
-            {"$schema": validator.PLUGIN_SCHEMA_URL, "name": "example", "skills": "./skills/"},
-            Path("plugins/example/plugin.json"),
+            {
+                "$schema": validator.PLUGIN_SCHEMA_URL,
+                "name": "example",
+                "skills": "./skills/",
+            },
+            Path("plugin.json"),
             errors,
         )
 
         self.assertEqual(
             errors,
-            ["plugins/example/plugin.json: schema validation failed: additional property 'skills'"],
+            ["plugin.json: schema validation failed: additional property 'skills'"],
         )
+
+    def test_validator_rejects_a_non_object_json_root(self) -> None:
+        validator = load_script("validate-skills-repo")
+        original_root = validator.ROOT
+
+        with tempfile.TemporaryDirectory(prefix="plugin-validation-") as temp:
+            validator.ROOT = Path(temp)
+            manifest_path = validator.ROOT / "plugin.json"
+            manifest_path.write_text("[]\n", encoding="utf-8")
+            errors: list[str] = []
+            try:
+                manifest = validator.load_json(manifest_path, errors)
+            finally:
+                validator.ROOT = original_root
+
+        self.assertIsNone(manifest)
+        self.assertEqual(errors, ["plugin.json: JSON root must be an object"])
 
     def test_explicit_only_behavior_is_client_metadata_not_portable_frontmatter(self) -> None:
         validator = load_script("validate-skills-repo")
@@ -115,29 +147,6 @@ class PluginPackagingTests(unittest.TestCase):
             )
             self.assertIsNone(openai_error)
             self.assertIs(policy.get("allow_implicit_invocation"), False)
-
-    def test_validator_accepts_empty_plugin_without_publishing_it(self) -> None:
-        validator = load_script("validate-skills-repo")
-        errors: list[str] = []
-
-        configs = validator.load_package_configs(errors)
-        validator.validate_packaging(validator.validate_skills(errors), errors, configs)
-
-        self.assertEqual(errors, [])
-        empty_skills_dir = ROOT / "plugins" / "g0ld2k-apple-design" / "skills"
-        self.assertTrue(empty_skills_dir.is_dir())
-        self.assertTrue((empty_skills_dir / ".gitkeep").is_file())
-        self.assertEqual(
-            [path for path in empty_skills_dir.iterdir() if path.is_dir()],
-            [],
-        )
-
-        codex = json.loads(
-            (ROOT / ".agents/plugins/marketplace.json").read_text(encoding="utf-8")
-        )
-        self.assertNotIn(
-            "g0ld2k-apple-design", [entry["name"] for entry in codex["plugins"]]
-        )
 
 
 if __name__ == "__main__":

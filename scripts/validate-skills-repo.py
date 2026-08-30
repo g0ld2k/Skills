@@ -10,12 +10,15 @@ import sys
 from pathlib import Path
 from pathlib import PurePosixPath
 
+from shared_conventions import HEADER as SHARED_CONVENTIONS_HEADER
+from shared_conventions import consumer_names as shared_convention_consumer_names
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
-PACKAGING_DIR = ROOT / "packaging"
-PLUGINS_DIR = ROOT / "plugins"
+PLUGIN_NAME = "g0ld2k-skills"
+PLUGIN_MANIFEST_PATH = ROOT / "plugin.json"
 VENDOR_ROOT = ROOT / "vendor"
 SKILLS_REF_SOURCE_DIR = VENDOR_ROOT / "skills_ref" / "src"
 SKILLS_REF_MANIFEST = VENDOR_ROOT / "manifest.json"
@@ -482,10 +485,14 @@ def load_json(path: Path, errors: list[str]) -> dict[str, object] | None:
         errors.append(f"{path.relative_to(ROOT)}: missing")
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         errors.append(f"{path.relative_to(ROOT)}: invalid JSON: {exc}")
         return None
+    if not isinstance(value, dict):
+        errors.append(f"{path.relative_to(ROOT)}: JSON root must be an object")
+        return None
+    return value
 
 
 def display_path(path: Path) -> str:
@@ -995,24 +1002,8 @@ def validate_portable_manifest(
     validate_schema_value(manifest, schema, path, errors)
 
 
-def load_package_configs(errors: list[str]) -> list[dict[str, object]]:
-    configs: list[dict[str, object]] = []
-    paths = sorted(PACKAGING_DIR.glob("*.json"))
-    if not paths:
-        errors.append("packaging/: no plugin package configs found")
-        return configs
-    for path in paths:
-        config = load_json(path, errors)
-        if not config:
-            continue
-        if config.get("name") != path.stem:
-            errors.append(f"{path.relative_to(ROOT)}: name must match config filename")
-        configs.append(config)
-    return sorted(configs, key=lambda config: ("marketplace" not in config, str(config.get("name", ""))))
-
-
 def skill_dirs() -> list[Path]:
-    if not SKILLS_DIR.exists():
+    if not SKILLS_DIR.is_dir():
         return []
     return sorted(path for path in SKILLS_DIR.iterdir() if path.is_dir())
 
@@ -1020,6 +1011,9 @@ def skill_dirs() -> list[Path]:
 def validate_skills(errors: list[str]) -> list[str]:
     if not has_exact_child(ROOT, "skills"):
         errors.append("skills/: missing")
+        return []
+    if not SKILLS_DIR.is_dir():
+        errors.append("skills/: must be a directory")
         return []
     if has_exact_child(ROOT, "Skills"):
         errors.append("Skills/: legacy uppercase skill directory must not exist")
@@ -1094,227 +1088,86 @@ def validate_cross_skill_references(canonical_names: list[str], errors: list[str
             errors.append(f"{rel}: cross-skill reference to unknown skill: {token}")
 
 
-def validate_packaging(
-    canonical_skill_names: list[str],
-    errors: list[str],
-    configs: list[dict[str, object]] | None = None,
-) -> None:
-    configs = configs if configs is not None else load_package_configs(errors)
-    pinned_schema = load_json(PLUGIN_SCHEMA_PATH, errors)
-    expected_plugin_names: list[str] = []
-    skill_memberships: dict[str, list[str]] = {}
+def validate_root_plugin(canonical_skill_names: list[str], errors: list[str]) -> None:
+    """Validate the repository as one self-contained Agent Plugin."""
+    if not canonical_skill_names:
+        errors.append("skills/: root plugin must contain at least one skill")
 
-    for config in configs:
-        plugin_name = config.get("name")
-        if not isinstance(plugin_name, str) or not plugin_name:
-            errors.append("packaging/: every package config must have a non-empty name")
-            continue
-        expected_plugin_names.append(plugin_name)
-        config_path = PACKAGING_DIR / f"{plugin_name}.json"
-        package_skills = config.get("skills")
-        if not isinstance(package_skills, list) or not all(
-            isinstance(item, str) for item in package_skills
-        ):
-            errors.append(f"{config_path.relative_to(ROOT)}: skills must be a string array")
-            continue
+    manifest = load_json(PLUGIN_MANIFEST_PATH, errors)
+    if manifest is not None:
+        validate_portable_manifest(manifest, PLUGIN_MANIFEST_PATH, errors)
+        if manifest.get("name") != PLUGIN_NAME:
+            errors.append(f"plugin.json: name must be {PLUGIN_NAME}")
 
-        for skill in package_skills:
-            skill_memberships.setdefault(skill, []).append(plugin_name)
-            if not (SKILLS_DIR / skill).exists():
-                errors.append(
-                    f"{config_path.relative_to(ROOT)}: listed skill missing from skills/: {skill}"
-                )
+    for path, label in [
+        (ROOT / "plugins", "generated plugin directory"),
+        (ROOT / "packaging", "packaging config directory"),
+        (ROOT / "scripts" / "generate-plugin-packages.py", "package generator"),
+        (ROOT / ".claude-plugin" / "plugin.json", "legacy manifest"),
+        (ROOT / ".codex-plugin" / "plugin.json", "legacy manifest"),
+        (ROOT / ".claude-plugin" / "marketplace.json", "legacy marketplace"),
+    ]:
+        if path.exists():
+            errors.append(f"{path.relative_to(ROOT)}: {label} must not exist")
 
-        version = config.get("version")
-        plugin_dir = PLUGINS_DIR / plugin_name
-        manifest_path = plugin_dir / "plugin.json"
-        manifest = load_json(manifest_path, errors)
-        if manifest is not None:
-            validate_portable_manifest(manifest, manifest_path, errors, pinned_schema)
-            if isinstance(manifest, dict):
-                if manifest.get("name") != plugin_name:
-                    errors.append(f"{manifest_path.relative_to(ROOT)}: name must be {plugin_name}")
-                if manifest.get("version") != version:
-                    errors.append(f"{manifest_path.relative_to(ROOT)}: version must match package config")
-
-        for legacy_path in [
-            plugin_dir / ".claude-plugin" / "plugin.json",
-            plugin_dir / ".codex-plugin" / "plugin.json",
-        ]:
-            if legacy_path.exists():
-                errors.append(f"{legacy_path.relative_to(ROOT)}: legacy manifest must not exist")
-
-        generated_skills_dir = plugin_dir / "skills"
-        if not generated_skills_dir.exists():
-            errors.append(f"{generated_skills_dir.relative_to(ROOT)}: missing")
-            generated_skill_names: list[str] = []
-        elif not generated_skills_dir.is_dir():
-            errors.append(
-                f"{generated_skills_dir.relative_to(ROOT)}: must be a directory"
-            )
-            generated_skill_names = []
-        else:
-            generated_skill_names = sorted(
-                path.name for path in generated_skills_dir.iterdir() if path.is_dir()
-            )
-            if generated_skill_names != sorted(package_skills):
-                errors.append(
-                    f"{generated_skills_dir.relative_to(ROOT)}/: generated skills must match package config"
-                )
-
-        for skill in package_skills:
-            canonical_dir = SKILLS_DIR / skill
-            generated_dir = generated_skills_dir / skill
-            if not generated_dir.exists():
-                errors.append(f"{generated_dir.relative_to(ROOT)}: missing")
-                continue
-            if not generated_dir.is_dir():
-                errors.append(f"{generated_dir.relative_to(ROOT)}: must be a directory")
-                continue
-            validate_agent_skill_spec(generated_dir, errors)
-            canonical_files = {
-                path.relative_to(canonical_dir)
-                for path in canonical_dir.rglob("*")
-                if path.is_file()
-            }
-            generated_files = {
-                path.relative_to(generated_dir)
-                for path in generated_dir.rglob("*")
-                if path.is_file()
-            }
-            for missing in sorted(str(path) for path in canonical_files - generated_files):
-                errors.append(f"{generated_dir.relative_to(ROOT)}/{missing}: missing from bundle")
-            for extra in sorted(str(path) for path in generated_files - canonical_files):
-                errors.append(f"{generated_dir.relative_to(ROOT)}/{extra}: not in canonical skill")
-            for rel in sorted(canonical_files & generated_files, key=str):
-                if (canonical_dir / rel).read_bytes() != (generated_dir / rel).read_bytes():
-                    errors.append(f"{generated_dir.relative_to(ROOT)}/{rel}: must match canonical file")
-                canonical_mode = (canonical_dir / rel).stat().st_mode & 0o111
-                generated_mode = (generated_dir / rel).stat().st_mode & 0o111
-                if canonical_mode != generated_mode:
-                    errors.append(
-                        f"{generated_dir.relative_to(ROOT)}/{rel}: file mode must match canonical file"
-                    )
-
-    for skill, plugin_names in sorted(skill_memberships.items()):
-        if len(plugin_names) > 1:
-            errors.append(
-                f"packaging/: skill {skill} belongs to multiple plugins: {', '.join(plugin_names)}"
-            )
-    if sorted(skill_memberships) != sorted(canonical_skill_names):
-        errors.append("packaging/: combined plugin skills must match canonical skill directories")
-
-    if PLUGINS_DIR.exists():
-        generated_plugin_names = sorted(path.name for path in PLUGINS_DIR.iterdir() if path.is_dir())
-        if generated_plugin_names != sorted(expected_plugin_names):
-            errors.append("plugins/: generated plugin directories must match package configs")
-
-    config_by_name = {str(config.get("name")): config for config in configs}
-    publishable_plugin_names = sorted(
-        str(config.get("name"))
-        for config in configs
-        if isinstance(config.get("skills"), list) and config.get("skills")
-    )
     marketplace_paths = [
         ROOT / ".agents" / "plugins" / "marketplace.json",
         ROOT / ".github" / "plugin" / "marketplace.json",
     ]
-    legacy_marketplace_path = ROOT / ".claude-plugin" / "marketplace.json"
-    if legacy_marketplace_path.exists():
-        errors.append(f"{legacy_marketplace_path.relative_to(ROOT)}: legacy marketplace must not exist")
     for path in marketplace_paths:
         marketplace = load_json(path, errors)
-        if not marketplace:
+        if marketplace is None:
             continue
         plugins = marketplace.get("plugins")
-        if not isinstance(plugins, list) or not plugins:
-            errors.append(f"{path.relative_to(ROOT)}: plugins must be a non-empty array")
+        if not isinstance(plugins, list) or len(plugins) != 1:
+            errors.append(f"{path.relative_to(ROOT)}: plugins must contain only {PLUGIN_NAME}")
             continue
-        if path.parts[-3:-1] == (".github", "plugin") and not isinstance(
-            marketplace.get("owner"), dict
-        ):
-            errors.append(f"{path.relative_to(ROOT)}: owner must be an object")
-
-        entries: dict[str, dict[str, object]] = {}
-        for entry in plugins:
-            if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
-                errors.append(f"{path.relative_to(ROOT)}: every plugin entry must have a name")
-                continue
-            name = str(entry["name"])
-            if name in entries:
-                errors.append(f"{path.relative_to(ROOT)}: duplicate plugin entry: {name}")
-            entries[name] = entry
-        if sorted(entries) != publishable_plugin_names:
-            errors.append(f"{path.relative_to(ROOT)}: plugin entries must match publishable package configs")
-
-        for plugin_name, entry in entries.items():
-            if path.parts[-3:-1] == (".agents", "plugins"):
-                source = entry.get("source")
-                source_path = source.get("path") if isinstance(source, dict) else None
-            else:
-                source_path = entry.get("source")
-            expected_source = f"./plugins/{plugin_name}"
-            if source_path != expected_source:
-                errors.append(
-                    f"{path.relative_to(ROOT)}: {plugin_name} source must point to {expected_source}"
-                )
-            elif not (ROOT / expected_source[2:]).exists():
-                errors.append(f"{path.relative_to(ROOT)}: source path does not exist: {expected_source}")
-            config = config_by_name.get(plugin_name)
-            if config and "version" in entry and entry.get("version") != config.get("version"):
-                errors.append(
-                    f"{path.relative_to(ROOT)}: {plugin_name} version must match package config"
-                )
+        entry = plugins[0]
+        if not isinstance(entry, dict) or entry.get("name") != PLUGIN_NAME:
+            errors.append(f"{path.relative_to(ROOT)}: plugins must contain only {PLUGIN_NAME}")
+            continue
 
         if path.parts[-3:-1] == (".agents", "plugins"):
+            source = entry.get("source")
+            source_path = source.get("path") if isinstance(source, dict) else None
+            if not isinstance(source, dict) or source.get("source") != "local":
+                errors.append(f"{path.relative_to(ROOT)}: source.source must be local")
             interface = marketplace.get("interface")
-            expected_display_name = next(
-                (
-                    config.get("marketplace", {}).get("display_name")
-                    for config in configs
-                    if isinstance(config.get("marketplace"), dict)
-                ),
-                None,
-            )
-            if (
-                not isinstance(interface, dict)
-                or interface.get("displayName") != expected_display_name
-            ):
+            if not isinstance(interface, dict) or interface.get("displayName") != "g0ld2k skills":
                 errors.append(
-                    f"{path.relative_to(ROOT)}: interface.displayName must match marketplace display metadata"
+                    f"{path.relative_to(ROOT)}: interface.displayName must be g0ld2k skills"
+                )
+        else:
+            source_path = entry.get("source")
+            if not isinstance(marketplace.get("owner"), dict):
+                errors.append(f"{path.relative_to(ROOT)}: owner must be an object")
+            if manifest is not None and entry.get("version") != manifest.get("version"):
+                errors.append(
+                    f"{path.relative_to(ROOT)}: {PLUGIN_NAME} version must match plugin.json"
                 )
 
+        if source_path != ".":
+            errors.append(
+                f"{path.relative_to(ROOT)}: {PLUGIN_NAME} source must point to repository root (.)"
+            )
 
-def validate_shared_conventions(
-    errors: list[str], configs: list[dict[str, object]] | None = None
-) -> None:
+
+def validate_shared_conventions(errors: list[str]) -> None:
     source = ROOT / "_shared" / "conventions.md"
-    configs = configs if configs is not None else load_package_configs(errors)
-    consumers = [
-        consumer
-        for config in configs
-        for consumer in config.get("shared_conventions_consumers", [])
-        if isinstance(consumer, str)
-    ]
-    configured = set(consumers)
-    # Config drift must fail loudly: a vendored copy in a skill that is not
-    # listed would be neither synced nor drift-checked. This scan runs even
-    # when the config key is missing entirely.
+    consumers = shared_convention_consumer_names(SKILLS_DIR)
+    referenced = set(consumers)
     for skill_dir in skill_dirs():
         vendored = skill_dir / "references" / "conventions.md"
-        if vendored.exists() and skill_dir.name not in configured:
+        if vendored.exists() and skill_dir.name not in referenced:
             errors.append(
-                f"skills/{skill_dir.name}/references/conventions.md: exists but the skill is not listed in shared_conventions_consumers"
+                f"skills/{skill_dir.name}/references/conventions.md: exists but SKILL.md does not reference it"
             )
     if not consumers:
         return
     if not source.exists():
-        errors.append(
-            "_shared/conventions.md: missing while shared_conventions_consumers is set in packaging config"
-        )
+        errors.append("_shared/conventions.md: missing while skills reference conventions.md")
         return
-    header = "<!-- GENERATED from _shared/conventions.md - edit there, then run scripts/sync-shared-conventions.py -->\n\n"
-    expected = header + source.read_text(encoding="utf-8")
+    expected = SHARED_CONVENTIONS_HEADER + source.read_text(encoding="utf-8")
     for name in consumers:
         target = SKILLS_DIR / name / "references" / "conventions.md"
         if not target.exists():
@@ -1327,11 +1180,10 @@ def main() -> int:
     errors: list[str] = []
     for artifact_error in verify_vendored_artifacts():
         errors.append(f"vendor/: {artifact_error}")
-    configs = load_package_configs(errors)
     canonical_skill_names = validate_skills(errors)
     validate_cross_skill_references(canonical_skill_names, errors)
-    validate_packaging(canonical_skill_names, errors, configs)
-    validate_shared_conventions(errors, configs)
+    validate_root_plugin(canonical_skill_names, errors)
+    validate_shared_conventions(errors)
 
     if errors:
         for error in errors:

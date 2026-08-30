@@ -1,4 +1,0 @@
-interface:
-  display_name: "PR Comment Review"
-  short_description: "Review pull request feedback"
-  default_prompt: "Use $pr-comment-review to triage and respond to unresolved pull request review feedback."

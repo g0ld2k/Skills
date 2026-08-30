@@ -8,7 +8,7 @@
       "name": "g0ld2k-skills",
       "source": {
         "source": "local",
-        "path": "./plugins/g0ld2k-skills"
+        "path": "."
       },
       "policy": {
         "installation": "AVAILABLE",
