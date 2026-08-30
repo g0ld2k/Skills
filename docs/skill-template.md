@@ -35,8 +35,11 @@ Fill in the placeholder values before validating.
   *triggers only* — situations that summon the skill. Never summarize the
   workflow here; that belongs in the body.
 - `license: MIT` is required verbatim.
-- Do not add `tools:`, `allowed-tools`, or `user-invocable` — the validator
-  rejects those frontmatter keys.
+- `tools:` and `user-invocable` are not Agent Skills fields and the spec
+  validator rejects them. The specification permits experimental
+  `allowed-tools` as a space-separated string, but this repository's
+  portability policy intentionally rejects that field; the policy diagnostic
+  is kept separate from spec-conformance errors.
 - Keep client-specific invocation policy out of portable frontmatter. For an
   explicit-only skill, add its name to `EXPLICIT_ONLY_SKILLS` in
   `scripts/validate-skills-repo.py`; the matching `agents/openai.yaml` then
@@ -140,11 +143,15 @@ Reference the vendored shape rather than restating it:
 
 ## `## Validation Scenarios`
 
-Point to `references/validation-scenarios.md` rather than inlining scenarios
-in SKILL.md. Minimum 3 scenarios: happy path, an edge case, and an adversarial
-case (conflicting/malicious/ambiguous input). Per `superpowers:writing-skills`,
-write each scenario RED first — confirm it fails without the skill's guardrail
-— before writing the GREEN behavior the skill should produce. See
+New skills must point to `references/validation-scenarios.md` rather than
+inlining scenarios in SKILL.md. Include at least 3 scenarios: happy path, edge
+case, and adversarial, covering activation and output behavior. The current
+repository validator temporarily exempts only the existing skills whose
+owning follow-up issues add richer scenarios: `commit-message` (#39),
+`pr-generator` (#42), and `testflight-notes` (#43); all other skills are
+checked. Per `superpowers:writing-skills`, write each scenario RED first —
+confirm it fails without the skill's guardrail — before writing the GREEN
+behavior the skill should produce. See
 `skills/pr-closeout-loop/references/validation-scenarios.md` for the format
 (Setup / Prompt / Pass per scenario).
 

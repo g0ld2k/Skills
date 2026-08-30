@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import unicodedata
+from ast import literal_eval
 from pathlib import Path
 
 
@@ -24,6 +26,30 @@ SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
+AGENT_SKILLS_SPEC_URL = "https://agentskills.io/specification"
+# Pinned to the official skills-ref source revision used to derive this
+# repository-owned, network-independent conformance check.
+AGENT_SKILLS_SPEC_REVISION = "69ef37e9424c0a7ea9dd2293b559e43ec8176379"
+AGENT_SKILLS_FIELDS = {
+    "name",
+    "description",
+    "license",
+    "compatibility",
+    "metadata",
+    "allowed-tools",
+}
+MAX_SKILL_NAME_LENGTH = 64
+MAX_DESCRIPTION_LENGTH = 1024
+MAX_COMPATIBILITY_LENGTH = 500
+VALIDATION_SCENARIO_PATH = Path("references") / "validation-scenarios.md"
+# Existing skills remain exempt only under their owning follow-up issue: #39
+# (commit-message), #42 (pr-generator), and #43 (testflight-notes). New skills
+# and catch-me-up use the convention immediately.
+VALIDATION_SCENARIO_EXEMPTIONS = {
+    "commit-message",
+    "pr-generator",
+    "testflight-notes",
+}
 # Single-word command tokens that legitimately follow Use/run/invoke in prose.
 # Extend only with commands/tools, never with skill names.
 NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
@@ -44,6 +70,16 @@ def has_exact_child(parent: Path, name: str) -> bool:
     return any(child.name == name for child in parent.iterdir())
 
 
+def exact_skill_file(skill_dir: Path) -> Path | None:
+    """Return SKILL.md only when its filename casing is exact."""
+    if not skill_dir.exists():
+        return None
+    return next(
+        (child for child in skill_dir.iterdir() if child.name == "SKILL.md"),
+        None,
+    )
+
+
 def strip_quotes(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
@@ -51,8 +87,176 @@ def strip_quotes(value: str) -> str:
     return value
 
 
+def _split_inline_yaml(value: str) -> list[str]:
+    """Split a simple inline YAML collection without evaluating its contents."""
+    parts: list[str] = []
+    start = 0
+    quote: str | None = None
+    depth = 0
+    for index, character in enumerate(value):
+        if quote:
+            if character == quote and (index == 0 or value[index - 1] != "\\"):
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character in "[{":
+            depth += 1
+        elif character in "]}":
+            depth -= 1
+        elif character == "," and depth == 0:
+            parts.append(value[start:index].strip())
+            start = index + 1
+    parts.append(value[start:].strip())
+    return [part for part in parts if part]
+
+
+def _parse_yaml_scalar(value: str) -> object:
+    value = value.strip()
+    if not value:
+        return None
+    if value[0:1] in {"'", '"'} and value[-1:] == value[0]:
+        try:
+            return literal_eval(value)
+        except (SyntaxError, ValueError):
+            return value[1:-1]
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered in {"null", "~"}:
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        return [_parse_yaml_scalar(item) for item in _split_inline_yaml(value[1:-1])]
+    if value.startswith("{") and value.endswith("}"):
+        mapping: dict[object, object] = {}
+        for item in _split_inline_yaml(value[1:-1]):
+            key, separator, child = item.partition(":")
+            if not separator:
+                raise ValueError(f"invalid inline mapping entry: {item}")
+            parsed_key = _parse_yaml_scalar(key)
+            try:
+                mapping[parsed_key] = _parse_yaml_scalar(child)
+            except TypeError as exc:
+                raise ValueError("mapping keys must be scalar values") from exc
+        return mapping
+    if re.fullmatch(r"[-+]?\d+", value):
+        return int(value)
+    if re.fullmatch(r"[-+]?(?:\d+\.\d*|\.\d+)", value):
+        return float(value)
+    return value
+
+
+def _line_indent(line: str) -> int:
+    prefix = line[: len(line) - len(line.lstrip(" \t"))]
+    if "\t" in prefix:
+        raise ValueError("tabs are not supported for frontmatter indentation")
+    return len(prefix)
+
+
+def _next_content_line(lines: list[str], start: int) -> int:
+    index = start
+    while index < len(lines) and (not lines[index].strip() or lines[index].lstrip().startswith("#")):
+        index += 1
+    return index
+
+
+def _parse_yaml_sequence(
+    lines: list[str], start: int, indent: int
+) -> tuple[list[object], int]:
+    values: list[object] = []
+    index = start
+    while index < len(lines):
+        if not lines[index].strip() or lines[index].lstrip().startswith("#"):
+            index += 1
+            continue
+        line_indent = _line_indent(lines[index])
+        if line_indent < indent:
+            break
+        if line_indent != indent or not lines[index][indent:].startswith("- "):
+            raise ValueError("expected a YAML list item")
+        values.append(_parse_yaml_scalar(lines[index][indent + 2 :]))
+        index += 1
+    return values, index
+
+
+def _parse_yaml_mapping(
+    lines: list[str], start: int, indent: int, *, string_keys: bool = True
+) -> tuple[dict[str, object], int]:
+    values: dict[str, object] = {}
+    index = start
+    while index < len(lines):
+        if not lines[index].strip() or lines[index].lstrip().startswith("#"):
+            index += 1
+            continue
+        line_indent = _line_indent(lines[index])
+        if line_indent < indent:
+            break
+        if line_indent != indent:
+            raise ValueError("unexpected indentation")
+        key, separator, raw_value = lines[index][indent:].partition(":")
+        key = key.strip()
+        if not separator or not key:
+            raise ValueError("expected a YAML key followed by ':'")
+        parsed_key = _parse_yaml_scalar(key)
+        if string_keys and not isinstance(parsed_key, str):
+            raise ValueError("mapping keys must be strings")
+        try:
+            hash(parsed_key)
+        except TypeError as exc:
+            raise ValueError("mapping keys must be scalar values") from exc
+        key = parsed_key
+        if key in values:
+            raise ValueError(f"duplicate frontmatter key '{key}'")
+        raw_value = raw_value.strip()
+        index += 1
+
+        if raw_value in {">", ">-", ">+", "|", "|-", "|+"}:
+            block_lines: list[str] = []
+            while index < len(lines):
+                if not lines[index].strip():
+                    block_lines.append("")
+                    index += 1
+                    continue
+                child_indent = _line_indent(lines[index])
+                if child_indent <= indent:
+                    break
+                block_lines.append(lines[index].strip())
+                index += 1
+            values[key] = (
+                " ".join(block_lines).strip()
+                if raw_value.startswith(">")
+                else "\n".join(block_lines).strip()
+            )
+            continue
+
+        if raw_value:
+            values[key] = _parse_yaml_scalar(raw_value)
+            continue
+
+        child = _next_content_line(lines, index)
+        if child < len(lines) and _line_indent(lines[child]) > indent:
+            child_indent = _line_indent(lines[child])
+            if lines[child][child_indent:].startswith("- "):
+                values[key], index = _parse_yaml_sequence(lines, child, child_indent)
+            else:
+                values[key], index = _parse_yaml_mapping(
+                    lines,
+                    child,
+                    child_indent,
+                    string_keys=key != "metadata",
+                )
+        else:
+            values[key] = None
+    return values, index
+
+
 def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {}, f"cannot read SKILL.md: {exc}"
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}, "missing YAML frontmatter"
@@ -62,48 +266,14 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
     except StopIteration:
         return {}, "unterminated YAML frontmatter"
 
-    data: dict[str, object] = {}
-    current_key: str | None = None
     frontmatter_lines = lines[1:end]
-    index = 0
-    while index < len(frontmatter_lines):
-        line = frontmatter_lines[index]
-        index += 1
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if line.startswith((" ", "\t")):
-            if current_key and line.strip().startswith("- "):
-                existing = data.setdefault(current_key, [])
-                if isinstance(existing, list):
-                    existing.append(strip_quotes(line.strip()[2:]))
-            continue
-
-        key, separator, value = line.partition(":")
-        if not separator:
-            continue
-        current_key = key.strip()
-        parsed_value = strip_quotes(value.strip())
-        if parsed_value == "true":
-            data[current_key] = True
-        elif parsed_value == "false":
-            data[current_key] = False
-        elif parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
-            block_lines: list[str] = []
-            while index < len(frontmatter_lines):
-                block_line = frontmatter_lines[index]
-                if block_line.strip() and not block_line.startswith((" ", "\t")):
-                    break
-                if block_line.strip():
-                    block_lines.append(block_line.strip())
-                index += 1
-            data[current_key] = (
-                " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
-            )
-        elif parsed_value:
-            data[current_key] = parsed_value
-        else:
-            data[current_key] = []
-
+    try:
+        data, next_index = _parse_yaml_mapping(frontmatter_lines, 0, 0)
+        trailing = _next_content_line(frontmatter_lines, next_index)
+        if trailing < len(frontmatter_lines):
+            return {}, "invalid YAML frontmatter: unexpected content"
+    except ValueError as exc:
+        return {}, f"invalid YAML frontmatter: {exc}"
     return data, None
 
 
@@ -189,6 +359,165 @@ def display_path(path: Path) -> str:
         return str(path.relative_to(ROOT))
     except ValueError:
         return str(path)
+
+
+def _spec_error(errors: list[str], skill_file: Path, message: str) -> None:
+    errors.append(f"{display_path(skill_file)}: Agent Skills spec: {message}")
+
+
+def validate_agent_skill_spec(
+    skill_dir: Path, errors: list[str]
+) -> dict[str, object] | None:
+    """Validate one skill using the pinned, repository-owned spec rules."""
+    skill_file = exact_skill_file(skill_dir)
+    if skill_file is None:
+        skill_file = skill_dir / "SKILL.md"
+        _spec_error(errors, skill_file, "missing required file: SKILL.md")
+        return None
+
+    frontmatter, parse_error = parse_frontmatter(skill_file)
+    if parse_error:
+        _spec_error(errors, skill_file, parse_error)
+        return None
+
+    for key in frontmatter:
+        if not isinstance(key, str):
+            _spec_error(errors, skill_file, "frontmatter keys must be strings")
+        elif key not in AGENT_SKILLS_FIELDS:
+            _spec_error(errors, skill_file, f"unsupported frontmatter field '{key}'")
+
+    for required in ("name", "description"):
+        if required not in frontmatter:
+            _spec_error(errors, skill_file, f"missing required field '{required}'")
+
+    name = frontmatter.get("name")
+    if not isinstance(name, str) or not name.strip():
+        _spec_error(errors, skill_file, "Field 'name' must be a non-empty string")
+    else:
+        normalized_name = unicodedata.normalize("NFKC", name.strip())
+        if len(normalized_name) > MAX_SKILL_NAME_LENGTH:
+            _spec_error(
+                errors,
+                skill_file,
+                f"Skill name '{normalized_name}' exceeds {MAX_SKILL_NAME_LENGTH} character limit ({len(normalized_name)} chars)",
+            )
+        if normalized_name != normalized_name.lower():
+            _spec_error(errors, skill_file, f"Skill name '{normalized_name}' must be lowercase")
+        if normalized_name.startswith("-") or normalized_name.endswith("-"):
+            _spec_error(errors, skill_file, "Skill name cannot start or end with a hyphen")
+        if "--" in normalized_name:
+            _spec_error(errors, skill_file, "Skill name cannot contain consecutive hyphens")
+        if not all(character.isalnum() or character == "-" for character in normalized_name):
+            _spec_error(
+                errors,
+                skill_file,
+                f"Skill name '{normalized_name}' contains invalid characters. Only letters, digits, and hyphens are allowed.",
+            )
+        directory_name = unicodedata.normalize("NFKC", skill_dir.name)
+        if directory_name != normalized_name:
+            _spec_error(
+                errors,
+                skill_file,
+                f"Directory name '{skill_dir.name}' must match skill name '{normalized_name}'",
+            )
+
+    description = frontmatter.get("description")
+    if not isinstance(description, str) or not description.strip():
+        _spec_error(errors, skill_file, "Field 'description' must be a non-empty string")
+    elif len(description) > MAX_DESCRIPTION_LENGTH:
+        _spec_error(
+            errors,
+            skill_file,
+            f"Description exceeds {MAX_DESCRIPTION_LENGTH} character limit ({len(description)} chars)",
+        )
+
+    if "license" in frontmatter and not isinstance(frontmatter["license"], str):
+        _spec_error(errors, skill_file, "Field 'license' must be a string")
+
+    if "compatibility" in frontmatter:
+        compatibility = frontmatter["compatibility"]
+        if not isinstance(compatibility, str):
+            _spec_error(
+                errors,
+                skill_file,
+                "Field 'compatibility' must be a string",
+            )
+        elif not compatibility.strip():
+            _spec_error(errors, skill_file, "Field 'compatibility' must be a non-empty string")
+        elif len(compatibility) > MAX_COMPATIBILITY_LENGTH:
+            _spec_error(
+                errors,
+                skill_file,
+                f"Compatibility exceeds {MAX_COMPATIBILITY_LENGTH} character limit ({len(compatibility)} chars)",
+            )
+
+    if "metadata" in frontmatter:
+        metadata = frontmatter["metadata"]
+        if not isinstance(metadata, dict):
+            _spec_error(errors, skill_file, "Field 'metadata' must be a mapping")
+        else:
+            for key, value in metadata.items():
+                if not isinstance(key, str):
+                    _spec_error(errors, skill_file, "Field 'metadata' keys must be strings")
+                if not isinstance(value, str):
+                    _spec_error(errors, skill_file, "Field 'metadata' values must be strings")
+
+    if "allowed-tools" in frontmatter and not isinstance(
+        frontmatter["allowed-tools"], str
+    ):
+        _spec_error(errors, skill_file, "Field 'allowed-tools' must be a string")
+
+    return frontmatter
+
+
+def _policy_error(errors: list[str], skill_file: Path, message: str) -> None:
+    errors.append(f"{display_path(skill_file)}: House policy: {message}")
+
+
+def validate_house_policies(
+    skill_dir: Path, frontmatter: dict[str, object], errors: list[str]
+) -> None:
+    """Validate choices made by this repository, separate from the spec."""
+    skill_file = skill_dir / "SKILL.md"
+    description = frontmatter.get("description")
+    if isinstance(description, str) and description and not description.startswith("Use when"):
+        _policy_error(errors, skill_file, "description must start with 'Use when'")
+    if frontmatter.get("license") != "MIT":
+        _policy_error(errors, skill_file, "license must be MIT")
+    if "allowed-tools" in frontmatter:
+        _policy_error(
+            errors,
+            skill_file,
+            "allowed-tools is not permitted by the repository's portability policy",
+        )
+
+
+def validate_validation_scenarios(skill_dir: Path, errors: list[str]) -> None:
+    """Require activation/output scenarios for a skill covered by policy."""
+    scenario_file = skill_dir / VALIDATION_SCENARIO_PATH
+    if not scenario_file.exists():
+        _policy_error(
+            errors,
+            skill_dir / "SKILL.md",
+            "missing references/validation-scenarios.md; every skill needs happy path, edge case, and adversarial coverage",
+        )
+        return
+    try:
+        text = scenario_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        _policy_error(errors, scenario_file, f"cannot read validation scenarios: {exc}")
+        return
+    headings = re.findall(r"^## Scenario \d+:[^\n]*", text, re.MULTILINE)
+    if len(headings) < 3:
+        _policy_error(
+            errors,
+            scenario_file,
+            "must define at least 3 scenarios (happy path, edge case, and adversarial)",
+        )
+    lowered_headings = [heading.lower() for heading in headings]
+    for label in ("happy path", "edge case", "adversarial"):
+        if not any(label in heading for heading in lowered_headings):
+            _policy_error(errors, scenario_file, f"must include a {label} scenario")
 
 
 def schema_type_matches(value: object, expected: str) -> bool:
@@ -311,40 +640,16 @@ def validate_skills(errors: list[str]) -> list[str]:
     for skill_dir in skill_dirs():
         name = skill_dir.name
         names.append(name)
-        skill_file = skill_dir / "SKILL.md"
-        if not skill_file.exists():
-            errors.append(f"skills/{name}/SKILL.md: missing")
+        skill_file = exact_skill_file(skill_dir)
+        if skill_file is None:
+            validate_agent_skill_spec(skill_dir, errors)
             continue
 
-        frontmatter, parse_error = parse_frontmatter(skill_file)
-        if parse_error:
-            errors.append(f"skills/{name}/SKILL.md: {parse_error}")
-            continue
-
-        for key in ("name", "description", "license"):
-            if key not in frontmatter or not frontmatter[key]:
-                errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
-
-        description = str(frontmatter.get("description", ""))
-        if description and not description.startswith("Use when"):
-            errors.append(f"skills/{name}/SKILL.md: description must start with 'Use when'")
-
-        declared_name = frontmatter.get("name")
-        if declared_name != name:
-            errors.append(f"skills/{name}/SKILL.md: name must match directory")
-        if not SKILL_NAME_RE.match(name):
-            errors.append(f"skills/{name}/: directory name must be kebab-case")
-        if frontmatter.get("license") != "MIT":
-            errors.append(f"skills/{name}/SKILL.md: license must be MIT")
-        if "tools" in frontmatter:
-            errors.append(f"skills/{name}/SKILL.md: tools frontmatter is not allowed")
-        if "allowed-tools" in frontmatter:
-            errors.append(f"skills/{name}/SKILL.md: allowed-tools has no approved exception")
-        if "user-invocable" in frontmatter:
-            errors.append(f"skills/{name}/SKILL.md: user-invocable must be absent")
-
-        if "disable-model-invocation" in frontmatter:
-            errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be absent")
+        frontmatter = validate_agent_skill_spec(skill_dir, errors)
+        if frontmatter is not None:
+            validate_house_policies(skill_dir, frontmatter, errors)
+            if name not in VALIDATION_SCENARIO_EXEMPTIONS:
+                validate_validation_scenarios(skill_dir, errors)
 
         openai, policy, openai_error = parse_openai_yaml(skill_dir / "agents" / "openai.yaml")
         if openai_error:
@@ -466,6 +771,7 @@ def validate_packaging(
             if not generated_dir.exists():
                 errors.append(f"{generated_dir.relative_to(ROOT)}: missing")
                 continue
+            validate_agent_skill_spec(generated_dir, errors)
             canonical_files = {
                 path.relative_to(canonical_dir)
                 for path in canonical_dir.rglob("*")

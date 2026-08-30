@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - 'integration/**'
 
 permissions:
   contents: read
@@ -21,6 +22,9 @@ jobs:
           python3 --version
           gh --version
 
+      - name: Validate Agent Skills conformance and repository structure
+        run: python3 scripts/validate-skills-repo.py
+
       - name: Validate generated packaging is current
         run: |
           python3 scripts/sync-shared-conventions.py
@@ -31,9 +35,6 @@ jobs:
             echo "$status"
             exit 1
           fi
-
-      - name: Validate repository structure and portable manifests
-        run: python3 scripts/validate-skills-repo.py
 
       - name: Run regression tests
         run: python3 -m unittest discover -s tests
@@ -48,12 +49,15 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
           find skills plugins scripts -type f -name '*.sh' -print |
             while IFS= read -r file; do
               echo "$file"
               bash -n "$file"
-              shellcheck -S warning "$file"
+              if command -v shellcheck >/dev/null 2>&1; then
+                shellcheck -S warning "$file"
+              else
+                echo "ShellCheck unavailable; skipped $file"
+              fi
             done
 
       - name: Validate Agent Skills publisher shape

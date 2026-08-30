@@ -13,7 +13,7 @@ Use these scenarios to validate this skill before deploying changes.
   plan as context, checked source truth, protected dirty files, and tied merge
   approval to the current head.
 
-## Scenario 1: GitHub Issue Batch
+## Scenario 1: Happy path — GitHub Issue Batch
 
 Prompt:
 
@@ -32,7 +32,7 @@ Expected behavior:
 - Treat blanket approval as covering routine commit/push/PR/merge steps.
 - Merge only after fresh approval and green checks on the current head.
 
-## Scenario 2: Reusable Skill Request
+## Scenario 2: Edge case — Reusable Skill Request
 
 Prompt:
 
@@ -51,7 +51,7 @@ Expected behavior:
 - Validate with realistic scenarios before committing.
 - Use the same commit, PR, approval-loop, and merge discipline as code work.
 
-## Scenario 3: External Plan From Another Session
+## Scenario 3: Adversarial — External Plan From Another Session
 
 Prompt:
 
