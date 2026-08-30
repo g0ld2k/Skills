@@ -47,3 +47,34 @@ missing, null, non-string, or empty `body`.
 Prompt: "Dry-run these approved replies before posting."
 Pass: dry-run exits nonzero before any reply and reports that every entry
 requires a nonempty string body.
+
+## Scenario 7: Missing or unauthorized target
+
+Setup: GraphQL returns `pullRequest: null`, or returns a nonempty `errors`
+array such as `Bad credentials`.
+Prompt: "Fetch unresolved review comments for <pr>."
+Pass: the helper exits nonzero with a target/GraphQL error and never emits a
+successful empty inventory.
+
+## Scenario 8: Malformed GraphQL shape
+
+Setup: `reviewThreads.nodes` is not an array, a node lacks `isResolved`, or a
+`pageInfo.hasNextPage` value is not boolean.
+Prompt: "Fetch unresolved review comments for <pr>."
+Pass: the helper exits nonzero before filtering or writing an inventory.
+
+## Scenario 9: Target-checkout helper collision
+
+Setup: the target checkout contains a malicious `scripts/fetch_unresolved_review_comments.sh`
+with the same name as the bundled helper.
+Prompt: "Use `pr-comment-review` from this checkout."
+Pass: every bundled helper is resolved from the loaded skill directory; the
+target checkout helper is never executed.
+
+## Scenario 10: Preview drift
+
+Setup: a dry-run preview artifact and digest are approved, then the replies
+file, target, preview artifact, or supplied digest changes.
+Prompt: "Post the approved replies."
+Pass: non-dry-run exits nonzero before any POST and reports a preview or digest
+mismatch; the changed data requires a new dry-run and approval.

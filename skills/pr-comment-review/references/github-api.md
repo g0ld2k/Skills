@@ -8,6 +8,16 @@ Minimal API surface for fetching unresolved review feedback and posting replies.
 
 Use GraphQL because REST review comment endpoints do not include thread-level `isResolved`.
 
+Treat the response as untrusted input. Before reading any nodes, reject a
+response with a nonempty GraphQL `errors` array (including authorization or
+inaccessible-target errors), missing `data.repository.pullRequest`, or a
+malformed `reviewThreads` connection. Require object/array/boolean/string
+types for the repository, PR, review-thread nodes, comment nodes, and both
+`pageInfo` objects; when `hasNextPage` is true, `endCursor` must be a nonempty
+string. A missing root comment is malformed. Any failed gate exits nonzero and
+never becomes an empty successful inventory. Apply the same gates to each
+follow-up `node(id:)` response.
+
 Do NOT use `gh api graphql --paginate` with this query: `--paginate` follows
 the FIRST `pageInfo` it finds, which is the nested `comments.pageInfo` here,
 so outer thread pagination silently breaks past 100 threads. Loop manually:
@@ -78,6 +88,11 @@ command-line argument.
 ## 4) Recommended Posting Policy
 
 - Dry-run preview first.
+- The preview artifact canonically binds owner, repository, PR number, thread
+  ID, root comment ID, and exact reply body; record its SHA-256 digest.
+- Approval must name that exact digest. Before posting, compare the approved
+  digest and current target/reply snapshot with the artifact. A changed target,
+  body, artifact, or digest requires a new dry-run and approval.
 - Re-check unresolved status before each post.
 - Skip any thread now marked resolved.
 - Post only after explicit user approval.
