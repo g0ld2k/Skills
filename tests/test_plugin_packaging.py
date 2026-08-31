@@ -117,6 +117,7 @@ class RootPluginTests(unittest.TestCase):
                 "pr-closeout-loop",
                 "pr-comment-review",
                 "pr-generator",
+                "simplify",
                 "work-request-orchestration",
             ],
         )
