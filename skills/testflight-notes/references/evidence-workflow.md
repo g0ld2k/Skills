@@ -10,8 +10,8 @@ and targeted patch evidence for every claim that metadata alone cannot prove.
 - Accept either a timeframe or a starting ref/tag, never both.
 - Accept timeframes only as `last <N> day(s)`, `last <N> week(s)`,
   `<N> day(s) ago`, or `<N> week(s) ago`, optionally prefixed with `since `.
-  `N` is a positive decimal integer without a leading zero. Reject other
-  natural-language and ISO-date forms.
+  `N` is a positive decimal integer without a leading zero, at most 3650 days
+  or 520 weeks. Reject other natural-language and ISO-date forms.
 - Read `MAX_NOTES_CHARACTERS` from repository/environment configuration. Its
   default is 4000 and its minimum is 93, the length of the mandatory empty
   result. This is a repository budget, not an asserted TestFlight API limit.
@@ -82,25 +82,47 @@ normalize_timeframe() {
   local raw="$1"
   local last_pattern='^(since )?last ([1-9][0-9]*) (day|days|week|weeks)$'
   local ago_pattern='^(since )?([1-9][0-9]*) (day|days|week|weeks) ago$'
+  local count unit max_count
   if [[ "$raw" =~ $last_pattern ]]; then
-    printf '%s %s ago\n' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+    count="${BASH_REMATCH[2]}"
+    unit="${BASH_REMATCH[3]}"
   elif [[ "$raw" =~ $ago_pattern ]]; then
-    printf '%s %s ago\n' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+    count="${BASH_REMATCH[2]}"
+    unit="${BASH_REMATCH[3]}"
   else
     return 1
   fi
+  if [[ "$unit" == day || "$unit" == days ]]; then
+    max_count=3650
+  else
+    max_count=520
+  fi
+  if (( ${#count} > ${#max_count} )) ||
+    { (( ${#count} == ${#max_count} )) &&
+      [[ "$count" > "$max_count" ]]; }; then
+    return 2
+  fi
+  printf '%s %s ago\n' "$count" "$unit"
 }
 
 pin_timeframe() {
   local raw="$1"
-  local cutoff_epoch current_epoch
-  normalized_timeframe="$(normalize_timeframe "$raw")" || {
-    printf '%s\n' \
-      'ERROR: timeframe must be last <positive integer> day(s)|week(s), or <positive integer> day(s)|week(s) ago, with an optional since prefix.' \
-      >&2
+  local normalize_status
+  if normalized_timeframe="$(normalize_timeframe "$raw")"; then
+    :
+  else
+    normalize_status=$?
+    if (( normalize_status == 2 )); then
+      printf '%s\n' \
+        'ERROR: timeframe must not exceed 3650 days or 520 weeks.' >&2
+    else
+      printf '%s\n' \
+        'ERROR: timeframe must be last <positive integer> day(s)|week(s), or <positive integer> day(s)|week(s) ago, with an optional since prefix.' \
+        >&2
+    fi
     printf 'Received: %s\n' "$raw" >&2
     return 2
-  }
+  fi
   max_age_arg="$(git -C "$repo_root" rev-parse --since="$normalized_timeframe")" || {
     printf 'ERROR: Git could not normalize timeframe: %s\n' \
       "$normalized_timeframe" >&2
@@ -111,24 +133,7 @@ pin_timeframe() {
       "$max_age_arg" >&2
     return 2
   fi
-  cutoff_epoch="${max_age_arg#--max-age=}"
-  current_epoch="$(date +%s)" || {
-    printf '%s\n' 'ERROR: could not read the current Unix epoch.' >&2
-    return 2
-  }
-  if [[ ! "$current_epoch" =~ ^[0-9]+$ ]]; then
-    printf 'ERROR: current Unix epoch is invalid: %s\n' \
-      "$current_epoch" >&2
-    return 2
-  fi
-  if (( ${#cutoff_epoch} > ${#current_epoch} )) ||
-    { (( ${#cutoff_epoch} == ${#current_epoch} )) &&
-      [[ "$cutoff_epoch" > "$current_epoch" ]]; }; then
-    printf 'ERROR: timeframe resolves to an impossible future cutoff: %s\n' \
-      "$normalized_timeframe" >&2
-    return 2
-  fi
-  since_filter_arg="--since-as-filter=$cutoff_epoch"
+  since_filter_arg="--since-as-filter=${max_age_arg#--max-age=}"
   history_selector=("$since_filter_arg" "$head_sha")
 }
 ~~~
@@ -136,8 +141,6 @@ pin_timeframe() {
 `--since-as-filter` preserves the pinned cutoff while visiting the complete
 reachable history. Do not retain the intermediate `--max-age` argument, which
 may stop traversal at an older commit before reaching a newer-dated ancestor.
-The current epoch is only a bound check; Git's single normalized cutoff remains
-the selector source of truth.
 
 Choose one branch and never recompute it:
 
@@ -231,7 +234,7 @@ ends the run without a notes block.
 ## 4. Enumerate Once
 
 ~~~bash
-selected_commits="$(git -C "$repo_root" --no-pager log \
+selected_commits="$(git -C "$repo_root" --no-pager log --encoding=UTF-8 \
   --no-show-signature --reverse "${history_selector[@]}" --format='%H')" || {
   printf '%s\n' 'ERROR: Git history enumeration failed.' >&2
   exit 2
@@ -240,7 +243,7 @@ selected_commits="$(git -C "$repo_root" --no-pager log \
 
 Successful empty output is a valid empty range. Record that outcome before
 classification. Every later history-consuming `git log` receives the exact
-same `history_selector` array.
+same `history_selector` array and `--encoding=UTF-8`.
 
 ## 5. Capture Metadata and Paths
 
@@ -265,7 +268,8 @@ the complete file in positional groups of six; empty parent/body fields remain
 valid fields and there is no extra record delimiter.
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+if ! git -C "$repo_root" --no-pager log --encoding=UTF-8 \
+  --no-show-signature --reverse \
   "${history_selector[@]}" \
   -z --pretty=format:'%H%x00%P%x00%s%x00%b%x00%an%x00%aI' \
   >"$metadata_file" 2>"$error_file"; then
@@ -280,7 +284,8 @@ with their first parent, but do not limit history traversal to the first-parent
 chain:
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+if ! git -C "$repo_root" --no-pager log --encoding=UTF-8 \
+  --no-show-signature --reverse \
   "${history_selector[@]}" --root --diff-merges=first-parent \
   --ignore-submodules=none --find-renames --find-copies --name-status -z \
   --pretty=format:'commit %H%x00' \
@@ -342,7 +347,8 @@ configured color and single-path following so local settings do not alter the
 patch evidence or pinned traversal:
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+if ! git -C "$repo_root" --no-pager log --encoding=UTF-8 \
+  --no-show-signature --reverse \
   "${history_selector[@]}" --root --diff-merges=first-parent \
   --ignore-submodules=none --no-follow --no-color --no-ext-diff --no-textconv \
   --find-renames --find-copies \

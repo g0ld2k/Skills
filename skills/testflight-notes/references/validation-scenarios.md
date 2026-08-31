@@ -16,10 +16,9 @@ user asks for standard TestFlight notes.
 Prompt: "Use testflight-notes for the last 10 days."
 
 Pass: The agent validates the repository and timeframe grammar, normalizes
-`last 10 days` to `10 days ago`, invokes Git's date normalization once, and
-validates the exact `--max-age=<decimal epoch>` result. It rejects a cutoff
-later than the current Unix epoch without entering unbounded Bash arithmetic,
-then converts the accepted epoch to `--since-as-filter=<decimal epoch>` so
+`last 10 days` to `10 days ago`, validates its magnitude before invoking Git's
+date parser once, and validates the exact `--max-age=<decimal epoch>` result. It
+converts the accepted epoch to `--since-as-filter=<decimal epoch>` so
 clock-skewed history is traversed completely. The recorded selector plus pinned
 `HEAD` is immutable and is reused unchanged for enumeration, full metadata,
 name-status paths, and each targeted candidate/path patch. Feature/fix rows map
@@ -64,21 +63,20 @@ assumption is stated outside that block.
 
 Setup: The repository is complete, but the request contains unavailable tag
 `build-does-not-exist`; run again with invalid timeframe values such as
-`since sometime-ish` and `2026-08-01`, then with `last 3000 weeks`, which Git
-2.43 can translate to a wrapped future epoch.
+`since sometime-ish` and `2026-08-01`, then with `last 100000 weeks`, which can
+overflow Git's approximate-date parser to a plausible but incorrect epoch.
 
 Prompt: "Use testflight-notes from build-does-not-exist." /
 "Use testflight-notes since sometime-ish." /
 "Use testflight-notes since 2026-08-01." /
-"Use testflight-notes for the last 3000 weeks."
+"Use testflight-notes for the last 100000 weeks."
 
 Pass: Each run stops before synthesis with a useful non-zero `ERROR:` naming the
-invalid input. Invalid timeframe grammar is rejected before the Git date probe;
-valid timeframes produce exactly one `--max-age=<epoch>` normalization result.
-Any result later than the current Unix epoch is rejected before selector
-construction. The history selector otherwise uses the same epoch as
-`--since-as-filter=<epoch>` plus pinned HEAD; it never retains `--max-age` for
-traversal.
+invalid input. Invalid grammar and magnitudes over 3650 days or 520 weeks are
+rejected before the Git date probe; accepted timeframes produce exactly one
+`--max-age=<epoch>` normalization result. The history selector uses that epoch
+as `--since-as-filter=<epoch>` plus pinned HEAD; it never retains `--max-age`
+for traversal.
 The runs emit no notes block, do not substitute a tag/date fallback, and do not
 treat Git failure as empty history.
 
@@ -180,17 +178,18 @@ root commit, a normal two-parent merge, a submodule update, and an add/rename/
 edit sequence. Include a candidate path with a configured
 `diff.<driver>.textconv` command. Set `log.showSignature=true`,
 `log.showRoot=false`, `log.follow=true`, and `diff.ignoreSubmodules=all` in
-repository configuration, plus `color.ui=always`.
+repository configuration, plus `color.ui=always` and
+`i18n.logOutputEncoding=UTF-16`.
 
 Prompt: "Generate TestFlight notes for this selected history."
 
 Pass: The agent derives the full object-ID length from pinned `HEAD`, accepts
 64-character commit records, and rejects malformed or abbreviated records. It
-passes `--no-show-signature` to every structured `git log` read, so configured
-signature display neither executes verification nor corrupts metadata, path,
-or patch records. Targeted patch reads also pass `--no-textconv`; the configured
-driver is not executed and classification uses repository blob evidence. Both
-diff reads force root and submodule evidence, and merge diffs use the first
-parent without limiting traversal to the first-parent chain. Targeted patch
-reads disable configured rename following and color, so every requested
+passes `--encoding=UTF-8` and `--no-show-signature` to every structured `git
+log` read, so configured encoding and signature display cannot corrupt metadata,
+path, or patch records. Targeted patch reads also pass `--no-textconv`; the
+configured driver is not executed and classification uses repository blob
+evidence. Both diff reads force root and submodule evidence, and merge diffs use
+the first parent without limiting traversal to the first-parent chain. Targeted
+patch reads disable configured rename following and color, so every requested
 selected record remains available without ANSI control bytes.
