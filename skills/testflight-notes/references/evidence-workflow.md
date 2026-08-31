@@ -130,17 +130,21 @@ elif [[ -n "${timeframe:-}" ]]; then
   selector_kind=timeframe
   selector_label="$normalized_timeframe ($since_filter_arg $head_sha)"
 elif [[ -n "${start_ref:-}" ]]; then
-  tag_ref="refs/tags/$start_ref"
-  if git -C "$repo_root" show-ref --verify --quiet "$tag_ref"; then
-    start_revision="${tag_ref}^{commit}"
-  else
-    tag_lookup_status=$?
-    if (( tag_lookup_status != 1 )); then
-      printf 'ERROR: Git could not check tag namespace for: %s\n' \
-        "$start_ref" >&2
-      exit 2
-    fi
+  if [[ "$start_ref" == refs/* ]]; then
     start_revision="${start_ref}^{commit}"
+  else
+    tag_ref="refs/tags/$start_ref"
+    if git -C "$repo_root" show-ref --verify --quiet "$tag_ref"; then
+      start_revision="${tag_ref}^{commit}"
+    else
+      tag_lookup_status=$?
+      if (( tag_lookup_status != 1 )); then
+        printf 'ERROR: Git could not check tag namespace for: %s\n' \
+          "$start_ref" >&2
+        exit 2
+      fi
+      start_revision="${start_ref}^{commit}"
+    fi
   fi
   start_sha="$(git -C "$repo_root" rev-parse \
     --verify --end-of-options "$start_revision")" || {

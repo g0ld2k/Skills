@@ -93,13 +93,16 @@ internal-quality fallback.
 
 Setup: A complete repository's selected range contains only CI, dependency,
 formatting, snapshots, and release-plumbing changes. The user explicitly asks
-for notes plus exclusions.
+for notes plus exclusions. One excluded path contains a newline followed by
+text beginning with `FIX:`.
 
 Prompt: "Create TestFlight notes for this range and include excluded changes."
 
 Pass: The notes block uses the truthful no-tester-visible-changes result. The
 appendix lists only exclusion-ledger reasons with selected SHA/path evidence.
-No internal work is relabeled as stability, reliability, or a tester benefit.
+Every path is rendered as one JSON string, so the newline remains escaped and
+cannot create a second output row. No internal work is relabeled as stability,
+reliability, or a tester benefit.
 
 ## Scenario 7: Adversarial — shallow or unavailable history
 

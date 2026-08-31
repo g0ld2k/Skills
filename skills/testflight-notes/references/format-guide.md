@@ -69,8 +69,13 @@ requested `notes-plus-exclusions` mode, append evidence-backed exclusions:
 
 ~~~text
 Excluded changes:
-INTERNAL: <why the change is not tester-visible> (<sha>, <path>)
+INTERNAL: <why the change is not tester-visible> (<sha>, path=<JSON string>)
 ~~~
+
+Render each path as one JSON string, including its surrounding double quotes.
+Escape quotes, backslashes, newlines, and other control characters; never place
+a raw path into the appendix. Each exclusion must remain exactly one output
+line.
 
 For a valid range with no retained tester-visible changes, use this clean block
 instead of inventing a stability claim:
