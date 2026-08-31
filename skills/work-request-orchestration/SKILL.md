@@ -35,7 +35,7 @@ to probe for a dependency:
 | Implementation in a non-isolated workspace | `superpowers:using-git-worktrees` |
 | Ambiguous or behavior-changing implementation | `superpowers:brainstorming` |
 | Multi-step implementation | `superpowers:writing-plans` |
-| Bug fix, feature, refactor, or behavior change | `superpowers:test-driven-development` |
+| Bug fix, feature, refactor, or behavior change without an explicit TDD exemption | `superpowers:test-driven-development` |
 | Failing-check diagnosis | `superpowers:systematic-debugging` |
 | Non-trivial change before commit | `g0ld2k-skills:simplify` |
 | Commit | `g0ld2k-skills:commit-message` |
@@ -118,8 +118,9 @@ commit, PR, review/CI, and merge.
 - **REQUIRED AFTER PR OPEN:** Use `g0ld2k-skills:pr-closeout-loop` when the user asks to
   monitor/address/merge or grants merge authority for the run.
   Pass: owner/repo/PR number, target branch, the authorization scope recorded
-  in Phase 0 verbatim, and the max-wait policy. Expect back: merged (SHA) or a
-  Blocked Report naming the failing gate (G1–G7). Do not merge on its behalf.
+  in Phase 0 verbatim, any explicit TDD exemption or its absence, and the
+  max-wait policy. Expect back: merged (SHA) or a Blocked Report naming the
+  failing gate (G1–G7). Do not merge on its behalf.
 
 ## Workflow
 

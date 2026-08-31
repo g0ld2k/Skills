@@ -81,7 +81,7 @@ similarly named generator.
 ## Scenario 7: One external prerequisite missing — install prerequisite
 
 Setup: The catalog is available but `superpowers:test-driven-development` is
-absent for a delegated code-fix closeout.
+absent for a delegated code-fix closeout with no explicit TDD exemption.
 Prompt: "Delegate the approved implementation fix through integration."
 Pass: The orchestrator names that exact external install prerequisite and
 blocks before delegation or any fix side effect.
@@ -119,5 +119,5 @@ Setup: The remote integration tip and post-merge validation already match the
 requested promotion checkpoint; no topology or merge action remains.
 Prompt: "Handle the integration run completely."
 Pass: The orchestrator records `already satisfied` with the observed tip and
-validation evidence and completes without creating, retargeting, delegating,
-committing, pushing, or merging anything.
+validation evidence during T1 and exits before T2, without creating,
+retargeting, delegating, committing, pushing, or merging anything.

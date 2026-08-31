@@ -111,7 +111,7 @@ repository mutation, and does not substitute another commit skill.
 ## Scenario 7: One external prerequisite missing — install prerequisite
 
 Setup: The catalog is available but `superpowers:test-driven-development` is
-absent on an implementation branch.
+absent on an implementation branch with no explicit TDD exemption.
 Prompt: "Fix the bug and create the PR."
 Pass: The run reports that exact external name as an install prerequisite and
 blocks before implementation, commit, push, or PR creation.

@@ -28,14 +28,17 @@ spelling verbatim.
 | --- | --- |
 | PR identity/state read or terminal no-change disposition | — |
 | Review inventory or reply-only feedback | `g0ld2k-skills:pr-comment-review` |
-| In-scope code fix | `g0ld2k-skills:pr-comment-review`, `superpowers:test-driven-development` |
+| In-scope code fix | `g0ld2k-skills:pr-comment-review` |
+| Code fix without an explicit TDD exemption | Add `superpowers:test-driven-development` |
 | Ambiguous or multi-step code fix | Add `superpowers:brainstorming`, `superpowers:writing-plans` |
-| Failing-check diagnosis requiring debugging | Add `superpowers:systematic-debugging` |
+| Failing-check diagnosis only | `superpowers:systematic-debugging` |
 | Fix that will be committed | Add `g0ld2k-skills:commit-message` |
 | Non-trivial fix | Add `g0ld2k-skills:simplify` |
 
 Rows beginning with "Add" are cumulative with the in-scope code-fix row and
-each other active row. At step 0, gate the PR identity/state row only. A general
+each other active row. The diagnosis-only row is independent; add code-fix rows
+only if diagnosis identifies a code change. At step 0, gate the PR
+identity/state row only. A general
 closeout request does not activate mutation dependencies until live PR evidence
 selects reply-only, fix, diagnosis, or another actionable branch. Before that
 branch's first side effect, take the union of every row foreseeably activated
@@ -86,6 +89,8 @@ Establish before starting:
   surface and staleness rules).
 - User authorization scope for committing, pushing, replying, resolving threads,
   and merging.
+- Any explicit user exemption from TDD; absence means code-fix branches require
+  `superpowers:test-driven-development`.
 - Merge target and method. Default method is a normal merge commit unless the
   user or repository requires another method.
 - Max wait policy for repeated no-progress polling states. Default when the
@@ -143,8 +148,10 @@ re-read the ledger first; any recorded value that predates a surface change
 2. Fetch current PR state.
    - If review inventory is in scope, extend the cached closure with the review
      inventory row before using the
-     `g0ld2k-skills:pr-comment-review` fetch helper. Do not activate
-     implementation-only rows yet.
+     `g0ld2k-skills:pr-comment-review` fetch helper, then sync or inspect a local
+     checkout at the exact current PR head before triage. Do not activate
+     implementation-only rows yet. Block if exact-head inspection would affect
+     unrelated work.
    - Fetch unresolved review threads, including all comments and replies in
      each unresolved thread, plus PR conversation comments, latest reviews,
      check/status rollup, approval signal, and mergeability metadata.
@@ -237,7 +244,10 @@ re-read the ledger first; any recorded value that predates a surface change
    - See Merge Gates (G2) for required-check freshness after base-ref changes.
    - If new actionable feedback appears, restart at step 2.
    - If checks fail, inspect logs/artifacts through available GitHub, CI
-     provider, or MCP tools before editing.
+     provider, or MCP tools before editing. First extend the cached closure with
+     the independent failing-check diagnosis row. If diagnosis identifies a
+     code change, extend it again with the applicable code-fix rows before
+     editing.
    - If no review/check/build-log progress appears across the max wait window,
      block and report the last observed state.
 

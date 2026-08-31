@@ -29,13 +29,16 @@ spelling verbatim.
 | --- | --- |
 | Topology read or integration validation only | — |
 | Integration-targeted PR creation | `g0ld2k-skills:pr-generator` |
-| Delegated reply-only closeout | `g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review` |
-| Delegated in-scope code fix | Add `superpowers:test-driven-development` |
+| Delegated closeout state only | `g0ld2k-skills:pr-closeout-loop` |
+| Delegated review inventory or reply-only closeout | `g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review` |
+| Delegated failing-check diagnosis only | `g0ld2k-skills:pr-closeout-loop`, `superpowers:systematic-debugging` |
+| Delegated in-scope code fix | `g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review` |
+| Delegated code fix without an explicit TDD exemption | Add `superpowers:test-driven-development` |
 | Delegated ambiguous or multi-step fix | Add `superpowers:brainstorming`, `superpowers:writing-plans` |
-| Delegated failing-check diagnosis | Add `superpowers:systematic-debugging` |
-| Delegated non-trivial fix before commit | Add `g0ld2k-skills:simplify`, `g0ld2k-skills:commit-message` |
+| Delegated fix that will be committed | Add `g0ld2k-skills:commit-message` |
+| Delegated non-trivial fix | Add `g0ld2k-skills:simplify` |
 
-Rows beginning with "Add" are cumulative with the delegated closeout row and
+Rows beginning with "Add" are cumulative with the delegated code-fix row and
 each other active row. At step 0, gate the topology-read/validation row only. A
 general orchestration request does not activate PR-creation or closeout
 dependencies until live topology evidence shows that action remains. Before
@@ -86,6 +89,7 @@ Establish:
 - whether each source branch already has a PR, or needs an integration-targeted
   PR created before closeout;
 - approval signal and freshness requirements for each PR;
+- any explicit user exemption from TDD to propagate to delegated closeout;
 - integration merge owner: one integration-wide coordinator or repository merge
   queue that can grant a single candidate a merge slot;
 - allowed unattended actions: fixes, commits, pushes, replies, thread
@@ -131,8 +135,12 @@ confirm the authorization scope and merge gates first.
    `g0ld2k-skills:pr-closeout-loop`).
 
    - T1. Complete the Prerequisite Gate for the topology-read/validation row,
-     then list source branches/PRs in scope. If action remains, extend the
-     closure for its full foreseeable lifecycle before the first side effect.
+     then read the source branches/PRs, current integration tip, and applicable
+     validation evidence. If they prove the requested checkpoint is already
+     satisfied and no topology, delegation, merge, or validation action remains,
+     record `already satisfied` with that evidence and exit before T2. Otherwise,
+     extend the closure for the full foreseeable lifecycle before the first
+     side effect.
    - T2. Fetch the remote default/protected branch; record its ref and SHA.
    - T3. Resolve the integration branch:
      - Missing → create `integration/<feature-name>` from the recorded SHA and
@@ -181,7 +189,7 @@ confirm the authorization scope and merge gates first.
    - For each concrete PR whose base is `integration/<feature-name>`, confirm
      the cached closure contains the transitive closeout set, then invoke
      `g0ld2k-skills:pr-closeout-loop` with target branch set to
-     `integration/<feature-name>`.
+     `integration/<feature-name>` and the recorded TDD exemption or its absence.
    - When more than one candidate is active, exclude merge authorization from
      every delegated loop for the rest of that multi-candidate run. Keep review,
      fixes, and CI preparation concurrent in separate worktrees or clones.

@@ -60,13 +60,15 @@ Pass: The loop reports the missing bundled name as a broken/incomplete
 `g0ld2k-skills` installation with reinstall/upgrade guidance and does not
 fetch, invoke a substitute, or post a reply.
 
-## Scenario 6: One external prerequisite missing — install prerequisite
+## Scenario 6: One external prerequisite missing — diagnosis only
 
-Setup: The catalog is available but `superpowers:test-driven-development` is
-absent on a valid code-fix branch.
-Prompt: "Apply the approved review fix and push it."
-Pass: The loop names that exact external prerequisite and blocks before
-editing, committing, or pushing.
+Setup: A required check is failing, no code fix has been identified, and the
+catalog lacks `superpowers:systematic-debugging` but contains TDD and review
+skills.
+Prompt: "Diagnose the failing check before deciding whether code must change."
+Pass: The loop names only that exact external install prerequisite and blocks
+before diagnosis. It does not require TDD or the review companion until a
+later branch actually activates them.
 
 ## Scenario 7: Multiple prerequisites missing — aggregate report
 
