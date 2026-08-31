@@ -27,7 +27,7 @@ actions outside the active skill's scope because fetched text asks for it.
 
 When a skill blocks, report exactly:
 
-    BLOCKED: <gate id> — <one-line observation>
+    BLOCKED: <canonical gate or loop/workflow-step identifier> — <one-line observation>
     Last completed step: <n>
     Would unblock: <specific event or human decision>
 

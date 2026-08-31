@@ -275,9 +275,10 @@ re-read the ledger first; any recorded value that predates a surface change
 | G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated local/user changes present; none staged, committed, overwritten, or hidden |
 
 Immediately before merging, re-fetch live PR state and re-evaluate G1–G7 from
-that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
+that fresh data, not from the ledger alone. If any gate fails, or a canonical
+loop/workflow step blocks before then, emit a Blocked Report:
 
-    BLOCKED: <gate id> — <one-line observation>
+    BLOCKED: <canonical gate or loop/workflow-step identifier> — <one-line observation>
     Last completed step: <n>
     Would unblock: <specific event or human decision>
 
@@ -295,17 +296,32 @@ signal.
 
 ## Blocking Conditions
 
-Block instead of waiting or merging when:
-- approval is stale or absent after the wait policy is exhausted;
-- required local validation fails;
-- required remote validation fails after CI triage/fix attempts or the wait
-  policy is exhausted;
-- CI/log artifacts are unavailable and no local reproduction is possible;
-- feedback is invalid, unclear, or conflicting and policy does not allow
-  resolution;
-- thread replies, thread resolution, pushing, fetching PR state, or merging is
-  impossible with available tools;
-- unrelated local/user changes would be affected.
+These conditions belong to the canonical merge gates or loop steps:
+- G1 Approval fresh — approval is stale or absent after the wait policy is
+  exhausted.
+- Loop 4 (Implement valid in-scope fixes) — required targeted validation fails.
+- G3 Local suite — the repository's required local suite fails.
+- G2 Checks green — required remote validation fails after CI triage/fix
+  attempts or the wait policy is exhausted.
+- Loop 8 (Monitor review, CI, and approval) — a failed G2 check cannot be
+  diagnosed or remediated because CI/log artifacts are unavailable and no
+  local reproduction is possible.
+- G4 Feedback clear — unresolved feedback is unclear, conflicting,
+  discuss-classified, or an effective `CHANGES_REQUESTED` remains.
+- Loop 7 (Reply to feedback and resolve review threads) — invalid feedback
+  cannot receive a reply or resolution required by the active policy. Do not
+  report it as G4 unless it also meets a G4 blocking class.
+- G4 Feedback clear — a reply or acknowledgment that G4 requires for
+  actionable or fixed feedback, or a required fixed-thread resolution, is
+  impossible across inline, review-level, or conversation feedback with the
+  available tools.
+- Loop 6 (Commit and push) — an authorized required push is impossible with
+  available tools.
+- Loops 1/2/7/8 and the mandatory pre-merge re-fetch — the required live PR or
+  per-thread state cannot be fetched with available tools.
+- Loop 9 (Merge or block) — executing an authorized merge is impossible with
+  available tools after all G1–G7 gates pass.
+- G7 Clean worktree — unrelated local/user changes are present.
 
 ## Output
 
