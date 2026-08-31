@@ -243,11 +243,16 @@ confirm the authorization scope and merge gates first.
 
 These conditions belong to the canonical topology gates or workflow steps:
 - T1/T3 — branch topology is ambiguous and a safe default is not obvious.
-- G5 (delegated closeout) — blanket approval scope is unclear.
-- E2 Scope — existing integration branch contents are out of scope and
-  destructive recreation is not explicitly authorized, or an open PR targets
-  the existing integration branch.
-- T4/T5 — PR creation or base-retargeting is needed but not authorized.
+- T3/E3 — authorization for integration-branch creation or pushing is unclear.
+- E2 Scope — existing integration contents are out of scope and the branch
+  cannot be recreated because recreation is unauthorized or an open PR targets
+  it.
+- T4 — authorization for PR base-retargeting or clone cleanup is unclear.
+- T5 — authorization for source-branch pushing or PR creation is unclear.
+- Delegated Loop 6/7 — authorization for commits, pushes, replies, or thread
+  resolution is unclear.
+- Delegated G5 Authorization — authorization for the exact integration target
+  and merge method is unclear.
 - T6 — a PR lacks a PR surface that can be delegated to the closeout loop.
 - Workflow 4 (merge-slot ownership) — more than one candidate is active and
   neither an integration-wide coordinator nor a repository merge queue can

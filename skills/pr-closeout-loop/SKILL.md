@@ -298,19 +298,24 @@ signal.
 These conditions belong to the canonical merge gates or loop steps:
 - G1 Approval fresh — approval is stale or absent after the wait policy is
   exhausted.
-- G3 Local suite — required local validation fails.
+- Loop 4 (Implement valid in-scope fixes) — required targeted validation fails.
+- G3 Local suite — the repository's required local suite fails.
 - G2 Checks green — required remote validation fails after CI triage/fix
   attempts or the wait policy is exhausted.
-- G2 Checks green — CI/log artifacts are unavailable and no local reproduction
-  is possible, so required checks cannot be evaluated.
-- G4 Feedback clear — feedback is invalid, unclear, or conflicting and policy
-  does not allow resolution.
-- G4 Feedback clear — required thread replies or resolution are impossible
-  with available tools.
+- Loop 8 (Monitor review, CI, and approval) — a failed G2 check cannot be
+  diagnosed or remediated because CI/log artifacts are unavailable and no
+  local reproduction is possible.
+- G4 Feedback clear — unresolved feedback is unclear, conflicting,
+  discuss-classified, or an effective `CHANGES_REQUESTED` remains.
+- Loop 7 (Reply to feedback and resolve review threads) — invalid feedback
+  cannot receive a reply or resolution required by the active policy. Do not
+  report it as G4 unless it also meets a G4 blocking class.
+- G4 Feedback clear — required fixed-thread replies or resolution are
+  impossible with available tools.
 - Loop 6 (Commit and push) — an authorized required push is impossible with
   available tools.
-- Loops 1/2 and the mandatory pre-merge re-fetch — live PR-state fetching is
-  impossible with available tools.
+- Loops 1/2/7 and the mandatory pre-merge re-fetch — the required live PR or
+  per-thread state cannot be fetched with available tools.
 - Loop 9 (Merge or block) — executing an authorized merge is impossible with
   available tools after G5 Authorization and G6 Mergeable pass.
 - G7 Clean worktree — unrelated local/user changes would be affected.
