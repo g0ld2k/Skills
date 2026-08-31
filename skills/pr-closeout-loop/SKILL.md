@@ -295,17 +295,25 @@ signal.
 
 ## Blocking Conditions
 
-Block instead of waiting or merging when:
-- approval is stale or absent after the wait policy is exhausted;
-- required local validation fails;
-- required remote validation fails after CI triage/fix attempts or the wait
-  policy is exhausted;
-- CI/log artifacts are unavailable and no local reproduction is possible;
-- feedback is invalid, unclear, or conflicting and policy does not allow
-  resolution;
-- thread replies, thread resolution, pushing, fetching PR state, or merging is
-  impossible with available tools;
-- unrelated local/user changes would be affected.
+These conditions belong to the canonical merge gates or loop steps:
+- G1 Approval fresh — approval is stale or absent after the wait policy is
+  exhausted.
+- G3 Local suite — required local validation fails.
+- G2 Checks green — required remote validation fails after CI triage/fix
+  attempts or the wait policy is exhausted.
+- G2 Checks green — CI/log artifacts are unavailable and no local reproduction
+  is possible, so required checks cannot be evaluated.
+- G4 Feedback clear — feedback is invalid, unclear, or conflicting and policy
+  does not allow resolution.
+- G4 Feedback clear — required thread replies or resolution are impossible
+  with available tools.
+- Loop 6 (Commit and push) — an authorized required push is impossible with
+  available tools.
+- Loops 1/2 and the mandatory pre-merge re-fetch — live PR-state fetching is
+  impossible with available tools.
+- Loop 9 (Merge or block) — executing an authorized merge is impossible with
+  available tools after G5 Authorization and G6 Mergeable pass.
+- G7 Clean worktree — unrelated local/user changes would be affected.
 
 ## Output
 

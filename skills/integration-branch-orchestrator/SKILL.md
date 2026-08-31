@@ -241,21 +241,24 @@ confirm the authorization scope and merge gates first.
 
 ## Blocking Conditions
 
-Block orchestration when:
-- branch topology is ambiguous and a safe default is not obvious;
-- blanket approval scope is unclear;
-- existing integration branch contents are out of scope and destructive
-  recreation is not explicitly authorized, or any open PR targets the
-  existing integration branch;
-- PR creation or base-retargeting is needed but not authorized;
-- any PR lacks a PR surface that can be delegated to the closeout loop;
-- more than one candidate is active and neither an integration-wide coordinator
-  nor a repository merge queue can grant a merge slot; parallel preparation may
-  continue, but final merges remain blocked;
-- integration validation fails after a merge and has not been explicitly
-  waived;
-- promotion would touch the protected/default branch without explicit approval;
-- unrelated local/user changes would be affected.
+These conditions belong to the canonical topology gates or workflow steps:
+- T1/T3 — branch topology is ambiguous and a safe default is not obvious.
+- G5 (delegated closeout) — blanket approval scope is unclear.
+- E2 Scope — existing integration branch contents are out of scope and
+  destructive recreation is not explicitly authorized, or an open PR targets
+  the existing integration branch.
+- T4/T5 — PR creation or base-retargeting is needed but not authorized.
+- T6 — a PR lacks a PR surface that can be delegated to the closeout loop.
+- Workflow 4 (merge-slot ownership) — more than one candidate is active and
+  neither an integration-wide coordinator nor a repository merge queue can
+  grant a merge slot; parallel preparation may continue, but final merges
+  remain blocked.
+- Workflow 4 (post-merge integration validation) — integration validation
+  fails after a merge and has not been explicitly waived.
+- Workflow 5 (human checkpoint) — promotion would touch the protected/default
+  branch without explicit approval.
+- Workflow 2 / G7 (delegated closeout) — unrelated local/user changes would be
+  affected.
 
 ## Output
 
