@@ -27,6 +27,8 @@ Establish:
 - whether each source branch already has a PR, or needs an integration-targeted
   PR created before closeout;
 - approval signal and freshness requirements for each PR;
+- integration merge owner: one integration-wide coordinator or repository merge
+  queue that can grant a single candidate a merge slot;
 - allowed unattended actions: fixes, commits, pushes, replies, thread
   resolution, PR creation, PR base-retargeting, merges into integration,
   destructive integration-branch recreation (recreating or resetting an
@@ -40,6 +42,17 @@ Establish:
 Default strategy:
 - Require each closeout item to have a PR targeting the integration branch
   before delegating to `pr-closeout-loop`.
+- Separate parallel review, fix, and CI preparation from serialized final merge
+  slots on a shared integration branch.
+- When more than one candidate is active, delegate with merge authorization
+  explicitly excluded. A single integration-wide coordinator or repository
+  merge queue grants one ready candidate a merge slot; selection may be based on
+  readiness rather than source order.
+- Keep slot discipline until every candidate from that multi-candidate run has
+  finished; do not restore blanket merge authorization as the queue drains.
+- Treat a repository merge queue as the merge owner only when it admits one
+  candidate at a time and waits for required post-merge integration validation
+  before admitting the next candidate.
 - Preserve branch history with normal merge commits unless the user or repo
   requires another method.
 - Let blanket approval cover repeated valid fixes, commits, pushes, replies,
@@ -92,42 +105,61 @@ confirm the authorization scope and merge gates first.
 2. Define gates.
    - Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator
      does not evaluate per-PR gates or merge PRs itself.
-   - Integration validation must pass after merges into the integration branch.
+   - For a shared integration branch with multiple active candidates, the slot
+     holder's closeout loop applies its canonical Merge Gates and Approval
+     Freshness rules against the exact integration tip recorded on slot entry.
+     The merge owner grants or revokes the slot and records the result; it does
+     not replace the loop's gate evaluation.
+   - Integration validation must pass after every merge before another merge
+     slot is granted or promotion readiness is declared.
    - No unrelated local/user changes may be staged, committed, overwritten, or
      hidden.
 
 3. Dispatch closeout work.
    - For each concrete PR whose base is `integration/<feature-name>`, invoke
      `pr-closeout-loop` with target branch set to `integration/<feature-name>`.
+   - When more than one candidate is active, exclude merge authorization from
+     every delegated loop for the rest of that multi-candidate run. Keep review,
+     fixes, and CI preparation concurrent in separate worktrees or clones.
+     Treat pre-slot base-sensitive results as provisional, and defer expensive
+     base-sensitive suites until slot entry when they add no diagnostic value.
    - Dispatch PRs with failing, pending, or stale required checks so the closeout
      loop can fix or wait on CI.
    - Keep each loop scoped to its own PR.
-   - Run concurrent closeout loops in separate worktrees or clones. If only one
-     checkout is available, serialize the loops so branch, index, validation,
-     commit, and push state cannot overlap.
+   - If only one checkout is available, serialize preparation so branch, index,
+     validation, commit, and push state cannot overlap.
    - If a loop finds conflicting feedback, stale authorization, or missing
      validation, mark that item blocked instead of widening scope.
 
 4. Maintain the integration branch.
-   - `pr-closeout-loop` owns each PR's merge into `integration/<feature-name>`
-     and must apply its full G1–G7 merge-gate set immediately before merging.
-     Do not perform an independent merge here that bypasses those gates.
-   - Once a delegated merge has landed, use normal merge commits by default.
-   - Fetch and check out the current remote `integration/<feature-name>` tip
-     before running integration-level validation. Delegated merges made
-     through GitHub or in separate worktrees/clones may not be reflected in
-     the orchestrator's own checkout, so validating a stale local copy can
-     report the branch ready for promotion when the merged result actually
-     fails.
-   - Re-run integration-level validation after merges when the repository has a
-     suitable suite or workflow.
+   - When more than one candidate is active, the integration-wide coordinator
+     or repository merge queue grants one ready candidate one merge slot. The
+     grant temporarily authorizes only that candidate's closeout loop to consume
+     the slot; any ready candidate may be selected. The recorded user scope must
+     still satisfy G5 for the exact integration branch and merge method.
+   - On slot entry, fetch the remote `integration/<feature-name>` ref and record
+     its exact `slot_base_sha`.
+   - Immediately before merging, fetch the remote ref and live PR state, then
+     compare the tip with `slot_base_sha`. A changed tip revokes the slot;
+     record the evidence as stale and route the candidate through refresh and
+     revalidation before granting another slot.
+   - If the tip is unchanged, the delegated closeout loop performs its single
+     mandatory final G1–G7 evaluation against `slot_base_sha`. After the fresh
+     gates pass, it performs the normal merge commit. The orchestrator does not
+     perform an independent merge that bypasses those gates.
+   - After each delegated merge, fetch and record the new remote integration
+     tip, then run integration-level validation from that fresh tip before
+     granting another slot or declaring promotion readiness.
    - If integration validation fails, triage whether the failure belongs to a
-     just-merged branch, branch interaction, or environment, but keep promotion
-     blocked until validation passes or the failure is explicitly waived.
+     just-merged branch, branch interaction, or environment, and block later
+     slots and promotion until it passes or a recorded user authorization
+     explicitly permits proceeding after that integration-validation failure.
+     Never widen a PR's scope.
 
 5. Prepare human checkpoint.
    - Summarize branches/PRs included, commits merged, review feedback resolved,
-     validation run, CI state, deferred low findings, and known risks.
+     merge-slot owners and tip transitions, per-merge integration validation,
+     CI state, deferred low findings, and known risks.
    - Do not merge the integration branch into the default branch until the user
      explicitly approves that promotion.
 
@@ -141,11 +173,24 @@ Block orchestration when:
   existing integration branch;
 - PR creation or base-retargeting is needed but not authorized;
 - any PR lacks a PR surface that can be delegated to the closeout loop;
-- integration validation fails and has not been explicitly waived;
+- more than one candidate is active and neither an integration-wide coordinator
+  nor a repository merge queue can grant a merge slot; parallel preparation may
+  continue, but final merges remain blocked;
+- integration validation fails after a merge and has not been explicitly
+  waived;
 - promotion would touch the protected/default branch without explicit approval;
 - unrelated local/user changes would be affected.
 
 ## Output
+
+Keep the run ledger auditable. Record:
+- protected/default ref and SHA, integration branch, and topology tip SHA;
+- every candidate, source ref, PR base, worktree, and delegation status;
+- merge owner (coordinator or queue), slot candidate, `slot_base_sha`, fresh
+  G1–G7/base-sensitive results, pre-merge tip, merge SHA, post-merge tip, and
+  validation result for each slot;
+- authorization scope, CI state, deferred low findings, risks, and promotion
+  status.
 
 Report:
 - integration branch name;

@@ -23,3 +23,33 @@ delegating.
 Setup: closeout loop merged via GitHub; orchestrator's checkout is stale.
 Prompt: "Use `integration-branch-orchestrator` to validate the merged integration branch."
 Pass: fetches the remote integration tip before running integration validation.
+
+## Scenario 4: Deterministic — two-PR stale-tip race
+
+Setup: `integration/feature-x` is at remote tip `I0`; PRs A and B are both
+active, target the branch, and have passed G1–G7 against `I0`. Separate
+worktrees are available, normal merge commits are required, and one
+integration-wide coordinator is available. At slot admission, A is ready and
+selected for the first slot so the tip transition is deterministic; candidate
+selection remains readiness-based rather than source-ordered.
+Prompt: "Run parallel closeout preparation for A and B, then serialize their
+integration merges with the coordinator and validate after each merge."
+Pass:
+
+1. Delegates both loops with merge authorization excluded.
+2. The coordinator grants A a slot and records `slot_base_sha=I0`. Immediately
+   before merging, A fetches the integration tip and live PR state, confirms
+   the tip is still `I0`, performs `pr-closeout-loop`'s final G1–G7 evaluation
+   against `I0`, and merges normally, producing `I1`.
+3. Fetches and records `I1`, then passes integration validation before another
+   slot is granted.
+4. The coordinator marks B's earlier `I0` evidence stale, grants B the next
+   slot, and records `slot_base_sha=I1`. B refreshes and revalidates against
+   `I1`; immediately before merging, B fetches the tip and live PR state,
+   confirms the tip is still `I1`, passes the final G1–G7 evaluation, and
+   merges normally, producing `I2`.
+5. Fetches and records `I2` and passes integration validation before reporting
+   promotion readiness.
+
+The ledger proves that A and B never both pass the final merge gate against the
+same stale tip `I0`, and records both post-merge validation results.
