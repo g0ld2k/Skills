@@ -1067,6 +1067,7 @@ def validate_skills(errors: list[str]) -> list[str]:
 
 def validate_cross_skill_references(canonical_names: list[str], errors: list[str]) -> None:
     known = set(canonical_names)
+    plugin_prefix = f"{PLUGIN_NAME}:"
     for markdown_file in sorted(SKILLS_DIR.glob("*/SKILL.md")) + sorted(
         SKILLS_DIR.glob("*/references/**/*.md")
     ):
@@ -1079,6 +1080,8 @@ def validate_cross_skill_references(canonical_names: list[str], errors: list[str
         tokens += [m.group(1) for m in COMPANION_REF_RE.finditer(text)]
         for token in tokens:
             if token in known:
+                continue
+            if token.startswith(plugin_prefix) and token[len(plugin_prefix) :] in known:
                 continue
             if token.startswith(EXTERNAL_SKILL_PREFIXES):
                 continue

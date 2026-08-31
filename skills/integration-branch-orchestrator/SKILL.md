@@ -2,19 +2,75 @@
 name: integration-branch-orchestrator
 description: Use when supervising autonomous multi-PR closeout through an integration branch with a human promotion gate.
 license: MIT
+compatibility: >-
+  Requires a client/session authoritative skill catalog; delegated closeout
+  may require superpowers:brainstorming, superpowers:writing-plans,
+  superpowers:test-driven-development, and superpowers:systematic-debugging.
 ---
 
 # Integration Branch Orchestrator
+
+## Prerequisite Gate
+
+Run this gate as step 0, before any task-related repository, filesystem, Git,
+network, PR, CI, or branch-state read or mutation. The client/session's
+authoritative skill catalog is the only availability source; do not infer
+availability from files, manifests, prior turns, or a partial invocation.
+
+Read the complete client/session catalog with exact qualified names once and
+cache that snapshot for the run. Record `catalog_source`, `required`,
+`present`, and `missing`. This plugin's bundled catalog identities are
+`g0ld2k-skills:pr-generator`,
+`g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review`,
+`g0ld2k-skills:simplify`, and `g0ld2k-skills:commit-message`; use the catalog
+spelling verbatim.
+
+| Active branch | Required qualified catalog names |
+| --- | --- |
+| Topology read or integration validation only | — |
+| Integration-targeted PR creation | `g0ld2k-skills:pr-generator` |
+| Delegated reply-only closeout | `g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review` |
+| Delegated in-scope code fix | Add `superpowers:test-driven-development` |
+| Delegated ambiguous or multi-step fix | Add `superpowers:brainstorming`, `superpowers:writing-plans` |
+| Delegated failing-check diagnosis | Add `superpowers:systematic-debugging` |
+| Delegated non-trivial fix before commit | Add `g0ld2k-skills:simplify`, `g0ld2k-skills:commit-message` |
+
+Rows beginning with "Add" are cumulative with the delegated closeout row and
+each other active row. At step 0, take the union of every row foreseeably
+activated by the requested and authorized lifecycle, including the transitive
+closure for delegated `g0ld2k-skills:pr-closeout-loop` work. Reuse the cached
+catalog snapshot and derived closure; do not rescan it for each candidate or
+helper. If later topology or PR evidence activates a conditional row that was
+not knowable at entry, extend the closure against the snapshot before its first
+side effect. Refresh only if the client reports that the catalog changed. A
+validation-only or no-change path never requires implementation-only names.
+Never stop at the first missing name, substitute a similarly named skill, or
+invoke a dependency to test whether it is present. Report all missing names in
+the active closure together. A missing bundled name means the `g0ld2k-skills`
+installation is broken or incomplete: stop with reinstall or upgrade guidance
+for the root plugin and require a fresh catalog. A missing `superpowers:*` name
+is an install prerequisite; name it exactly and wait for installation. If the
+catalog cannot be exposed, emit:
+
+    BLOCKED: P0 — authoritative skill catalog unavailable; prerequisites cannot be verified
+    Last completed step: 0
+    Would unblock: expose the complete client/session catalog with exact qualified names and provider/source
+
+Do not read repository or branch state after this block. For missing entries,
+emit one Blocked Report containing the full `missing` list and the
+category-specific reinstall/install guidance.
 
 ## Goal
 
 Plan and supervise autonomous PR closeout work without letting unattended changes
 flow directly into the default branch. Establish an integration branch boundary,
-define approval scope, hand concrete PRs to `pr-closeout-loop`, and preserve a
-human checkpoint before protected/default branch promotion.
+define approval scope, hand concrete PRs to
+`g0ld2k-skills:pr-closeout-loop`, and preserve a human checkpoint before
+protected/default branch promotion.
 
 This is the control-plane skill. If a concrete PR already has a target branch
-and only needs review/CI closeout, use `pr-closeout-loop` directly.
+and only needs review/CI closeout, use
+`g0ld2k-skills:pr-closeout-loop` directly.
 
 ## Planning Inputs
 
@@ -41,7 +97,7 @@ Establish:
 
 Default strategy:
 - Require each closeout item to have a PR targeting the integration branch
-  before delegating to `pr-closeout-loop`.
+  before delegating to `g0ld2k-skills:pr-closeout-loop`.
 - Separate parallel review, fix, and CI preparation from serialized final merge
   slots on a shared integration branch.
 - When more than one candidate is active, delegate with merge authorization
@@ -69,9 +125,10 @@ confirm the authorization scope and merge gates first.
 1. Define the branch topology. Work through T1–T7 in order; each has an
    explicit on-failure action. "Block" always means: stop delegation for the
    affected item and emit a Blocked Report (shape defined in
-   `pr-closeout-loop`).
+   `g0ld2k-skills:pr-closeout-loop`).
 
-   - T1. List source branches/PRs in scope.
+   - T1. Complete the Prerequisite Gate for every branch already active from the
+     request, then list source branches/PRs in scope.
    - T2. Fetch the remote default/protected branch; record its ref and SHA.
    - T3. Resolve the integration branch:
      - Missing → create `integration/<feature-name>` from the recorded SHA and
@@ -93,8 +150,9 @@ confirm the authorization scope and merge gates first.
      conversation comments first, and either close/supersede
      the original (only if authorized) or keep polling it for new activity
      until the clone merges.
-   - T5. For each source branch without a PR: verify the branch exists on a
-     recorded remote (push first if authorized), then create an
+   - T5. For each source branch without a PR: confirm the cached prerequisite
+     closure includes `g0ld2k-skills:pr-generator` before creating one. Verify
+     the branch exists on a recorded remote (push first if authorized), then create an
      integration-targeted PR (requires PR-topology authorization); otherwise
      Block until the user defines branch-only gates.
    - T6. Verify every delegatable item now has a PR whose base is
@@ -103,8 +161,8 @@ confirm the authorization scope and merge gates first.
      authorizations in effect.
 
 2. Define gates.
-   - Each PR's merge is gated by `pr-closeout-loop`'s G1–G7; the orchestrator
-     does not evaluate per-PR gates or merge PRs itself.
+   - Each PR's merge is gated by `g0ld2k-skills:pr-closeout-loop`'s G1–G7; the
+     orchestrator does not evaluate per-PR gates or merge PRs itself.
    - For a shared integration branch with multiple active candidates, the slot
      holder's closeout loop applies its canonical Merge Gates and Approval
      Freshness rules against the exact integration tip recorded on slot entry.
@@ -116,8 +174,10 @@ confirm the authorization scope and merge gates first.
      hidden.
 
 3. Dispatch closeout work.
-   - For each concrete PR whose base is `integration/<feature-name>`, invoke
-     `pr-closeout-loop` with target branch set to `integration/<feature-name>`.
+   - For each concrete PR whose base is `integration/<feature-name>`, confirm
+     the cached closure contains the transitive closeout set, then invoke
+     `g0ld2k-skills:pr-closeout-loop` with target branch set to
+     `integration/<feature-name>`.
    - When more than one candidate is active, exclude merge authorization from
      every delegated loop for the rest of that multi-candidate run. Keep review,
      fixes, and CI preparation concurrent in separate worktrees or clones.
@@ -188,6 +248,8 @@ Block orchestration when:
 ## Output
 
 Keep the run ledger auditable. Record:
+- catalog source and snapshot identity, plus the exact required, present, and
+  missing qualified names in the active closure;
 - protected/default ref and SHA, integration branch, and topology tip SHA;
 - every candidate, source ref, PR base, worktree, and delegation status;
 - merge owner (coordinator or queue), slot candidate, `slot_base_sha`, fresh
