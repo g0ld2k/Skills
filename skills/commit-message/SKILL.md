@@ -9,8 +9,9 @@ license: MIT
 ## Goal
 
 Produce a high-quality Conventional Commit message from staged changes. When
-committing, bind approval to a staged-tree identity and confirm it is unchanged
-immediately before invoking normal `git commit`.
+committing, bind approval and evidence to the draft identity: the commit parent
+(`HEAD`) and staged tree. Confirm both are unchanged immediately before
+invoking normal `git commit`.
 
 **Commit gate (single source for this skill):** two modes exist.
 - `message-only` (default): never commit. A recorded approval scope alone does
@@ -20,6 +21,9 @@ immediately before invoking normal `git commit`.
   scope that explicitly covers committing staged changes with the generated
   message.
 
+Approval is valid only for the displayed message and its exact
+`(draft_parent, staged_tree)` identity pair.
+
 ## Workflow
 
 ### 0) Preflight and snapshot
@@ -27,33 +31,72 @@ immediately before invoking normal `git commit`.
 Confirm the repository with `git rev-parse --is-inside-work-tree`. Stop and
 report its error if the command fails or does not return `true`.
 
+Before inspecting staged content, reject an in-progress merge by resolving the
+per-worktree pseudoref path and checking that path explicitly:
+
+```bash
+check_merge_state() {
+  if merge_head_path="$(git rev-parse --git-path MERGE_HEAD)"; then
+    :
+  else
+    merge_head_status=$?
+    printf 'Git error: `git rev-parse --git-path MERGE_HEAD` exited %s.\n' \
+      "$merge_head_status" >&2
+    exit "$merge_head_status"
+  fi
+  if [ -e "$merge_head_path" ]; then
+    printf 'Merge in progress; resolve it before drafting a commit message.\n' >&2
+    exit 0
+  fi
+}
+
+check_merge_state
+```
+
+A branch or tag named `MERGE_HEAD` does not create this pseudoref path, so it
+does not trigger the merge guard. Do not model multi-parent merges in this
+skill.
+
 Run `git diff --cached --quiet` and preserve its exit status directly:
 
 - `0`: no staged changes; stop and ask the user to stage the intended files.
 - `1`: staged changes exist; continue.
 - Any other status: report the command, status, and Git error, then stop.
 
-For status `1`, run `git write-tree`. Stop on failure and keep its returned
-`staged_tree` identity with the draft.
+For status `1`, use the same normal/unborn procedure to record `draft_parent`,
+then record `staged_tree` with `git write-tree`. A normal `HEAD` is the parent
+and sets `draft_base="$draft_parent"`. When `git rev-parse --verify HEAD`
+returns its unborn status (normally status `128`), prove that `HEAD` is a
+symbolic ref whose ref path is absent; record `unborn:<ref>` as the parent and
+create the repository-format-specific empty tree with `git mktree </dev/null>`;
+set `draft_base` to that returned OID. Use `git symbolic-ref --quiet HEAD`, then
+confirm `git show-ref --verify --quiet <ref>` reports that ref as missing. An
+existing or broken ref is a Git error, not an unborn repository. Preserve every
+command's status and error. The draft identity is exactly
+`(draft_parent, staged_tree)`.
 
-Then inspect the staged paths and summary:
+### 1) Collect evidence from the recorded identities
+
+Use staged content as primary truth, but read it from the recorded evidence
+base and staged tree rather than the live index. This prevents an index change
+and reversal (an ABA race) from mixing evidence from different snapshots:
 
 ```bash
-git --no-pager diff --cached --name-only
-git --no-pager diff --cached --stat
+if git --no-pager diff --no-color --no-ext-diff --no-textconv --patch-with-stat --summary "$draft_base" "$staged_tree"; then
+  :
+else
+  evidence_status=$?
+  printf 'Git error: `git --no-pager diff --no-color --no-ext-diff --no-textconv --patch-with-stat --summary "$draft_base" "$staged_tree"` exited %s.\n' "$evidence_status" >&2
+  exit "$evidence_status"
+fi
 ```
 
-### 1) Collect evidence from staged diff
-
-Use staged content as primary truth:
-
-```bash
-# Full staged patch for analysis
-git --no-pager diff --cached
-
-# Optional: staged file summary by status
-git --no-pager diff --cached --name-status
-```
+This one command supplies summary plus patch and explicitly captures its
+status before reporting the command and stopping on failure. It uses the
+effective Git object/configuration view for that single command; concurrent
+changes to replacement refs, repository-local attributes/configuration, or
+hooks are outside this normal-Git snapshot guarantee. Hooks still run normally.
+Do not read draft evidence with `git diff --cached` after the tree is recorded.
 
 ### 2) Collect optional project context
 
@@ -117,6 +160,7 @@ Here's a suggested commit message:
 
 <show formatted message>
 
+Draft parent: <draft_parent>
 Staged tree: <staged_tree>
 
 Ready to commit when you confirm.
@@ -133,21 +177,49 @@ message, register cleanup on normal exit and failure; handlers for `HUP`,
 stops the workflow and reports its command, status, and error.
 
 Immediately before `git commit -F "$commit_msg_file"`, repeat the staged-status
-check from Step 0 and run `git write-tree` again:
+check from Step 0 and run `git write-tree` again. Use the same normal/unborn
+procedure to record `current_parent`. Do not resolve another baseline object:
+
+```bash
+if current_tree="$(git write-tree)"; then
+  :
+else
+  tree_status=$?
+  printf 'Git error: `git write-tree` exited %s.\n' "$tree_status" >&2
+  exit "$tree_status"
+fi
+# Resolve the parent again, preserving its status; use the unborn sentinel and
+# empty-tree OID when it is still unborn.
+```
 
 - If no staged changes remain, discard the draft and ask for the intended files
   to be staged.
-- If the new tree differs from `staged_tree`, discard the draft, repeat staged
-  evidence collection, and apply the same approval gate to the new tree and
-  message. Attended approval requires fresh confirmation; recorded
+- If the new tree differs from `staged_tree`, or `current_parent` differs from
+  `draft_parent`, discard the draft, repeat evidence collection from the new
+  recorded identities, and apply the same approval gate to the new tree and
+  parent. A changed commit parent requires this path even when the staged tree
+  is unchanged, including a transition from an unborn parent to an actual
+  parent. Attended approval requires fresh confirmation; recorded
   preauthorization must be re-evaluated for the new draft.
-- If either Git command fails, report its command, status, and error, then stop.
+- If any Git command fails, report its command, status, and error, then stop.
 
-Use normal `git commit -F` after the check. Repository hooks run normally and
-may modify the index under repository policy; the drift gate covers changes
-observed before the commit invocation. If the commit fails, report its command,
-status, and Git error without reporting commit metadata. Cleanup runs on
-success, failure, or interruption.
+The freshness condition is:
+
+```bash
+if [ "$current_tree" != "$staged_tree" ] ||
+  [ "$current_parent" != "$draft_parent" ]; then
+  printf 'Commit parent or staged tree changed; discard the draft before retrying.\n' >&2
+  # Discard the old draft and restart at Step 1.
+fi
+```
+
+After the parent/tree recheck succeeds, call `check_merge_state` again
+immediately before normal `git commit -F`; stop if the pseudoref path now
+exists. This repeated merge gate accepts the normal-Git gap after the check and
+adds no transaction or lock. Repository hooks may modify the index under
+repository policy. If the commit fails, report its command, status, and Git
+error without reporting commit metadata. Cleanup runs on success, failure, or
+interruption.
 
 Only after a successful commit, read and report the SHA and subject with
 `git --no-pager log -1 --pretty=format:'%h %s'`. Never auto-push unless
@@ -160,8 +232,8 @@ Return the Step 5 proposal plus a 1-3 line rationale for the type and scope.
 
 ### B) `message+commit` (commit gate passed)
 After the final tree check and successful normal `git commit -F`, return the
-checked SHA and subject. On failure, return the failing command, status, and Git
-error without implying that a commit exists.
+checked SHA and subject. On failure, return the failing command, status, and
+Git error without implying that a commit exists.
 
 ## References
 

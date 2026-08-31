@@ -706,6 +706,145 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 self.validator.validate_validation_scenarios(skill_dir, errors)
                 self.assertEqual(errors, [])
 
+    def test_commit_message_binds_approval_to_commit_parent_and_tree(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        draft_tree = skill_text.index("git write-tree")
+        recheck = skill_text.index("### 6) Re-check and commit")
+        commit = skill_text.index("git commit -F")
+
+        self.assertLess(draft_tree, recheck)
+        self.assertLess(recheck, commit)
+        self.assertIn("draft_parent", skill_text)
+        self.assertIn("draft_base", skill_text)
+        self.assertNotIn("draft_base_tree", skill_text)
+        self.assertIn("normal/unborn procedure", skill_text)
+        self.assertIn("current_parent", skill_text)
+        self.assertIn('[ "$current_parent" != "$draft_parent" ]', skill_text)
+        self.assertNotIn("current_base_tree", skill_text)
+        self.assertIn("commit parent or staged tree changed", skill_text.lower())
+
+    def test_commit_message_drafts_only_from_recorded_parent_and_tree(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        evidence_start = skill_text.index("### 1) Collect evidence")
+        commit_start = skill_text.index("### 6) Re-check and commit")
+        evidence_text = skill_text[evidence_start:commit_start]
+
+        self.assertIn(
+            'git --no-pager diff --no-color --no-ext-diff --no-textconv '
+            '--patch-with-stat --summary "$draft_base" "$staged_tree"',
+            evidence_text,
+        )
+        self.assertIn("evidence_status=$?", evidence_text)
+        self.assertIn("Git error:", evidence_text)
+        self.assertIn("exited %s", evidence_text)
+        self.assertNotIn("run_git_evidence", evidence_text)
+        self.assertNotIn("--attr-source", evidence_text)
+        for live_index_evidence in (
+            "git --no-pager diff --cached --name-only",
+            "git --no-pager diff --cached --stat",
+            "git --no-pager diff --cached\n",
+        ):
+            with self.subTest(command=live_index_evidence):
+                self.assertNotIn(live_index_evidence, evidence_text)
+
+    def test_commit_message_supports_unborn_initial_commit_identity(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("git rev-parse --verify HEAD", skill_text)
+        self.assertIn("git symbolic-ref --quiet HEAD", skill_text)
+        self.assertIn("git show-ref --verify --quiet", skill_text)
+        self.assertIn("git mktree </dev/null", skill_text)
+        self.assertIn("unborn:<ref>", skill_text)
+        self.assertIn("draft_base", skill_text)
+        self.assertNotIn("4b825dc642cb6eb9a060e54bf8d69288fbee4904", skill_text)
+        self.assertNotIn("draft_base_tree", skill_text)
+        self.assertIn("transition from an unborn parent", skill_text.lower())
+
+    def test_commit_message_blocks_in_progress_merges_before_drafting(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        preflight = skill_text[
+            skill_text.index("### 0) Preflight and snapshot") : skill_text.index(
+                "### 1) Collect evidence"
+            )
+        ]
+
+        self.assertIn("git rev-parse --git-path MERGE_HEAD", preflight)
+        self.assertIn('[ -e "$merge_head_path" ]', preflight)
+        self.assertNotIn("git rev-parse --quiet --verify MERGE_HEAD", preflight)
+        self.assertIn("merge in progress", preflight.lower())
+        self.assertIn("pseudoref path", preflight.lower())
+        self.assertIn("branch or tag named `MERGE_HEAD`", preflight)
+        self.assertIn("do not model multi-parent merges", preflight.lower())
+        post_recheck = skill_text[
+            skill_text.index("### 6) Re-check and commit") : skill_text.index(
+                "## Output contract"
+            )
+        ]
+        self.assertIn("check_merge_state", post_recheck)
+        self.assertGreaterEqual(skill_text.count("check_merge_state"), 3)
+
+    def test_commit_message_uses_recorded_parent_objects_as_evidence_bases(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('draft_base="$draft_parent"', skill_text)
+        self.assertIn("git mktree </dev/null", skill_text)
+        self.assertNotIn("current_base", skill_text)
+        for separate_tree_lookup in (
+            "draft_base_tree",
+            "current_base_tree",
+            'git rev-parse --verify HEAD^{tree}',
+            'git rev-parse --verify "$draft_parent^{tree}"',
+            'git rev-parse --verify "$current_parent^{tree}"',
+        ):
+            with self.subTest(lookup=separate_tree_lookup):
+                self.assertNotIn(separate_tree_lookup, skill_text)
+
+    def test_commit_message_scenarios_cover_parent_and_aba_drift(self) -> None:
+        scenario_text = (
+            ROOT
+            / "skills"
+            / "commit-message"
+            / "references"
+            / "validation-scenarios.md"
+        ).read_text(encoding="utf-8").lower()
+
+        for marker in (
+            "commit-parent drift",
+            "unchanged staged tree",
+            "aba",
+            "recorded parent",
+            "recorded staged tree",
+            "unborn initial commit",
+            "empty tree",
+            "evidence read failure",
+            "explicitly exit",
+            "merge in progress",
+            "pseudoref path",
+            "tag named `merge_head`",
+            "repeated merge gate",
+            "baseline lookup",
+            "no-textconv",
+            "no-color",
+            "patch-with-stat",
+            "summary",
+            "effective git object/configuration view",
+            "bounded metadata",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, scenario_text)
+
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):
             with self.subTest(label=empty_label), tempfile.TemporaryDirectory(
