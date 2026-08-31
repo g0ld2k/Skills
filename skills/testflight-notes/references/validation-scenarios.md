@@ -43,12 +43,14 @@ and changed path, with no moving-ref or second-range lookup.
 ## Scenario 3: Edge case — latest-tag fallback
 
 Setup: The user gives no timeframe or ref. A complete repository has a latest
-reachable tag and two commits after it, one user-visible and one test-only.
+reachable tag named `HEAD` and two commits after it, one user-visible and one
+test-only.
 
 Prompt: "Draft the TestFlight notes for this build."
 
 Pass: The agent records the latest-tag fallback assumption in the run ledger,
-resolves the tag to a commit, and reuses that pinned range for all evidence.
+resolves `refs/tags/HEAD` rather than the `HEAD` pseudo-ref, and reuses that
+pinned range for all evidence.
 Only the user-visible change is emitted; the test-only commit is excluded
 internally. In notes-only mode the copyable stdout remains exactly the clean
 notes block; if the interface supports operational commentary, the fallback
@@ -139,6 +141,8 @@ only because it was explicitly requested. Both validate and use the positive
 integer `MAX_NOTES_CHARACTERS` value consistently, keep the notes portion within
 the smaller of the named local budget and 3800, and shorten lower-impact detail
 first. Invalid values such as `0`, `92`, or `abc` fail before synthesis. The
+positive value `9223372036854775808` is clamped to the 3800-character target
+without entering Bash arithmetic or overflowing. The
 skill and reference describe 4000 as a repository default rather than a verified
 TestFlight hard limit and cite the official Apple sources:
 `https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information`

@@ -52,13 +52,18 @@ SHA-256 repositories.
 ~~~bash
 max_notes_characters="${MAX_NOTES_CHARACTERS:-4000}"
 min_notes_characters=93
-if [[ ! "$max_notes_characters" =~ ^[1-9][0-9]*$ ]] ||
-   (( max_notes_characters < min_notes_characters )); then
+if [[ ! "$max_notes_characters" =~ ^[1-9][0-9]*$ ]]; then
   printf 'ERROR: MAX_NOTES_CHARACTERS must be an integer of at least %s; received: %s\n' \
     "$min_notes_characters" "$max_notes_characters" >&2
   exit 2
 fi
-if (( max_notes_characters < 3800 )); then
+if (( ${#max_notes_characters} > 4 )); then
+  target_notes_characters=3800
+elif (( max_notes_characters < min_notes_characters )); then
+  printf 'ERROR: MAX_NOTES_CHARACTERS must be an integer of at least %s; received: %s\n' \
+    "$min_notes_characters" "$max_notes_characters" >&2
+  exit 2
+elif (( max_notes_characters < 3800 )); then
   target_notes_characters="$max_notes_characters"
 else
   target_notes_characters=3800
@@ -154,7 +159,7 @@ else
       exit 2
     fi
     tag_sha="$(git -C "$repo_root" rev-parse \
-      --verify --end-of-options "$latest_tag^{commit}")" || {
+      --verify --end-of-options "refs/tags/${latest_tag}^{commit}")" || {
       printf 'ERROR: latest reachable tag cannot be resolved to a commit: %s\n' \
         "$latest_tag" >&2
       exit 2
