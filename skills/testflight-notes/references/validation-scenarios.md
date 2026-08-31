@@ -23,6 +23,8 @@ reused unchanged for enumeration, full metadata, name-status paths, and each
 targeted candidate/path patch. Feature/fix rows map
 to selected SHAs and source paths; CI is excluded; output is plain notes-only
 text in NEW/IMPROVED/FIX order with no fabricated stability line.
+Across multiple commits, metadata parses as exactly six NUL-delimited fields
+per commit without an extra empty record delimiter.
 
 ## Scenario 2: Edge case — explicit tag and pinned range
 
@@ -104,17 +106,19 @@ classification from incomplete history.
 
 ## Scenario 8: Adversarial — ambiguous platform evidence
 
-Setup: A shared source file is changed by a commit whose body mentions both iOS
-and macOS without identifying a platform-specific effect. Subject/body does not
-prove the tester outcome; the targeted patch shows shared behavior.
+Setup: Shared file `pages/[id].tsx` is changed by a commit whose body mentions
+both iOS and macOS without identifying a platform-specific effect. A decoy path
+`pages/i.tsx` also exists. Subject/body does not prove the tester outcome; the
+targeted patch shows shared behavior.
 
 Prompt: "Generate TestFlight notes for this change."
 
 Pass: The agent collects name-status evidence and inspects the targeted patch
 for each ambiguous selected SHA/path pair using the same selector, binding each
-returned patch to its candidate SHA. It either writes a broad cross-platform
-entry grounded in the patch or omits the claim; it never adds `(iOS)` or
-`(macOS)` from an ambiguous mention and records the uncertainty internally.
+returned patch to its candidate SHA. The path is passed with `:(literal)` and
+does not select the decoy. The agent either writes a broad cross-platform entry
+grounded in the patch or omits the claim; it never adds `(iOS)` or `(macOS)`
+from an ambiguous mention and records the uncertainty internally.
 
 ## Scenario 9: Edge case — output modes and local character budget
 

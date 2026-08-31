@@ -197,12 +197,14 @@ patch_file="$evidence_dir/patch"
 error_file="$evidence_dir/error"
 ~~~
 
-Capture metadata as six NUL-delimited fields per commit: SHA, parents, subject,
-body, author, and ISO timestamp.
+Capture metadata as a flat sequence of six fields per commit—SHA, parents,
+subject, body, author, and ISO timestamp—with NUL bytes between fields. Parse
+the complete file in positional groups of six; empty parent/body fields remain
+valid fields and there is no extra record delimiter.
 
 ~~~bash
 if ! git -C "$repo_root" --no-pager log "${history_selector[@]}" --reverse \
-  -z --pretty=format:'%H%x00%P%x00%s%x00%b%x00%an%x00%aI%x00' \
+  -z --pretty=format:'%H%x00%P%x00%s%x00%b%x00%an%x00%aI' \
   >"$metadata_file" 2>"$error_file"; then
   printf 'ERROR: Git metadata collection failed: %s\n' "$(<"$error_file")" >&2
   exit 2
@@ -269,7 +271,7 @@ its exact path. Run one query per unique path, not one per candidate:
 ~~~bash
 if ! git -C "$repo_root" --no-pager log "${history_selector[@]}" --reverse \
   --diff-merges=separate --no-ext-diff --find-renames --find-copies \
-  --patch --format='commit %H' -- "$candidate_path" \
+  --patch --format='commit %H' -- ":(literal)$candidate_path" \
   >"$patch_file" 2>"$error_file"; then
   printf 'ERROR: targeted patch read failed for %s: %s\n' \
     "$candidate_path" "$(<"$error_file")" >&2
