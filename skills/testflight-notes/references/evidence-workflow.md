@@ -93,6 +93,7 @@ normalize_timeframe() {
 
 pin_timeframe() {
   local raw="$1"
+  local cutoff_epoch current_epoch
   normalized_timeframe="$(normalize_timeframe "$raw")" || {
     printf '%s\n' \
       'ERROR: timeframe must be last <positive integer> day(s)|week(s), or <positive integer> day(s)|week(s) ago, with an optional since prefix.' \
@@ -110,7 +111,24 @@ pin_timeframe() {
       "$max_age_arg" >&2
     return 2
   fi
-  since_filter_arg="--since-as-filter=${max_age_arg#--max-age=}"
+  cutoff_epoch="${max_age_arg#--max-age=}"
+  current_epoch="$(date +%s)" || {
+    printf '%s\n' 'ERROR: could not read the current Unix epoch.' >&2
+    return 2
+  }
+  if [[ ! "$current_epoch" =~ ^[0-9]+$ ]]; then
+    printf 'ERROR: current Unix epoch is invalid: %s\n' \
+      "$current_epoch" >&2
+    return 2
+  fi
+  if (( ${#cutoff_epoch} > ${#current_epoch} )) ||
+    { (( ${#cutoff_epoch} == ${#current_epoch} )) &&
+      [[ "$cutoff_epoch" > "$current_epoch" ]]; }; then
+    printf 'ERROR: timeframe resolves to an impossible future cutoff: %s\n' \
+      "$normalized_timeframe" >&2
+    return 2
+  fi
+  since_filter_arg="--since-as-filter=$cutoff_epoch"
   history_selector=("$since_filter_arg" "$head_sha")
 }
 ~~~
@@ -118,6 +136,8 @@ pin_timeframe() {
 `--since-as-filter` preserves the pinned cutoff while visiting the complete
 reachable history. Do not retain the intermediate `--max-age` argument, which
 may stop traversal at an older commit before reaching a newer-dated ancestor.
+The current epoch is only a bound check; Git's single normalized cutoff remains
+the selector source of truth.
 
 Choose one branch and never recompute it:
 
@@ -152,9 +172,18 @@ elif [[ -n "${start_ref:-}" ]]; then
       "$start_ref" >&2
     exit 2
   }
-  if ! git -C "$repo_root" merge-base --is-ancestor "$start_sha" "$head_sha"; then
-    printf 'ERROR: starting ref %s is not an ancestor of pinned HEAD %s; choose a ref on this history.\n' \
-      "$start_ref" "$head_sha" >&2
+  if merge_base_error="$(git -C "$repo_root" merge-base \
+    --is-ancestor "$start_sha" "$head_sha" 2>&1)"; then
+    :
+  else
+    merge_base_status=$?
+    if (( merge_base_status == 1 )); then
+      printf 'ERROR: starting ref %s is not an ancestor of pinned HEAD %s; choose a ref on this history.\n' \
+        "$start_ref" "$head_sha" >&2
+    else
+      printf 'ERROR: Git could not verify ancestry for %s and %s: %s\n' \
+        "$start_sha" "$head_sha" "$merge_base_error" >&2
+    fi
     exit 2
   fi
   history_selector=("$start_sha..$head_sha")
@@ -309,12 +338,13 @@ done <"$name_status_file"
 
 After reading metadata and path records, group every ambiguous candidate row by
 its exact path. Run one query per unique path, not one per candidate. Disable
-configured single-path following so Git does not replace the pinned traversal:
+configured color and single-path following so local settings do not alter the
+patch evidence or pinned traversal:
 
 ~~~bash
 if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
   "${history_selector[@]}" --root --diff-merges=first-parent \
-  --ignore-submodules=none --no-follow --no-ext-diff --no-textconv \
+  --ignore-submodules=none --no-follow --no-color --no-ext-diff --no-textconv \
   --find-renames --find-copies \
   --patch --format='commit %H' -- ":(literal)$candidate_path" \
   >"$patch_file" 2>"$error_file"; then

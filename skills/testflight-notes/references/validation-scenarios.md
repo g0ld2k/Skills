@@ -17,11 +17,12 @@ Prompt: "Use testflight-notes for the last 10 days."
 
 Pass: The agent validates the repository and timeframe grammar, normalizes
 `last 10 days` to `10 days ago`, invokes Git's date normalization once, and
-validates the exact `--max-age=<decimal epoch>` result. It converts that epoch
-to `--since-as-filter=<decimal epoch>` so clock-skewed history is traversed
-completely. The recorded selector plus pinned `HEAD` is immutable and is reused
-unchanged for enumeration, full metadata, name-status paths, and each targeted
-candidate/path patch. Feature/fix rows map
+validates the exact `--max-age=<decimal epoch>` result. It rejects a cutoff
+later than the current Unix epoch without entering unbounded Bash arithmetic,
+then converts the accepted epoch to `--since-as-filter=<decimal epoch>` so
+clock-skewed history is traversed completely. The recorded selector plus pinned
+`HEAD` is immutable and is reused unchanged for enumeration, full metadata,
+name-status paths, and each targeted candidate/path patch. Feature/fix rows map
 to selected SHAs and source paths; CI is excluded; output is plain notes-only
 text in NEW/IMPROVED/FIX order with no fabricated stability line.
 Across multiple commits, metadata parses as exactly six NUL-delimited fields
@@ -63,17 +64,21 @@ assumption is stated outside that block.
 
 Setup: The repository is complete, but the request contains unavailable tag
 `build-does-not-exist`; run again with invalid timeframe values such as
-`since sometime-ish` and `2026-08-01`.
+`since sometime-ish` and `2026-08-01`, then with `last 3000 weeks`, which Git
+2.43 can translate to a wrapped future epoch.
 
 Prompt: "Use testflight-notes from build-does-not-exist." /
 "Use testflight-notes since sometime-ish." /
-"Use testflight-notes since 2026-08-01."
+"Use testflight-notes since 2026-08-01." /
+"Use testflight-notes for the last 3000 weeks."
 
 Pass: Each run stops before synthesis with a useful non-zero `ERROR:` naming the
 invalid input. Invalid timeframe grammar is rejected before the Git date probe;
 valid timeframes produce exactly one `--max-age=<epoch>` normalization result.
-The history selector then uses the same epoch as `--since-as-filter=<epoch>`
-plus pinned HEAD; it never retains `--max-age` for traversal.
+Any result later than the current Unix epoch is rejected before selector
+construction. The history selector otherwise uses the same epoch as
+`--since-as-filter=<epoch>` plus pinned HEAD; it never retains `--max-age` for
+traversal.
 The runs emit no notes block, do not substitute a tag/date fallback, and do not
 treat Git failure as empty history.
 
@@ -113,7 +118,8 @@ Prompt: "Generate TestFlight notes from the selected build range."
 
 Pass: The agent stops in preflight with an actionable error to fetch complete
 history (or names the unavailable object), emits no notes, and performs no
-classification from incomplete history.
+classification from incomplete history. An ancestry status greater than 1 is
+reported with Git's diagnostic rather than relabeled as a non-ancestor result.
 
 ## Scenario 8: Adversarial — ambiguous platform evidence
 
@@ -174,7 +180,7 @@ root commit, a normal two-parent merge, a submodule update, and an add/rename/
 edit sequence. Include a candidate path with a configured
 `diff.<driver>.textconv` command. Set `log.showSignature=true`,
 `log.showRoot=false`, `log.follow=true`, and `diff.ignoreSubmodules=all` in
-repository configuration.
+repository configuration, plus `color.ui=always`.
 
 Prompt: "Generate TestFlight notes for this selected history."
 
@@ -186,5 +192,5 @@ or patch records. Targeted patch reads also pass `--no-textconv`; the configured
 driver is not executed and classification uses repository blob evidence. Both
 diff reads force root and submodule evidence, and merge diffs use the first
 parent without limiting traversal to the first-parent chain. Targeted patch
-reads disable configured rename following, so every requested selected record
-remains available.
+reads disable configured rename following and color, so every requested
+selected record remains available without ANSI control bytes.
