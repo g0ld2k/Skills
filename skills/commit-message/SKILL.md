@@ -31,6 +31,31 @@ Approval is valid only for the displayed message and its exact
 Confirm the repository with `git rev-parse --is-inside-work-tree`. Stop and
 report its error if the command fails or does not return `true`.
 
+Before inspecting staged content, run `git rev-parse --quiet --verify MERGE_HEAD`
+and preserve its tri-state status:
+
+- `0`: a merge is in progress; stop clearly without drafting or committing.
+  Do not model multi-parent merges in this skill.
+- `1`: no `MERGE_HEAD`; continue.
+- Any other status: report the command, status, and Git error, then stop.
+
+```bash
+if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+  printf 'Merge in progress; resolve it before drafting a commit message.\n'
+  exit 0
+else
+  merge_head_status=$?
+fi
+case "$merge_head_status" in
+  1) ;;
+  *)
+    printf 'Git error: `git rev-parse --quiet --verify MERGE_HEAD` exited %s.\n' \
+      "$merge_head_status" >&2
+    exit "$merge_head_status"
+    ;;
+esac
+```
+
 Run `git diff --cached --quiet` and preserve its exit status directly:
 
 - `0`: no staged changes; stop and ask the user to stage the intended files.
@@ -49,10 +74,10 @@ An existing or broken ref is a Git error, not an unborn repository. Preserve
 every command's status and error.
 
 The draft identity is `(draft_parent, staged_tree)`, with `draft_base_tree`
-derived from the parent state. Keep all three values attached to every draft
-and show the parent and staged tree with the proposal. On a normal repository,
-derive the baseline with `git rev-parse --verify HEAD^{tree}`; for an unborn
-parent it is the immutable empty tree returned by `git mktree </dev/null`.
+derived only from the recorded parent state. For a normal parent, use
+`git rev-parse --verify "$draft_parent^{tree}"`; for an unborn parent it is
+the immutable empty tree returned by `git mktree </dev/null>`. Never resolve a
+separate live `HEAD^{tree}` baseline.
 
 ### 1) Collect evidence from the recorded identities
 
@@ -63,7 +88,7 @@ snapshots:
 
 ```bash
 run_git_evidence() {
-  git --no-pager diff --no-ext-diff "$draft_base_tree" "$staged_tree" "$@"
+  git --no-pager --attr-source="$staged_tree" diff --no-color --no-ext-diff --no-textconv "$draft_base_tree" "$staged_tree" "$@"
 }
 
 run_git_evidence --name-only || exit $?
@@ -156,7 +181,10 @@ stops the workflow and reports its command, status, and error.
 
 Immediately before `git commit -F "$commit_msg_file"`, repeat the staged-status
 check from Step 0 and run `git write-tree` again. Resolve `HEAD` with the same
-normal/unborn procedure, recording `current_parent` and `current_base_tree`:
+normal/unborn procedure, recording `current_parent`; derive
+`current_base_tree` only from that recorded parent with
+`git rev-parse --verify "$current_parent^{tree}"` (or the empty tree if it is
+still unborn):
 
 ```bash
 if current_tree="$(git write-tree)"; then

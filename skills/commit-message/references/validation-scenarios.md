@@ -81,3 +81,35 @@ and obtains an immutable empty-tree baseline with `git mktree </dev/null>`.
 Evidence is diffed from that empty tree to the recorded staged tree, and a
 successful approval can create the initial commit. If `HEAD` becomes an actual
 parent before commit, the changed parent state forces a redraft and re-gate.
+
+## Scenario 9: Adversarial — baseline lookup race
+
+Setup: The draft records `<draft_parent>`, and a separate operation may move
+`HEAD` while the draft is being prepared. The recorded parent remains the
+identity being approved.
+Prompt: Draft and commit while `HEAD` may advance during evidence collection.
+Pass: The normal baseline comes from
+`git rev-parse --verify "<draft_parent>^{tree}"`, never from a separate live
+`HEAD^{tree}` lookup. The final baseline similarly comes from the recorded
+`<current_parent>`, so any parent change is detected and re-gated.
+
+## Scenario 10: Edge case — merge in progress
+
+Setup: `git rev-parse --quiet --verify MERGE_HEAD` returns `0`.
+Prompt: Generate a commit message while a merge is in progress.
+Pass: The skill reports that a merge is in progress and stops before drafting
+or committing. It does not model multi-parent merges. Status `1` means
+`MERGE_HEAD` is absent and continues; any other status is reported as a Git
+error and stops.
+
+## Scenario 11: Adversarial — attributes change during evidence collection
+
+Setup: The worktree or live attributes would classify a recorded path as
+binary or apply a text conversion after `<recorded_tree>` is captured.
+Prompt: Draft from the recorded staged tree while attributes change.
+Pass: The single evidence command uses global
+`--attr-source="<recorded_tree>"`, `--no-textconv`, `--no-ext-diff`, and
+`--no-color` for every name-only, stat, patch, and name-status read. Evidence
+therefore uses the recorded staged attributes without live conversions or
+configuration-dependent color escapes. Binary changes remain bounded metadata
+rather than being forced into unbounded text patches.

@@ -734,7 +734,8 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         evidence_text = skill_text[evidence_start:commit_start]
 
         self.assertIn(
-            'git --no-pager diff --no-ext-diff "$draft_base_tree" "$staged_tree" "$@"',
+            'git --no-pager --attr-source="$staged_tree" diff --no-color '
+            '--no-ext-diff --no-textconv "$draft_base_tree" "$staged_tree" "$@"',
             evidence_text,
         )
         for evidence_call in (
@@ -766,6 +767,52 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("draft_base_tree", skill_text)
         self.assertIn("transition from an unborn parent", skill_text.lower())
 
+    def test_commit_message_blocks_in_progress_merges_before_drafting(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        preflight = skill_text[
+            skill_text.index("### 0) Preflight and snapshot") : skill_text.index(
+                "### 1) Collect evidence"
+            )
+        ]
+
+        self.assertIn("git rev-parse --quiet --verify MERGE_HEAD", preflight)
+        self.assertIn("a merge is in progress", preflight.lower())
+        self.assertIn("no `MERGE_HEAD`; continue", preflight)
+        self.assertIn("any other status", preflight.lower())
+        self.assertIn("do not model multi-parent merges", preflight.lower())
+
+    def test_commit_message_derives_baselines_from_recorded_parents(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'git rev-parse --verify "$draft_parent^{tree}"',
+            skill_text,
+        )
+        self.assertIn(
+            'git rev-parse --verify "$current_parent^{tree}"',
+            skill_text,
+        )
+        self.assertNotIn("git rev-parse --verify HEAD^{tree}", skill_text)
+
+    def test_commit_message_pins_attributes_for_every_evidence_diff(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        evidence_start = skill_text.index("### 1) Collect evidence")
+        commit_start = skill_text.index("### 6) Re-check and commit")
+        evidence_text = skill_text[evidence_start:commit_start]
+
+        self.assertIn(
+            'git --no-pager --attr-source="$staged_tree" diff --no-color '
+            '--no-ext-diff --no-textconv',
+            evidence_text,
+        )
+        self.assertNotIn("--text", evidence_text)
+
     def test_commit_message_scenarios_cover_parent_and_aba_drift(self) -> None:
         scenario_text = (
             ROOT
@@ -785,6 +832,12 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "empty tree",
             "evidence read failure",
             "explicitly exit",
+            "merge in progress",
+            "baseline lookup",
+            "attr-source",
+            "no-textconv",
+            "no-color",
+            "bounded metadata",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, scenario_text)
