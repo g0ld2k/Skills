@@ -694,7 +694,7 @@ class AgentSkillsConformanceTests(unittest.TestCase):
     def test_scenario_convention_covers_non_exempt_canonical_skills(self) -> None:
         self.assertEqual(
             self.validator.VALIDATION_SCENARIO_EXEMPTIONS,
-            {"pr-generator", "testflight-notes"},
+            {"testflight-notes"},
         )
         for skill_dir in sorted(
             path for path in (ROOT / "skills").iterdir() if path.is_dir()
@@ -844,6 +844,70 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, scenario_text)
+
+    def test_pr_generator_has_plan_binding_validation_scenarios(self) -> None:
+        skill_dir = ROOT / "skills" / "pr-generator"
+        errors: list[str] = []
+        self.validator.validate_validation_scenarios(skill_dir, errors)
+
+        self.assertEqual(errors, [])
+        scenario_text = (
+            skill_dir / "references" / "validation-scenarios.md"
+        ).read_text(encoding="utf-8").lower()
+        for marker in (
+            "create",
+            "update with unpublished commits",
+            "action drift during approval",
+            "helper installed outside the target repository",
+            "fetch failure",
+            "no automated test command",
+            "strict stop",
+            "owner-qualified",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, scenario_text)
+        self.assertNotIn("stale remote evidence", scenario_text)
+
+    def test_pr_generator_revalidates_the_approved_plan_before_side_effects(self) -> None:
+        skill_text = (ROOT / "skills" / "pr-generator" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        draft = skill_text.index("### Phase 4: Draft the PR")
+        approval = skill_text.index("### Phase 5: Present the Bound Approval Surface")
+        revalidation = skill_text.index("revalidate", approval)
+        first_push = skill_text.index("git push", approval)
+        first_pr_mutation = skill_text.index("gh pr edit", approval)
+
+        self.assertLess(draft, approval)
+        self.assertLess(approval, revalidation)
+        self.assertLess(revalidation, first_push)
+        self.assertLess(revalidation, first_pr_mutation)
+        for marker in (
+            "local head",
+            "remote head",
+            "create/update decision",
+            "push required",
+            "base",
+            "invalidates the draft",
+            "user has explicitly asked",
+            "after an approved push",
+            "remote branch oid",
+            "push_status=satisfied",
+            "headrepository",
+            "git ls-remote",
+            "base_ref_oid",
+            "automated validation",
+            "only when a command is known",
+            'bash "$skill_dir/scripts/detect_base_branch.sh"',
+            "strict stop",
+            "origin remote",
+            "owner-qualified",
+            "immutable draft artifact",
+            "status-checked",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker.lower(), skill_text.lower())
+        self.assertNotIn("stale remote evidence", skill_text.lower())
 
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):
