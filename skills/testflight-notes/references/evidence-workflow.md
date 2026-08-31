@@ -95,19 +95,24 @@ pin_timeframe() {
     printf 'Received: %s\n' "$raw" >&2
     return 2
   }
-  since_arg="$(git -C "$repo_root" rev-parse --since="$normalized_timeframe")" || {
+  max_age_arg="$(git -C "$repo_root" rev-parse --since="$normalized_timeframe")" || {
     printf 'ERROR: Git could not normalize timeframe: %s\n' \
       "$normalized_timeframe" >&2
     return 2
   }
-  if [[ ! "$since_arg" =~ ^--max-age=[0-9]+$ ]]; then
+  if [[ ! "$max_age_arg" =~ ^--max-age=[0-9]+$ ]]; then
     printf 'ERROR: Git returned an invalid timeframe selector: %s\n' \
-      "$since_arg" >&2
+      "$max_age_arg" >&2
     return 2
   fi
-  history_selector=("$since_arg" "$head_sha")
+  since_filter_arg="--since-as-filter=${max_age_arg#--max-age=}"
+  history_selector=("$since_filter_arg" "$head_sha")
 }
 ~~~
+
+`--since-as-filter` preserves the pinned cutoff while visiting the complete
+reachable history. Do not retain the intermediate `--max-age` argument, which
+may stop traversal at an older commit before reaching a newer-dated ancestor.
 
 Choose one branch and never recompute it:
 
@@ -118,7 +123,7 @@ if [[ -n "${timeframe:-}" && -n "${start_ref:-}" ]]; then
 elif [[ -n "${timeframe:-}" ]]; then
   pin_timeframe "$timeframe" || exit $?
   selector_kind=timeframe
-  selector_label="$normalized_timeframe ($since_arg $head_sha)"
+  selector_label="$normalized_timeframe ($since_filter_arg $head_sha)"
 elif [[ -n "${start_ref:-}" ]]; then
   start_sha="$(git -C "$repo_root" rev-parse \
     --verify --end-of-options "$start_ref^{commit}")" || {
@@ -160,7 +165,7 @@ else
   else
     pin_timeframe '14 days ago' || exit $?
     selector_kind=timeframe-fallback
-    selector_label="$normalized_timeframe ($since_arg $head_sha)"
+    selector_label="$normalized_timeframe ($since_filter_arg $head_sha)"
   fi
 fi
 readonly -a history_selector
@@ -216,12 +221,15 @@ fi
 ~~~
 
 Capture NUL-delimited name-status records so paths remain data when they contain
-whitespace or newlines:
+whitespace or newlines. Force root and submodule evidence. Compare merge commits
+with their first parent, but do not limit history traversal to the first-parent
+chain:
 
 ~~~bash
 if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
-  "${history_selector[@]}" --diff-merges=separate --find-renames --find-copies \
-  --name-status -z --pretty=format:'commit %H%x00' \
+  "${history_selector[@]}" --root --diff-merges=first-parent \
+  --ignore-submodules=none --find-renames --find-copies --name-status -z \
+  --pretty=format:'commit %H%x00' \
   >"$name_status_file" 2>"$error_file"; then
   printf 'ERROR: Git path collection failed: %s\n' "$(<"$error_file")" >&2
   exit 2
@@ -275,11 +283,13 @@ done <"$name_status_file"
 ## 6. Inspect Targeted Patches
 
 After reading metadata and path records, group every ambiguous candidate row by
-its exact path. Run one query per unique path, not one per candidate:
+its exact path. Run one query per unique path, not one per candidate. Disable
+configured single-path following so Git does not replace the pinned traversal:
 
 ~~~bash
 if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
-  "${history_selector[@]}" --diff-merges=separate --no-ext-diff --no-textconv \
+  "${history_selector[@]}" --root --diff-merges=first-parent \
+  --ignore-submodules=none --no-follow --no-ext-diff --no-textconv \
   --find-renames --find-copies \
   --patch --format='commit %H' -- ":(literal)$candidate_path" \
   >"$patch_file" 2>"$error_file"; then

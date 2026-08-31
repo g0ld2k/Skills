@@ -17,10 +17,11 @@ Prompt: "Use testflight-notes for the last 10 days."
 
 Pass: The agent validates the repository and timeframe grammar, normalizes
 `last 10 days` to `10 days ago`, invokes Git's date normalization once, and
-validates the exact `--max-age=<decimal epoch>` result. The recorded
-`history_selector=(--max-age=<decimal epoch> <head_sha>)` is immutable and is
-reused unchanged for enumeration, full metadata, name-status paths, and each
-targeted candidate/path patch. Feature/fix rows map
+validates the exact `--max-age=<decimal epoch>` result. It converts that epoch
+to `--since-as-filter=<decimal epoch>` so clock-skewed history is traversed
+completely. The recorded selector plus pinned `HEAD` is immutable and is reused
+unchanged for enumeration, full metadata, name-status paths, and each targeted
+candidate/path patch. Feature/fix rows map
 to selected SHAs and source paths; CI is excluded; output is plain notes-only
 text in NEW/IMPROVED/FIX order with no fabricated stability line.
 Across multiple commits, metadata parses as exactly six NUL-delimited fields
@@ -65,7 +66,9 @@ Prompt: "Use testflight-notes from build-does-not-exist." /
 
 Pass: Each run stops before synthesis with a useful non-zero `ERROR:` naming the
 invalid input. Invalid timeframe grammar is rejected before the Git date probe;
-valid timeframes would produce exactly one `--max-age=<epoch>` plus pinned HEAD.
+valid timeframes produce exactly one `--max-age=<epoch>` normalization result.
+The history selector then uses the same epoch as `--since-as-filter=<epoch>`
+plus pinned HEAD; it never retains `--max-age` for traversal.
 The runs emit no notes block, do not substitute a tag/date fallback, and do not
 treat Git failure as empty history.
 
@@ -154,11 +157,14 @@ Pass: The agent resolves X once, runs
 `ERROR:` naming the non-ancestor ref and pinned HEAD. It does not construct a
 range, read history, fall back to a tag/timeframe, or emit a notes block.
 
-## Scenario 11: Adversarial — repository Git configuration
+## Scenario 11: Adversarial — repository Git configuration and topology
 
 Setup: Run the evidence workflow in a SHA-256 repository containing a signed
-commit and a candidate path with a configured `diff.<driver>.textconv` command.
-Set `log.showSignature=true` in repository configuration.
+root commit, a normal two-parent merge, a submodule update, and an add/rename/
+edit sequence. Include a candidate path with a configured
+`diff.<driver>.textconv` command. Set `log.showSignature=true`,
+`log.showRoot=false`, `log.follow=true`, and `diff.ignoreSubmodules=all` in
+repository configuration.
 
 Prompt: "Generate TestFlight notes for this selected history."
 
@@ -167,4 +173,8 @@ Pass: The agent derives the full object-ID length from pinned `HEAD`, accepts
 passes `--no-show-signature` to every structured `git log` read, so configured
 signature display neither executes verification nor corrupts metadata, path,
 or patch records. Targeted patch reads also pass `--no-textconv`; the configured
-driver is not executed and classification uses repository blob evidence.
+driver is not executed and classification uses repository blob evidence. Both
+diff reads force root and submodule evidence, and merge diffs use the first
+parent without limiting traversal to the first-parent chain. Targeted patch
+reads disable configured rename following, so every requested selected record
+remains available.
