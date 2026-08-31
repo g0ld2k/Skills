@@ -153,3 +153,18 @@ Pass: The agent resolves X once, runs
 `git merge-base --is-ancestor X B`, and stops with a useful non-zero
 `ERROR:` naming the non-ancestor ref and pinned HEAD. It does not construct a
 range, read history, fall back to a tag/timeframe, or emit a notes block.
+
+## Scenario 11: Adversarial — repository Git configuration
+
+Setup: Run the evidence workflow in a SHA-256 repository containing a signed
+commit and a candidate path with a configured `diff.<driver>.textconv` command.
+Set `log.showSignature=true` in repository configuration.
+
+Prompt: "Generate TestFlight notes for this selected history."
+
+Pass: The agent derives the full object-ID length from pinned `HEAD`, accepts
+64-character commit records, and rejects malformed or abbreviated records. It
+passes `--no-show-signature` to every structured `git log` read, so configured
+signature display neither executes verification nor corrupts metadata, path,
+or patch records. Targeted patch reads also pass `--no-textconv`; the configured
+driver is not executed and classification uses repository blob evidence.

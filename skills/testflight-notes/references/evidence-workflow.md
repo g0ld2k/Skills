@@ -29,6 +29,7 @@ head_sha="$(git -C "$repo_root" rev-parse --verify --end-of-options HEAD^{commit
   printf '%s\n' 'ERROR: HEAD is not a resolvable commit.' >&2
   exit 2
 }
+object_id_length="${#head_sha}"
 shallow="$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null)" || {
   printf '%s\n' 'ERROR: could not determine whether Git history is shallow.' >&2
   exit 2
@@ -41,8 +42,10 @@ if [[ "$shallow" == true ]]; then
 fi
 ~~~
 
-Record `repo_root` and `head_sha` in the run ledger. The pinned SHA remains the
-end of the run even if the checked-out branch moves later.
+Record `repo_root`, `head_sha`, and `object_id_length` in the run ledger. The
+pinned SHA remains the end of the run even if the checked-out branch moves
+later. Deriving the object-ID length from that full SHA supports both SHA-1 and
+SHA-256 repositories.
 
 ## 2. Validate Configuration
 
@@ -170,7 +173,7 @@ ends the run without a notes block.
 
 ~~~bash
 selected_commits="$(git -C "$repo_root" --no-pager log \
-  "${history_selector[@]}" --reverse --format='%H')" || {
+  --no-show-signature --reverse "${history_selector[@]}" --format='%H')" || {
   printf '%s\n' 'ERROR: Git history enumeration failed.' >&2
   exit 2
 }
@@ -203,7 +206,8 @@ the complete file in positional groups of six; empty parent/body fields remain
 valid fields and there is no extra record delimiter.
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log "${history_selector[@]}" --reverse \
+if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+  "${history_selector[@]}" \
   -z --pretty=format:'%H%x00%P%x00%s%x00%b%x00%an%x00%aI' \
   >"$metadata_file" 2>"$error_file"; then
   printf 'ERROR: Git metadata collection failed: %s\n' "$(<"$error_file")" >&2
@@ -215,8 +219,8 @@ Capture NUL-delimited name-status records so paths remain data when they contain
 whitespace or newlines:
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log "${history_selector[@]}" --reverse \
-  --diff-merges=separate --find-renames --find-copies \
+if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+  "${history_selector[@]}" --diff-merges=separate --find-renames --find-copies \
   --name-status -z --pretty=format:'commit %H%x00' \
   >"$name_status_file" 2>"$error_file"; then
   printf 'ERROR: Git path collection failed: %s\n' "$(<"$error_file")" >&2
@@ -236,12 +240,17 @@ record_path_evidence() {
 
 while IFS= read -r -d '' commit_record; do
   [[ -z "$commit_record" ]] && continue
-  [[ "$commit_record" =~ ^commit\ ([0-9a-f]{40})$ ]] || {
+  [[ "$commit_record" =~ ^commit\ ([0-9a-f]+)$ ]] || {
     printf 'ERROR: malformed commit record in path evidence: %s\n' \
       "$commit_record" >&2
     exit 2
   }
   evidence_sha="${BASH_REMATCH[1]}"
+  if (( ${#evidence_sha} != object_id_length )); then
+    printf 'ERROR: object ID has %s characters; expected %s: %s\n' \
+      "${#evidence_sha}" "$object_id_length" "$evidence_sha" >&2
+    exit 2
+  fi
 
   while IFS= read -r -d '' status_record; do
     [[ -z "$status_record" ]] && break
@@ -269,8 +278,9 @@ After reading metadata and path records, group every ambiguous candidate row by
 its exact path. Run one query per unique path, not one per candidate:
 
 ~~~bash
-if ! git -C "$repo_root" --no-pager log "${history_selector[@]}" --reverse \
-  --diff-merges=separate --no-ext-diff --find-renames --find-copies \
+if ! git -C "$repo_root" --no-pager log --no-show-signature --reverse \
+  "${history_selector[@]}" --diff-merges=separate --no-ext-diff --no-textconv \
+  --find-renames --find-copies \
   --patch --format='commit %H' -- ":(literal)$candidate_path" \
   >"$patch_file" 2>"$error_file"; then
   printf 'ERROR: targeted patch read failed for %s: %s\n' \
