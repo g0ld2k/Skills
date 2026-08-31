@@ -247,8 +247,10 @@ These conditions belong to the canonical topology gates or workflow steps:
 - E2 Scope — existing integration contents are out of scope and the branch
   cannot be recreated because recreation is unauthorized or an open PR targets
   it.
-- T4 — authorization for PR base-retargeting or clone cleanup is unclear.
+- T4 — authorization for a required PR base-retargeting/topology action is
+  unclear.
 - T5 — authorization for source-branch pushing or PR creation is unclear.
+- Delegated Loop 4 — authorization for in-scope fixes/edits is unclear.
 - Delegated Loop 6/7 — authorization for commits, pushes, replies, or thread
   resolution is unclear.
 - Delegated G5 Authorization — authorization for the exact integration target
@@ -262,8 +264,9 @@ These conditions belong to the canonical topology gates or workflow steps:
   fails after a merge and has not been explicitly waived.
 - Workflow 5 (human checkpoint) — promotion would touch the protected/default
   branch without explicit approval.
-- Workflow 2 / G7 (delegated closeout) — unrelated local/user changes would be
-  affected.
+- G7 (delegated closeout) — unrelated local/user changes are present.
+- Workflow 2 — an orchestration action would stage, commit, overwrite, or hide
+  unrelated local/user changes.
 
 ## Output
 

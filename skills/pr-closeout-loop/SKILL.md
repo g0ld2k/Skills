@@ -275,9 +275,10 @@ re-read the ledger first; any recorded value that predates a surface change
 | G7 Clean worktree | `git status` vs recorded unrelated local/user changes | no unrelated local/user changes present; none staged, committed, overwritten, or hidden |
 
 Immediately before merging, re-fetch live PR state and re-evaluate G1–G7 from
-that fresh data, not from the ledger alone. Any gate failing → Blocked Report:
+that fresh data, not from the ledger alone. If any gate fails, or a canonical
+loop/workflow step blocks before then, emit a Blocked Report:
 
-    BLOCKED: <gate id> — <one-line observation>
+    BLOCKED: <canonical gate or loop/workflow-step identifier> — <one-line observation>
     Last completed step: <n>
     Would unblock: <specific event or human decision>
 
@@ -314,11 +315,11 @@ These conditions belong to the canonical merge gates or loop steps:
   impossible with available tools.
 - Loop 6 (Commit and push) — an authorized required push is impossible with
   available tools.
-- Loops 1/2/7 and the mandatory pre-merge re-fetch — the required live PR or
+- Loops 1/2/7/8 and the mandatory pre-merge re-fetch — the required live PR or
   per-thread state cannot be fetched with available tools.
 - Loop 9 (Merge or block) — executing an authorized merge is impossible with
-  available tools after G5 Authorization and G6 Mergeable pass.
-- G7 Clean worktree — unrelated local/user changes would be affected.
+  available tools after all G1–G7 gates pass.
+- G7 Clean worktree — unrelated local/user changes are present.
 
 ## Output
 
