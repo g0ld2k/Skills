@@ -172,7 +172,7 @@ head_ref_name: <published branch> | candidate branch
 push_remote: <configured remote name and effective push URL>
 push_target_branch: <exact remote branch>
 remote_branch_oid: <current OID> | absent
-create_head_selector: <owner:branch selector>
+create_head_selector: <exact allowed selector or n/a for update>
 ```
 
 Make the ref lookups actionable. For a new PR, resolve the selected push
@@ -246,8 +246,18 @@ Separate what changed from what actually ran:
    the exact command and observed result.
 
 Use `references/testing-language.md` as the source for both fields and their
-distinction. The no-command delta is `Automated validation: not available (no
-automated test command is known)`; do not invent a command.
+distinction. Classify the automated-validation body field into exactly one of
+these states:
+
+- known command + run: record the exact command and its observed result;
+- known command + not run: record the exact command plus the literal `Not run
+  in this session`, with no claimed result; or
+- no known command: record the exact fallback `Automated validation: not available (no automated test command is known)`.
+
+Do not replace a known-but-not-run command with the no-command fallback. A
+known command may still be listed as a runnable step in `How to Validate` when
+it was not run; phrase that step as an instruction to run the exact command
+and do not attach an outcome.
 
 ### Phase 4: Draft the PR
 
@@ -259,10 +269,11 @@ choosing type, scope, or breaking-change notation, and
 Freeze the exact title and body in an immutable draft artifact before approval.
 Store the body in a temp file created with the shared `mktemp` convention and
 record its digest when available; display the full body as well. Apply the
-`references/testing-language.md` wording. The body template's Testing section
-always records `Automated validation: not available (no automated test command
-is known)` when no command is known; render a runnable `Automated` step in `How
-to Validate` only when a command is known and omit that step otherwise.
+three-state automated-validation contract from
+`references/testing-language.md`. Render a runnable `Automated` step in `How
+to Validate` when a command is known. If it was not run, present the exact
+command as an instruction without claiming an outcome. Omit the step when no
+command is known.
 
 Use this body shape:
 
@@ -277,7 +288,7 @@ Use this body shape:
 ### Testing
 - **Tests Changed:** [Summary]
 - **Tests Run:** [Exact command + result, or "Not run in this session"]
-- **Automated validation:** [Known command + result, or "Automated validation: not available (no automated test command is known)"]
+- **Automated validation:** [Exact command + observed result | exact command + `Not run in this session` | `not available (no automated test command is known)`]
 
 ### Files Changed
 [Observed count and line summary]
@@ -308,8 +319,8 @@ Base: <branch and base_ref_oid>
 Head: <repository/branch, local_head, remote_pr_head, and selected evidence_head>
 Approved local head: <exact local commit OID used for any approved push>
 Push: required=yes|no; status=pending|satisfied|n/a; target=<remote name + URL and exact branch>; before_branch_oid=<...>; expected transition=<...>
-Create head selector: <exact owner:branch selector, or n/a for update>
-Validation: <known command and result | not available | not run in this session>
+Create head selector: <bare branch for a validated target-repository push destination | verified user:branch for a user-owned cross-repository destination | exact capability-specific selector/route where supported | n/a for update>
+Validation: <exact command + observed result | exact command + `Not run in this session` | `Automated validation: not available (no automated test command is known)`>
 Evidence: local head | published remote head (local unpublished commits excluded)
 ```
 

@@ -10,13 +10,14 @@ and revalidates it immediately before every side effect.
 Setup: The current branch has committed changes, no open PR exists for it, the
 base helper resolves from the installed skill directory, `git fetch --prune
 origin` succeeds, the candidate remote branch OID is absent, and the repository
-documents a known test command.
+documents a known test command, and the session runs it with an observed
+result.
 
 Prompt: Use `pr-generator` to prepare and publish the branch as a new PR.
 
 Pass: The agent looks up the absent PR before drafting, presents a plan bound to
-`create`, the exact title/body, base branch and ref, local head, an
-owner-qualified create head selector, required push, and known validation
+`create`, the exact title/body, base branch and ref, local head, an allowed
+create head selector, required push, and known validation
 command, then waits for approval or matching
 preauthorization. It records the exact push remote/branch and the absent
 candidate branch OID, rechecks that the branch now points at the approved local
@@ -29,8 +30,9 @@ selector is the exact bare branch; for a cross-repository head, `user:branch`
 is used only after the owner is verified as a user. An organization-owned head
 uses an available MCP/API capability that explicitly supports it or produces a
 blocked report; it is never silently treated as a user-owned selector. The
-push refspec source is the recorded approved local commit OID, never a live
-`HEAD:` refspec.
+approval plan records the applicable bare branch, verified `user:branch`, or
+capability-specific selector/route. The push refspec source is the recorded
+approved local commit OID, never a live `HEAD:` refspec.
 
 ## Scenario 2: Edge case — update with unpublished commits
 
@@ -99,4 +101,17 @@ documentation expose no automated test command; no test command is run.
 
 Prompt: Use `pr-generator` to draft the PR and describe validation honestly.
 
-Pass: The plan and body include `Automated validation: not available (no automated test command is known)` and separately say `Tests Run: Not run in this session`; the body template places the former explicitly in its Testing section while omitting a runnable Automated step from `How to Validate`. The agent does not substitute a guessed command or claim that tests passed.
+Pass: The plan and body include the exact fallback `Automated validation: not available (no automated test command is known)` and separately say `Tests Run: Not run in this session`; the body template places the former explicitly in its Testing section while omitting a runnable Automated step from `How to Validate`. The agent does not substitute a guessed command or claim that tests passed.
+
+## Scenario 7: Edge case — known automated command not run
+
+Setup: The repository configuration exposes the exact automated command
+`make test`, but this session does not run it before the PR body is drafted.
+
+Prompt: Use `pr-generator` to draft the PR and describe the available
+validation without claiming that `make test` ran.
+
+Pass: The body records `Automated validation: make test — Not run in this
+session` (or the same exact command-plus-literal form) and makes no pass,
+failure, or other result claim. `How to Validate` may include `make test` as a
+runnable instruction, but that step also claims no result.

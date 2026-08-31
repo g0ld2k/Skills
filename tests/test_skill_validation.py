@@ -851,9 +851,11 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.validator.validate_validation_scenarios(skill_dir, errors)
 
         self.assertEqual(errors, [])
-        scenario_text = (
-            skill_dir / "references" / "validation-scenarios.md"
-        ).read_text(encoding="utf-8").lower()
+        scenario_text = " ".join(
+            (skill_dir / "references" / "validation-scenarios.md")
+            .read_text(encoding="utf-8")
+            .split()
+        ).lower()
         for marker in (
             "create",
             "update with unpublished commits",
@@ -863,8 +865,13 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "no automated test command",
             "automated validation: not available",
             "tests run: not run in this session",
+            "known automated command not run",
+            "automated validation: make test",
+            "runnable instruction",
+            "applicable bare branch",
+            "verified `user:branch`",
+            "capability-specific selector/route",
             "strict stop",
-            "owner-qualified",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, scenario_text)
@@ -899,7 +906,11 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "git ls-remote",
             "base_ref_oid",
             "automated validation",
-            "only when a command is known",
+            "known command may still be listed as a runnable",
+            "bare branch for a validated target-repository push destination",
+            "verified user:branch for a user-owned cross-repository destination",
+            "exact capability-specific selector/route",
+            "n/a for update",
             'bash "$skill_dir/scripts/detect_base_branch.sh"',
             "strict stop",
             "origin remote",
