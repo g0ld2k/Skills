@@ -1000,6 +1000,54 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("license must be MIT", "\n".join(policy_errors))
         self.assertIn("allowed-tools is not permitted", "\n".join(policy_errors))
 
+    def test_cross_skill_references_accept_qualified_local_names(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            temp_root = Path(temp)
+            skills_dir = temp_root / "skills"
+            write_skill(
+                skills_dir / "caller",
+                "Use `g0ld2k-skills:callee` for delegated work.\n",
+            )
+            write_skill(skills_dir / "callee", "# Callee\n")
+            original_root = self.validator.ROOT
+            original_skills_dir = self.validator.SKILLS_DIR
+            self.validator.ROOT = temp_root
+            self.validator.SKILLS_DIR = skills_dir
+            try:
+                errors: list[str] = []
+                self.validator.validate_cross_skill_references(
+                    ["caller", "callee"], errors
+                )
+            finally:
+                self.validator.ROOT = original_root
+                self.validator.SKILLS_DIR = original_skills_dir
+
+        self.assertEqual(errors, [])
+
+    def test_cross_skill_references_reject_unknown_qualified_local_names(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skill-validation-") as temp:
+            temp_root = Path(temp)
+            skills_dir = temp_root / "skills"
+            write_skill(
+                skills_dir / "caller",
+                "Use `g0ld2k-skills:missing` for delegated work.\n",
+            )
+            original_root = self.validator.ROOT
+            original_skills_dir = self.validator.SKILLS_DIR
+            self.validator.ROOT = temp_root
+            self.validator.SKILLS_DIR = skills_dir
+            try:
+                errors: list[str] = []
+                self.validator.validate_cross_skill_references(["caller"], errors)
+            finally:
+                self.validator.ROOT = original_root
+                self.validator.SKILLS_DIR = original_skills_dir
+
+        self.assertIn(
+            "cross-skill reference to unknown skill: g0ld2k-skills:missing",
+            "\n".join(errors),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,10 @@
 
 Use these scenarios to validate this skill before deploying changes.
 
+RED evidence from the unmodified entrypoint: a tabletop run had no
+authoritative-catalog gate, no aggregate missing list, and no disposition that
+could finish no-op work. The scenarios below define the GREEN behavior.
+
 ## Baseline Failures Observed
 
 - A generic skill-creation response put the reusable skill in
@@ -84,3 +88,67 @@ Pass: each sub-skill invocation passes the recorded authorization scope
 explicitly; `pr-closeout-loop` receives PR ref, target branch, scope, and
 max-wait; no sub-skill re-prompts for an approval already granted, and none
 skips its own gates because "the orchestrator approved".
+
+## Scenario 5: All prerequisites present — branch-specific closure
+
+Setup: The authoritative catalog exposes every exact bundled and applicable
+external name in the branch matrix, including the transitive closeout set.
+Prompt: "Implement this issue, publish its PR, and close it out."
+Pass: Before task-state reads, the run records one catalog snapshot and the
+empty triage closure. Once live evidence marks the unit actionable, it records
+the full foreseeable lifecycle closure before the first side effect and invokes
+only catalog-resolved entries.
+
+## Scenario 6: One bundled prerequisite missing — broken installation
+
+Setup: The catalog is available but `g0ld2k-skills:commit-message` is absent;
+all other names are present and a commit would otherwise be needed.
+Prompt: "Finish the implementation and commit it."
+Pass: The run reports the single missing bundled name as a broken/incomplete
+`g0ld2k-skills` installation with reinstall/upgrade guidance, performs no
+repository mutation, and does not substitute another commit skill.
+
+## Scenario 7: One external prerequisite missing — install prerequisite
+
+Setup: The catalog is available but `superpowers:test-driven-development` is
+absent on an implementation branch with no explicit TDD exemption.
+Prompt: "Fix the bug and create the PR."
+Pass: The run reports that exact external name as an install prerequisite and
+blocks before implementation, commit, push, or PR creation.
+
+## Scenario 8: Multiple prerequisites missing — aggregate report
+
+Setup: The catalog is available but `g0ld2k-skills:simplify`,
+`g0ld2k-skills:pr-generator`, and `superpowers:writing-plans` are all absent.
+Prompt: "Run the approved multi-step change through validation and PR creation."
+Pass: One Blocked Report names all three missing entries, distinguishes bundled
+reinstall/upgrade from external installation, and does not stop at the first
+name or partially invoke any dependency.
+
+## Scenario 9: Catalog unavailable — fail closed
+
+Setup: The client/session cannot expose a complete authoritative skill catalog.
+Prompt: "Start work on the issue and inspect the repository first."
+Pass: The run emits the P0 Blocked Report explaining how to expose the complete
+catalog and performs no repository, network, dependency, or mutation probe.
+
+## Scenario 10: Conditional dependency — reply-only versus implementation
+
+Setup: One unit needs only a review reply; another unit needs a behavior fix.
+The catalog contains `g0ld2k-skills:pr-comment-review` and
+`superpowers:test-driven-development`, but no implementation-only bundled
+helpers.
+Prompt: "Reply to the first item and fix the second item."
+Pass: The reply-only unit checks and uses only its review dependency. The fix
+unit checks TDD immediately before editing and blocks before its side effects
+if any additional active dependency is missing; the reply path is not blocked
+by `simplify`, `commit-message`, or TDD.
+
+## Scenario 11: Already satisfied/no-op — evidence-backed completion
+
+Setup: Live issue, branch, and checks show the requested change is already
+implemented and validated; no PR or commit is needed.
+Prompt: "Handle the issue completely."
+Pass: The run records `already satisfied` with the observed evidence and
+completes with no code, commit, push, or PR. It reports the no-op and performs
+only any separately authorized issue disposition.
