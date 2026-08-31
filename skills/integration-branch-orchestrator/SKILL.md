@@ -139,14 +139,18 @@ confirm the authorization scope and merge gates first.
      still satisfy G5 for the exact integration branch and merge method.
    - On slot entry, fetch the remote `integration/<feature-name>` ref and record
      its exact `slot_base_sha`.
-   - Immediately before merging, fetch the remote ref and live PR state, then
-     compare the tip with `slot_base_sha`. A changed tip revokes the slot;
-     record the evidence as stale and route the candidate through refresh and
-     revalidation before granting another slot.
-   - If the tip is unchanged, the delegated closeout loop performs its single
-     mandatory final G1–G7 evaluation against `slot_base_sha`. After the fresh
-     gates pass, it performs the normal merge commit. The orchestrator does not
-     perform an independent merge that bypasses those gates.
+   - Immediately before merging, fetch the remote ref and compare its tip with
+     `slot_base_sha`. A changed tip revokes the slot and
+     makes the candidate's base-sensitive evidence stale. Before granting any
+     new slot, record the new tip, re-run E1–E3, and run integration validation
+     from it; block on failure. Re-fetch before granting a slot and require the
+     remote tip to equal the validated SHA, repeating this check for a newer tip.
+     Then route the candidate through refresh and revalidation.
+   - If the tip is unchanged, the delegated closeout loop re-fetches live PR
+     state and performs its single mandatory final G1–G7 evaluation against
+     `slot_base_sha`. After the fresh gates pass, it uses its recorded
+     G5-authorized merge method. The orchestrator does not perform an independent
+     merge that bypasses those gates.
    - After each delegated merge, fetch and record the new remote integration
      tip, then run integration-level validation from that fresh tip before
      granting another slot or declaring promotion readiness.
