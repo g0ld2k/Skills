@@ -311,8 +311,10 @@ These conditions belong to the canonical merge gates or loop steps:
 - Loop 7 (Reply to feedback and resolve review threads) — invalid feedback
   cannot receive a reply or resolution required by the active policy. Do not
   report it as G4 unless it also meets a G4 blocking class.
-- G4 Feedback clear — required fixed-thread replies or resolution are
-  impossible with available tools.
+- G4 Feedback clear — a reply or acknowledgment that G4 requires for
+  actionable or fixed feedback, or a required fixed-thread resolution, is
+  impossible across inline, review-level, or conversation feedback with the
+  available tools.
 - Loop 6 (Commit and push) — an authorized required push is impossible with
   available tools.
 - Loops 1/2/7/8 and the mandatory pre-merge re-fetch — the required live PR or
