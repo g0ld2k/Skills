@@ -95,8 +95,9 @@ Setup: The authoritative catalog exposes every exact bundled and applicable
 external name in the branch matrix, including the transitive closeout set.
 Prompt: "Implement this issue, publish its PR, and close it out."
 Pass: Before task-state reads, the run records one catalog snapshot and the
-exact foreseeable lifecycle closure, extends it only if new evidence activates
-a conditional branch, and invokes only catalog-resolved entries.
+empty triage closure. Once live evidence marks the unit actionable, it records
+the full foreseeable lifecycle closure before the first side effect and invokes
+only catalog-resolved entries.
 
 ## Scenario 6: One bundled prerequisite missing — broken installation
 

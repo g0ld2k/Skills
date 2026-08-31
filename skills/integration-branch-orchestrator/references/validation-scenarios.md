@@ -65,8 +65,9 @@ Setup: The authoritative catalog exposes every exact bundled and applicable
 external name for topology, PR creation, and delegated closeout.
 Prompt: "Prepare integration/feature-x and delegate its PR for closeout."
 Pass: Before task-state reads, the orchestrator records one catalog snapshot
-and the exact lifecycle closure, extends it only if new evidence activates a
-conditional branch, and delegates only catalog-resolved skills.
+and the empty topology-read closure. Once live topology shows action remains,
+it records the full foreseeable lifecycle closure before the first side effect
+and delegates only catalog-resolved skills.
 
 ## Scenario 6: One bundled prerequisite missing — broken installation
 

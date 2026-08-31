@@ -27,20 +27,24 @@ spelling verbatim.
 | Active branch | Required qualified catalog names |
 | --- | --- |
 | PR identity/state read or terminal no-change disposition | — |
-| Reply-only review feedback | `g0ld2k-skills:pr-comment-review` |
+| Review inventory or reply-only feedback | `g0ld2k-skills:pr-comment-review` |
 | In-scope code fix | `g0ld2k-skills:pr-comment-review`, `superpowers:test-driven-development` |
 | Ambiguous or multi-step code fix | Add `superpowers:brainstorming`, `superpowers:writing-plans` |
 | Failing-check diagnosis requiring debugging | Add `superpowers:systematic-debugging` |
-| Non-trivial fix before commit | Add `g0ld2k-skills:simplify`, `g0ld2k-skills:commit-message` |
+| Fix that will be committed | Add `g0ld2k-skills:commit-message` |
+| Non-trivial fix | Add `g0ld2k-skills:simplify` |
 
 Rows beginning with "Add" are cumulative with the in-scope code-fix row and
-each other active row. At step 0, take the union of every row foreseeably
-activated by the requested and authorized closeout lifecycle. Reuse the cached
-catalog snapshot and derived closure; do not rescan it for each helper or loop
-iteration. If later PR evidence activates a conditional row that was not
-knowable at entry, extend the closure against the snapshot before its first
-side effect. Refresh only if the client reports that the catalog changed. A
-reply-only or no-change path never requires implementation-only names. Never stop at the
+each other active row. At step 0, gate the PR identity/state row only. A general
+closeout request does not activate mutation dependencies until live PR evidence
+selects reply-only, fix, diagnosis, or another actionable branch. Before that
+branch's first side effect, take the union of every row foreseeably activated
+by its closeout lifecycle. Reuse the cached catalog snapshot and derived
+closure; do not rescan it for each helper or loop iteration. If later PR
+evidence activates a conditional row that was not knowable then, extend the
+closure against the snapshot before its first side effect. Refresh only if the
+client reports that the catalog changed. A reply-only or no-change path never
+requires implementation-only names. Never stop at the
 first missing name, substitute a similarly named skill, or invoke a dependency
 to test whether it is present. Report all missing names in the active closure
 together. A missing bundled name means the `g0ld2k-skills` installation is
@@ -125,18 +129,22 @@ re-read the ledger first; any recorded value that predates a surface change
 ## Loop
 
 1. Preflight.
-   - Complete the Prerequisite Gate for every branch already active from the
-     request before reading any local or live PR state.
+   - Complete the Prerequisite Gate for the PR identity/state row before reading
+     any local or live PR state.
    - Confirm repo, branch, PR, target branch, head SHA, PR head repository/ref,
      working tree state, and PR body.
-   - Fetch latest remote PR state and sync the local checkout to the exact
-     current PR head before editing. Block if that cannot be done safely.
+   - Fetch the latest remote PR identity and terminal state without changing
+     the checkout.
    - Do not stage, commit, overwrite, or discard unrelated local/user changes.
+   - If the fetched state proves the PR is already in the requested terminal
+     state, record `already satisfied` with the observed state and exit without
+     evaluating merge gates or creating a reply, edit, commit, push, or merge.
 
 2. Fetch current PR state.
-   - If review triage or replies are in scope, confirm the cached prerequisite
-     closure includes `g0ld2k-skills:pr-comment-review` before using its fetch
-     helper.
+   - If review inventory is in scope, extend the cached closure with the review
+     inventory row before using the
+     `g0ld2k-skills:pr-comment-review` fetch helper. Do not activate
+     implementation-only rows yet.
    - Fetch unresolved review threads, including all comments and replies in
      each unresolved thread, plus PR conversation comments, latest reviews,
      check/status rollup, approval signal, and mergeability metadata.
@@ -158,12 +166,16 @@ re-read the ledger first; any recorded value that predates a surface change
      approval, dismissed according to repository policy, or addressed through
      the active feedback policy.
    - Decide fix, reply-only, or discuss.
+   - For fix or reply-only work, complete the Prerequisite Gate for the full
+     foreseeable selected lifecycle before its first side effect.
    - Prefer the smallest safe in-scope fix. Stop for human input when feedback
      is unclear or conflicting.
 
 4. Implement valid in-scope fixes.
    - Extend or confirm the cached prerequisite closure for the exact fix branch
      before editing.
+   - Sync the local checkout to the exact current PR head. Block if that cannot
+     be done without affecting unrelated work.
    - Make narrow edits for approved or loop-authorized fix items only.
    - Run targeted validation, then the repository's local test suite.
    - Local tests are required before merge in this workflow. If the suite cannot

@@ -45,8 +45,11 @@ external name for a code-fix closeout, including
 `g0ld2k-skills:commit-message`, and `superpowers:test-driven-development`.
 Prompt: "Close out the approved code-fix feedback on PR <n>."
 Pass: Before task-state reads, the loop records one catalog snapshot and the
-exact lifecycle closure, extends it only if new evidence activates a
-conditional branch, and uses only catalog-resolved companions.
+empty PR-state closure. For a non-terminal PR it adds the review-inventory row
+before fetching feedback; once that inventory selects the fix branch, it
+records the full foreseeable lifecycle closure before the first side effect,
+including `g0ld2k-skills:commit-message` for any fix that will be committed,
+and uses only catalog-resolved companions.
 
 ## Scenario 5: One bundled prerequisite missing — broken installation
 
@@ -97,4 +100,5 @@ acknowledged, every relevant thread is resolved, and the PR is already in the
 requested terminal state.
 Prompt: "Finish the PR closeout."
 Pass: The loop records `already satisfied` with that evidence and completes
-without code, commit, push, reply, thread mutation, or merge.
+immediately after the terminal-state read, without code, checkout mutation,
+commit, push, reply, thread mutation, merge-gate evaluation, or merge.

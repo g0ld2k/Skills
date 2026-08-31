@@ -36,14 +36,17 @@ spelling verbatim.
 | Delegated non-trivial fix before commit | Add `g0ld2k-skills:simplify`, `g0ld2k-skills:commit-message` |
 
 Rows beginning with "Add" are cumulative with the delegated closeout row and
-each other active row. At step 0, take the union of every row foreseeably
-activated by the requested and authorized lifecycle, including the transitive
-closure for delegated `g0ld2k-skills:pr-closeout-loop` work. Reuse the cached
-catalog snapshot and derived closure; do not rescan it for each candidate or
-helper. If later topology or PR evidence activates a conditional row that was
-not knowable at entry, extend the closure against the snapshot before its first
-side effect. Refresh only if the client reports that the catalog changed. A
-validation-only or no-change path never requires implementation-only names.
+each other active row. At step 0, gate the topology-read/validation row only. A
+general orchestration request does not activate PR-creation or closeout
+dependencies until live topology evidence shows that action remains. Before
+the first topology or PR side effect, take the union of every foreseeable row,
+including the transitive closure for delegated
+`g0ld2k-skills:pr-closeout-loop` work. Reuse the cached catalog snapshot and
+derived closure; do not rescan it for each candidate or helper. If later
+topology or PR evidence activates a conditional row that was not knowable then,
+extend the closure against the snapshot before its first side effect. Refresh
+only if the client reports that the catalog changed. A validation-only or
+no-change path never requires implementation-only names.
 Never stop at the first missing name, substitute a similarly named skill, or
 invoke a dependency to test whether it is present. Report all missing names in
 the active closure together. A missing bundled name means the `g0ld2k-skills`
@@ -127,8 +130,9 @@ confirm the authorization scope and merge gates first.
    affected item and emit a Blocked Report (shape defined in
    `g0ld2k-skills:pr-closeout-loop`).
 
-   - T1. Complete the Prerequisite Gate for every branch already active from the
-     request, then list source branches/PRs in scope.
+   - T1. Complete the Prerequisite Gate for the topology-read/validation row,
+     then list source branches/PRs in scope. If action remains, extend the
+     closure for its full foreseeable lifecycle before the first side effect.
    - T2. Fetch the remote default/protected branch; record its ref and SHA.
    - T3. Resolve the integration branch:
      - Missing → create `integration/<feature-name>` from the recorded SHA and

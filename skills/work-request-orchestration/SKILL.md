@@ -36,17 +36,21 @@ to probe for a dependency:
 | Ambiguous or behavior-changing implementation | `superpowers:brainstorming` |
 | Multi-step implementation | `superpowers:writing-plans` |
 | Bug fix, feature, refactor, or behavior change | `superpowers:test-driven-development` |
+| Failing-check diagnosis | `superpowers:systematic-debugging` |
 | Non-trivial change before commit | `g0ld2k-skills:simplify` |
 | Commit | `g0ld2k-skills:commit-message` |
 | PR creation or update | `g0ld2k-skills:pr-generator` |
 | Direct review replies | `g0ld2k-skills:pr-comment-review` |
 | PR closeout | `g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review` |
 
-At step 0, take the union of every row foreseeably activated by the requested
-and authorized lifecycle, including implementation, commit, PR, closeout, and
-transitive orchestration handoffs. Reuse the cached catalog snapshot and
+At step 0, gate the source-truth triage/disposition row only. A request or
+authorization to implement does not activate implementation dependencies until
+live evidence marks a unit `actionable`. For each actionable unit, select its
+intended lifecycle and take the union of every foreseeable row, including
+implementation, commit, PR, closeout, and transitive orchestration handoffs,
+before the lifecycle's first side effect. Reuse the cached catalog snapshot and
 derived closure; do not rescan it for each unit or helper. If later evidence
-activates a conditional row that was not knowable at entry, extend the closure
+activates a conditional row that was not knowable then, extend the closure
 against the snapshot before its first side effect. Refresh only if the client
 reports that the catalog changed. Never require an inactive row, stop at the
 first missing name, or substitute a similarly named skill. Report
@@ -121,8 +125,8 @@ commit, PR, review/CI, and merge.
 
 ### Phase 0: Preflight
 
-1. Complete the Prerequisite Gate above for every branch already active from
-   the request before reading repository or live state.
+1. Complete the Prerequisite Gate for the source-truth triage/disposition row
+   before reading repository or live state.
 2. Read repo instructions (`AGENTS.md`, `CLAUDE.md`, project docs) and current
    user approvals.
 3. Check `git status --short --branch`, remotes, current branch/worktree, and
@@ -146,6 +150,11 @@ evidence and any separately authorized issue disposition. Mark stale/closed or
 duplicate/superseded units terminal without manufacturing implementation work.
 A blocked unit gets the exact Blocked Report shape from
 `references/conventions.md`.
+
+Before planning or mutating an actionable unit, select its intended lifecycle
+and complete the Prerequisite Gate for the full foreseeable closure. Include
+`superpowers:systematic-debugging` when the request or source truth already
+shows failing checks that require diagnosis.
 
 For each actionable unit, choose the smallest independently reviewable slice:
 
@@ -192,10 +201,11 @@ For each unit:
 3. Write or adjust the failing test first when behavior changes.
 4. Make the smallest scoped implementation.
 5. Run targeted tests. For package, shared, CI, or broad behavior changes,
-   select exact commands from `.github/workflows/validate-skills.yml`, record
-   the workflow step that supplied each command, and record each observed
-   result in the execution note (for example, the validator, unittest, JSON,
-   shell, or publisher commands); never report only a label.
+   select exact commands from the target repository's instructions, task
+   runner or package configuration, and applicable CI workflows. Use
+   `.github/workflows/validate-skills.yml` only when that file exists in the
+   target repository. Record each command's exact source and observed result
+   in the execution note; never report only a label.
 6. Preserve unrelated local work and generated artifacts outside the unit.
 
 For mechanical-only work, define a measurable guard first: test inventory,
@@ -220,9 +230,10 @@ For mechanical-only work, define a measurable guard first: test inventory,
    exact tests actually run.
 2. Push and create/update the PR when approval covers the publish step.
 3. Confirm the cached prerequisite closure includes the transitive closeout set
-   (`g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review`) before
-   handing off. Treat its Blocked Report as this workflow's blocker, not as
-   license to merge manually.
+   (`g0ld2k-skills:pr-closeout-loop`, `g0ld2k-skills:pr-comment-review`) and any
+   active conditional row, including `superpowers:systematic-debugging` for a
+   known failing-check diagnosis, before handing off. Treat its Blocked Report
+   as this workflow's blocker, not as license to merge manually.
 4. After merge, fetch the default branch before starting the next unit.
 
 ## Guardrails
