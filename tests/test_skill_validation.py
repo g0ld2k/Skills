@@ -706,6 +706,89 @@ class AgentSkillsConformanceTests(unittest.TestCase):
                 self.validator.validate_validation_scenarios(skill_dir, errors)
                 self.assertEqual(errors, [])
 
+    def test_commit_message_binds_approval_to_commit_parent_and_tree(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        draft_tree = skill_text.index("git write-tree")
+        recheck = skill_text.index("### 6) Re-check and commit")
+        commit = skill_text.index("git commit -F")
+
+        self.assertLess(draft_tree, recheck)
+        self.assertLess(recheck, commit)
+        self.assertIn("draft_parent", skill_text)
+        self.assertIn("draft_base_tree", skill_text)
+        self.assertIn("normal/unborn procedure", skill_text)
+        self.assertIn("current_parent", skill_text)
+        self.assertIn('[ "$current_parent" != "$draft_parent" ]', skill_text)
+        self.assertIn("commit parent or staged tree changed", skill_text.lower())
+
+    def test_commit_message_drafts_only_from_recorded_parent_and_tree(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        evidence_start = skill_text.index("### 1) Collect evidence")
+        commit_start = skill_text.index("### 6) Re-check and commit")
+        evidence_text = skill_text[evidence_start:commit_start]
+
+        self.assertIn(
+            'git --no-pager diff --no-ext-diff "$draft_base_tree" "$staged_tree" "$@"',
+            evidence_text,
+        )
+        for evidence_call in (
+            "run_git_evidence --name-only",
+            "run_git_evidence --stat",
+            "run_git_evidence",
+            "run_git_evidence --name-status",
+        ):
+            with self.subTest(call=evidence_call):
+                self.assertIn(f"{evidence_call} || exit $?", evidence_text)
+        for live_index_evidence in (
+            "git --no-pager diff --cached --name-only",
+            "git --no-pager diff --cached --stat",
+            "git --no-pager diff --cached\n",
+        ):
+            with self.subTest(command=live_index_evidence):
+                self.assertNotIn(live_index_evidence, evidence_text)
+
+    def test_commit_message_supports_unborn_initial_commit_identity(self) -> None:
+        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("git rev-parse --verify HEAD", skill_text)
+        self.assertIn("git symbolic-ref --quiet HEAD", skill_text)
+        self.assertIn("git show-ref --verify --quiet", skill_text)
+        self.assertIn("git mktree </dev/null", skill_text)
+        self.assertIn("unborn:<ref>", skill_text)
+        self.assertIn("draft_base_tree", skill_text)
+        self.assertIn("transition from an unborn parent", skill_text.lower())
+
+    def test_commit_message_scenarios_cover_parent_and_aba_drift(self) -> None:
+        scenario_text = (
+            ROOT
+            / "skills"
+            / "commit-message"
+            / "references"
+            / "validation-scenarios.md"
+        ).read_text(encoding="utf-8").lower()
+
+        for marker in (
+            "commit-parent drift",
+            "unchanged staged tree",
+            "aba",
+            "recorded parent",
+            "recorded staged tree",
+            "unborn initial commit",
+            "empty tree",
+            "evidence read failure",
+            "explicitly exit",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, scenario_text)
+
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):
             with self.subTest(label=empty_label), tempfile.TemporaryDirectory(
