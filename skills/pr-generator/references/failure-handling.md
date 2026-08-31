@@ -16,8 +16,12 @@ Action:
 
 Action:
 - Show git error.
-- Suggest `git pull --rebase` (if appropriate) or resolve branch permissions.
-- Re-run `git push -u origin <branch>` after conflict resolution.
+- Resolve the non-fast-forward state or branch permissions without retrying a
+  live branch refspec.
+- Revalidate the approved plan. If its remote, target branch, or local commit
+  OID changed, generate a new draft and run the approval gate again.
+- Otherwise retry only
+  `git push "$push_remote" "$approved_local_head:refs/heads/$push_target_branch"`.
 
 ### Base branch not found
 

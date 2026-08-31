@@ -22,7 +22,15 @@ preauthorization. It records the exact push remote/branch and the absent
 candidate branch OID, rechecks that the branch now points at the approved local
 head, no PR appeared, and base/head still match after the approved push before
 calling PR creation. The body reports the observed test result rather than an
-invented one.
+invented one. The head repository comes from the selected remote's effective
+push URL, including any configured `remote.pushurl`, rather than its name or
+fetch URL. When that destination is the validated target repository, the
+selector is the exact bare branch; for a cross-repository head, `user:branch`
+is used only after the owner is verified as a user. An organization-owned head
+uses an available MCP/API capability that explicitly supports it or produces a
+blocked report; it is never silently treated as a user-owned selector. The
+push refspec source is the recorded approved local commit OID, never a live
+`HEAD:` refspec.
 
 ## Scenario 2: Edge case — update with unpublished commits
 
@@ -91,7 +99,4 @@ documentation expose no automated test command; no test command is run.
 
 Prompt: Use `pr-generator` to draft the PR and describe validation honestly.
 
-Pass: The plan and body say `Automated validation: not available (no automated
-test command is known)` and separately say `Tests Run: Not run in this
-session`. The agent does not substitute a guessed command or claim that tests
-passed.
+Pass: The plan and body include `Automated validation: not available (no automated test command is known)` and separately say `Tests Run: Not run in this session`; the body template places the former explicitly in its Testing section while omitting a runnable Automated step from `How to Validate`. The agent does not substitute a guessed command or claim that tests passed.

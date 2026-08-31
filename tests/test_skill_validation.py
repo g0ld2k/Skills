@@ -861,6 +861,8 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "helper installed outside the target repository",
             "fetch failure",
             "no automated test command",
+            "automated validation: not available",
+            "tests run: not run in this session",
             "strict stop",
             "owner-qualified",
         ):
@@ -902,12 +904,31 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "strict stop",
             "origin remote",
             "owner-qualified",
+            "verify the owner is a user",
+            "organization-owned",
+            "organization-owned create heads",
+            "git remote get-url --push",
+            "effective push url",
             "immutable draft artifact",
+            "approved_local_head",
             "status-checked",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker.lower(), skill_text.lower())
+        for line in skill_text.splitlines():
+            if "git push" in line.lower():
+                self.assertNotIn('"head:refs/heads/', line.lower())
         self.assertNotIn("stale remote evidence", skill_text.lower())
+
+        failure_text = (
+            ROOT / "skills" / "pr-generator" / "references" / "failure-handling.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'git push "$push_remote" '
+            '"$approved_local_head:refs/heads/$push_target_branch"',
+            failure_text,
+        )
+        self.assertNotIn("git push -u origin <branch>", failure_text)
 
     def test_validation_scenarios_require_content_for_each_label(self) -> None:
         for empty_label in ("Setup", "Prompt", "Pass"):

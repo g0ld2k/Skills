@@ -73,8 +73,12 @@ case "$BRANCH" in
     exit 1
     ;;
 esac
-if ! ORIGIN_URL="$(git remote get-url origin)"; then
+if ! ORIGIN_FETCH_URL="$(git remote get-url origin)"; then
   echo "Required origin remote is missing or unusable" >&2
+  exit 1
+fi
+if ! ORIGIN_PUSH_URL="$(git remote get-url --push origin)"; then
+  echo "Required origin push destination is missing or unusable" >&2
   exit 1
 fi
 if ! git fetch --prune origin; then
@@ -105,9 +109,9 @@ unusable, stop this CLI path and select MCP only through the shared Capability
 Ladder; the MCP path performs equivalent repository, branch, authentication,
 and PR-inventory checks with read-only calls. It must be able to return the
 repository, current branch, and complete PR metadata before drafting.
-Treat the validated `origin` URL as the base/target-repository remote; confirm
-it identifies `TARGET_REPOSITORY` (or the equivalent MCP repository identity)
-before using another remote for a PR head.
+Confirm `ORIGIN_FETCH_URL` identifies `TARGET_REPOSITORY` (or the equivalent
+MCP repository identity). Record `ORIGIN_PUSH_URL` separately; a configured
+push URL may identify a different head repository.
 
 This is a strict stop: report if the repository check fails, the branch is
 `main` or `master`, `origin` is missing, `git fetch --prune origin` fails,
@@ -165,7 +169,7 @@ remote_pr_head: <PR headRefOid> | none
 remote_pr_title_body: <current title/body or digest> | none
 head_repository: <owner/name> | none
 head_ref_name: <published branch> | candidate branch
-push_remote: <configured remote name and URL>
+push_remote: <configured remote name and effective push URL>
 push_target_branch: <exact remote branch>
 remote_branch_oid: <current OID> | absent
 create_head_selector: <owner:branch selector>
@@ -184,13 +188,17 @@ the verified PR API/MCP diff without a local push remote, but it must still
 record the actual PR head repository and branch. Use the PR's `baseRefOid` for
 an existing base and require the selected base remote's `git ls-remote` OID to
 match; for a new PR, stop if the base branch OID is missing or cannot be read.
-For a create plan, derive `head_repository` from the selected push remote and
-bind `create_head_selector` to its owner-qualified `<owner>:<branch>` value.
-Use that owner-qualified selector whenever the head repository differs from
-the validated `origin` target repository; a bare branch is ambiguous in that
-case. If the owner cannot be derived and verified from the selected push
-remote, stop. Record each remote name, URL, branch, selector, and OID in the
-plan.
+For a create plan, resolve the selected remote's effective push URL with
+`git remote get-url --push <remote>` and derive `head_repository` from that
+destination, not from the remote name or fetch URL. If it is the validated
+target repository, bind `create_head_selector` to the exact bare branch. For
+a cross-repository head, local `gh pr create --head` accepts `user:branch`
+only after you verify the owner is a user; bind that exact owner-qualified
+selector. If the head is organization-owned, use an available MCP/API
+capability that explicitly supports organization-owned create heads and bind
+its exact selector/capability, or stop with the shared Blocked Report. Do not
+pass an ambiguous bare branch across repositories. Record and revalidate each
+remote name, effective push URL, branch, selector, capability, and OID.
 
 ### Phase 2: Choose a Truthful Head and Collect Evidence
 
@@ -251,8 +259,10 @@ choosing type, scope, or breaking-change notation, and
 Freeze the exact title and body in an immutable draft artifact before approval.
 Store the body in a temp file created with the shared `mktemp` convention and
 record its digest when available; display the full body as well. Apply the
-`references/testing-language.md` wording, and render an `Automated` validation
-step only when a command is known; omit that step when it is unavailable.
+`references/testing-language.md` wording. The body template's Testing section
+always records `Automated validation: not available (no automated test command
+is known)` when no command is known; render a runnable `Automated` step in `How
+to Validate` only when a command is known and omit that step otherwise.
 
 Use this body shape:
 
@@ -267,6 +277,7 @@ Use this body shape:
 ### Testing
 - **Tests Changed:** [Summary]
 - **Tests Run:** [Exact command + result, or "Not run in this session"]
+- **Automated validation:** [Known command + result, or "Automated validation: not available (no automated test command is known)"]
 
 ### Files Changed
 [Observed count and line summary]
@@ -295,6 +306,7 @@ Body: <exact body or its recorded digest plus the full body above>
 Existing PR input: <current remote title/body or digest> | none
 Base: <branch and base_ref_oid>
 Head: <repository/branch, local_head, remote_pr_head, and selected evidence_head>
+Approved local head: <exact local commit OID used for any approved push>
 Push: required=yes|no; status=pending|satisfied|n/a; target=<remote name + URL and exact branch>; before_branch_oid=<...>; expected transition=<...>
 Create head selector: <exact owner:branch selector, or n/a for update>
 Validation: <known command and result | not available | not run in this session>
@@ -335,7 +347,9 @@ Only after revalidation succeeds and approval/preauthorization covers the
 revalidated plan may you use the immutable draft artifact as the body file and
 call a mutating command. Resolve any helper from `$skill_dir`; follow the
 shared temp-file convention in `references/conventions.md`. Verify the stored
-draft's digest and exact displayed title/body at this gate. Recompute mutable
+draft's digest and exact displayed title/body at this gate. For a push plan,
+use the approved local commit OID recorded as `approved_local_head`; a changed
+local `HEAD` invalidates the plan before that push. Recompute mutable
 identities, the create/update decision, and push facts, but do not regenerate
 the title/body or rerun tests before each side effect. A remote-only update
 has `push_status=n/a` and `push target=n/a`; its actual PR head repository and
@@ -351,7 +365,7 @@ new gate solely because the approved push completed. Any other difference
 invalidates the plan and restarts the approval gate.
 
 - **Update:** when `push_required=yes`, push the approved local branch first:
-  `git push "$push_remote" "HEAD:refs/heads/$push_target_branch"`. Immediately
+  `git push "$push_remote" "$approved_local_head:refs/heads/$push_target_branch"`. Immediately
   query the PR and its actual head branch again and require both the remote
   branch OID and PR `headRefOid` to equal the approved local head before
   editing. Keep `push_required=yes` with `push_status=satisfied`; the expected
@@ -360,7 +374,7 @@ invalidates the plan and restarts the approval gate.
 - **Update without push:** edit only the PR identified by the approved number,
   using the body drafted from its verified published head.
 - **Create:** push the approved branch with
-  `git push -u "$push_remote" "HEAD:refs/heads/$push_target_branch"`, then
+  `git push "$push_remote" "$approved_local_head:refs/heads/$push_target_branch"`, then
   immediately re-check that the remote branch OID equals the approved local
   head, no PR appeared, and repeat the full revalidation set before running
   `gh pr create --title "<title>" --body-file "$pr_body_file" --base
