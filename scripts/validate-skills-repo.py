@@ -37,7 +37,6 @@ AGENT_SKILLS_SPEC_REVISION = "69ef37e9424c0a7ea9dd2293b559e43ec8176379"
 SKILLS_REF_VERSION = "0.1.0"
 VALIDATION_SCENARIO_PATH = Path("references") / "validation-scenarios.md"
 VALIDATION_SCENARIO_EXEMPTIONS = {
-    "pr-generator",
     "testflight-notes",
 }
 NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
