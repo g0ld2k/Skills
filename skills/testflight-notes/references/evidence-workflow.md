@@ -130,8 +130,20 @@ elif [[ -n "${timeframe:-}" ]]; then
   selector_kind=timeframe
   selector_label="$normalized_timeframe ($since_filter_arg $head_sha)"
 elif [[ -n "${start_ref:-}" ]]; then
+  tag_ref="refs/tags/$start_ref"
+  if git -C "$repo_root" show-ref --verify --quiet "$tag_ref"; then
+    start_revision="${tag_ref}^{commit}"
+  else
+    tag_lookup_status=$?
+    if (( tag_lookup_status != 1 )); then
+      printf 'ERROR: Git could not check tag namespace for: %s\n' \
+        "$start_ref" >&2
+      exit 2
+    fi
+    start_revision="${start_ref}^{commit}"
+  fi
   start_sha="$(git -C "$repo_root" rev-parse \
-    --verify --end-of-options "$start_ref^{commit}")" || {
+    --verify --end-of-options "$start_revision")" || {
     printf 'ERROR: ref or tag is unavailable or does not name a commit: %s\n' \
       "$start_ref" >&2
     exit 2
@@ -175,6 +187,10 @@ else
 fi
 readonly -a history_selector
 ~~~
+
+For an unqualified start name, an exact tag wins over a colliding pseudo-ref,
+branch, or other revision. A caller can still select a colliding non-tag by
+supplying its fully qualified ref name.
 
 Record the exact array, kind, label, and fallback assumption. A selector error
 ends the run without a notes block.

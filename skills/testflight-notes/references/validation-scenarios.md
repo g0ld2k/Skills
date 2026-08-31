@@ -31,14 +31,17 @@ per commit without an extra empty record delimiter.
 
 Setup: `build-1` is a reachable annotated tag at commit A and `HEAD` is commit
 B. A..B contains a macOS-only menu-bar change with matching body and AppKit path
-evidence.
+evidence. Repeat with a valid `refs/tags/HEAD` at A.
 
-Prompt: "Generate TestFlight notes from build-1 to the current build."
+Prompt: "Generate TestFlight notes from build-1 to the current build." /
+"Generate TestFlight notes from the tag HEAD to the current build."
 
 Pass: The agent resolves `build-1` once, pins A and B, verifies
 `git merge-base --is-ancestor A B`, and uses exactly `A..B` for every history
 read. It emits one high-confidence `NEW (macOS)` row grounded in the commit
-and changed path, with no moving-ref or second-range lookup.
+and changed path, with no moving-ref or second-range lookup. In the collision
+variant, the unqualified start name resolves `refs/tags/HEAD`, not the `HEAD`
+pseudo-ref; a fully qualified non-tag ref would remain selectable.
 
 ## Scenario 3: Edge case — latest-tag fallback
 
