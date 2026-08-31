@@ -23,8 +23,9 @@ Setup: The staged-status check, parent resolution, `git write-tree`, or an
 evidence read fails with an error status.
 Prompt: Generate a commit message.
 Pass: The skill reports the failing command, status, and Git error, then stops
-without drafting or committing. An evidence read failure makes every evidence
-call explicitly exit; it does not depend on shell `set -e`.
+without drafting or committing. The single evidence command captures its
+status explicitly and explicitly exits on an evidence read failure; it does not
+depend on shell `set -e`.
 
 ## Scenario 4: Adversarial — index drift during approval
 
@@ -64,11 +65,15 @@ is being collected, the index briefly changes to another tree and then returns
 to `<recorded_tree>` before the commit check. The live index would therefore
 produce an ABA mismatch between separate `git diff --cached` reads.
 Prompt: Draft and commit while another process changes and restores the index.
-Pass: Every draft evidence read uses the recorded parent's baseline tree and
-recorded staged tree identities directly, including name-only, stat, patch, and
-name-status reads. The skill does not combine live-index evidence with the
-recorded tree; the final identity check still gates the commit and the message
-describes only the recorded staged tree.
+Pass: One `git diff --no-color --no-ext-diff --no-textconv
+--patch-with-stat --summary <recorded_parent> <recorded_tree>` command supplies
+the evidence from the recorded parent commit and staged tree. The skill does
+not combine live-index evidence with the recorded tree; the final identity
+check still gates the commit and the message describes only the recorded
+staged tree. Binary changes remain bounded metadata. The command uses the
+effective Git object/configuration view for that single command; concurrent
+replacement refs, repository-local attributes/configuration, and hooks are
+outside this normal-Git snapshot guarantee.
 
 ## Scenario 8: Edge case — unborn initial commit
 
@@ -77,10 +82,11 @@ commit exists, and a file is staged. `git rev-parse --verify HEAD` therefore
 fails with the expected unborn status, while the ref itself is absent.
 Prompt: Draft and commit the first commit.
 Pass: The skill records the explicit unborn sentinel `unborn:refs/heads/<branch>`
-and obtains an immutable empty-tree baseline with `git mktree </dev/null>`.
-Evidence is diffed from that empty tree to the recorded staged tree, and a
-successful approval can create the initial commit. If `HEAD` becomes an actual
-parent before commit, the changed parent state forces a redraft and re-gate.
+and creates the repository-format-specific empty-tree OID with
+`git mktree </dev/null>` as the evidence base. Evidence is diffed from that
+empty tree to the recorded staged tree, and a successful approval can create
+the initial commit. If `HEAD` becomes an actual parent before commit, the
+changed parent state forces a redraft and re-gate.
 
 ## Scenario 9: Adversarial — baseline lookup race
 
@@ -88,28 +94,19 @@ Setup: The draft records `<draft_parent>`, and a separate operation may move
 `HEAD` while the draft is being prepared. The recorded parent remains the
 identity being approved.
 Prompt: Draft and commit while `HEAD` may advance during evidence collection.
-Pass: The normal baseline comes from
-`git rev-parse --verify "<draft_parent>^{tree}"`, never from a separate live
-`HEAD^{tree}` lookup. The final baseline similarly comes from the recorded
-`<current_parent>`, so any parent change is detected and re-gated.
+Pass: The normal evidence base is the recorded `<draft_parent>` commit OID
+itself, and an unborn draft uses the immutable empty-tree OID. The final
+recheck likewise records `<current_parent>` and uses that commit OID if it is
+present. No separate live baseline lookup occurs, so any parent change is
+detected and re-gated.
 
 ## Scenario 10: Edge case — merge in progress
 
-Setup: `git rev-parse --quiet --verify MERGE_HEAD` returns `0`.
+Setup: `git rev-parse --git-path MERGE_HEAD` resolves the per-worktree
+pseudoref path, and that path exists.
 Prompt: Generate a commit message while a merge is in progress.
 Pass: The skill reports that a merge is in progress and stops before drafting
-or committing. It does not model multi-parent merges. Status `1` means
-`MERGE_HEAD` is absent and continues; any other status is reported as a Git
-error and stops.
-
-## Scenario 11: Adversarial — attributes change during evidence collection
-
-Setup: The worktree or live attributes would classify a recorded path as
-binary or apply a text conversion after `<recorded_tree>` is captured.
-Prompt: Draft from the recorded staged tree while attributes change.
-Pass: The single evidence command uses global
-`--attr-source="<recorded_tree>"`, `--no-textconv`, `--no-ext-diff`, and
-`--no-color` for every name-only, stat, patch, and name-status read. Evidence
-therefore uses the recorded staged attributes without live conversions or
-configuration-dependent color escapes. Binary changes remain bounded metadata
-rather than being forced into unbounded text patches.
+or committing. It does not model multi-parent merges. A missing pseudoref path
+continues, while a Git error resolving the path is reported and stops. A branch
+or tag named `MERGE_HEAD` does not trigger the guard. The same check is the
+repeated merge gate immediately before commit, after the parent/tree recheck.

@@ -718,10 +718,12 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertLess(draft_tree, recheck)
         self.assertLess(recheck, commit)
         self.assertIn("draft_parent", skill_text)
-        self.assertIn("draft_base_tree", skill_text)
+        self.assertIn("draft_base", skill_text)
+        self.assertNotIn("draft_base_tree", skill_text)
         self.assertIn("normal/unborn procedure", skill_text)
         self.assertIn("current_parent", skill_text)
         self.assertIn('[ "$current_parent" != "$draft_parent" ]', skill_text)
+        self.assertNotIn("current_base_tree", skill_text)
         self.assertIn("commit parent or staged tree changed", skill_text.lower())
 
     def test_commit_message_drafts_only_from_recorded_parent_and_tree(self) -> None:
@@ -734,18 +736,15 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         evidence_text = skill_text[evidence_start:commit_start]
 
         self.assertIn(
-            'git --no-pager --attr-source="$staged_tree" diff --no-color '
-            '--no-ext-diff --no-textconv "$draft_base_tree" "$staged_tree" "$@"',
+            'git --no-pager diff --no-color --no-ext-diff --no-textconv '
+            '--patch-with-stat --summary "$draft_base" "$staged_tree"',
             evidence_text,
         )
-        for evidence_call in (
-            "run_git_evidence --name-only",
-            "run_git_evidence --stat",
-            "run_git_evidence",
-            "run_git_evidence --name-status",
-        ):
-            with self.subTest(call=evidence_call):
-                self.assertIn(f"{evidence_call} || exit $?", evidence_text)
+        self.assertIn("evidence_status=$?", evidence_text)
+        self.assertIn("Git error:", evidence_text)
+        self.assertIn("exited %s", evidence_text)
+        self.assertNotIn("run_git_evidence", evidence_text)
+        self.assertNotIn("--attr-source", evidence_text)
         for live_index_evidence in (
             "git --no-pager diff --cached --name-only",
             "git --no-pager diff --cached --stat",
@@ -764,7 +763,9 @@ class AgentSkillsConformanceTests(unittest.TestCase):
         self.assertIn("git show-ref --verify --quiet", skill_text)
         self.assertIn("git mktree </dev/null", skill_text)
         self.assertIn("unborn:<ref>", skill_text)
-        self.assertIn("draft_base_tree", skill_text)
+        self.assertIn("draft_base", skill_text)
+        self.assertNotIn("4b825dc642cb6eb9a060e54bf8d69288fbee4904", skill_text)
+        self.assertNotIn("draft_base_tree", skill_text)
         self.assertIn("transition from an unborn parent", skill_text.lower())
 
     def test_commit_message_blocks_in_progress_merges_before_drafting(self) -> None:
@@ -777,41 +778,38 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             )
         ]
 
-        self.assertIn("git rev-parse --quiet --verify MERGE_HEAD", preflight)
-        self.assertIn("a merge is in progress", preflight.lower())
-        self.assertIn("no `MERGE_HEAD`; continue", preflight)
-        self.assertIn("any other status", preflight.lower())
+        self.assertIn("git rev-parse --git-path MERGE_HEAD", preflight)
+        self.assertIn('[ -e "$merge_head_path" ]', preflight)
+        self.assertNotIn("git rev-parse --quiet --verify MERGE_HEAD", preflight)
+        self.assertIn("merge in progress", preflight.lower())
+        self.assertIn("pseudoref path", preflight.lower())
+        self.assertIn("branch or tag named `MERGE_HEAD`", preflight)
         self.assertIn("do not model multi-parent merges", preflight.lower())
+        post_recheck = skill_text[
+            skill_text.index("### 6) Re-check and commit") : skill_text.index(
+                "## Output contract"
+            )
+        ]
+        self.assertIn("check_merge_state", post_recheck)
+        self.assertGreaterEqual(skill_text.count("check_merge_state"), 3)
 
-    def test_commit_message_derives_baselines_from_recorded_parents(self) -> None:
+    def test_commit_message_uses_recorded_parent_objects_as_evidence_bases(self) -> None:
         skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn(
+        self.assertIn('draft_base="$draft_parent"', skill_text)
+        self.assertIn("git mktree </dev/null", skill_text)
+        self.assertNotIn("current_base", skill_text)
+        for separate_tree_lookup in (
+            "draft_base_tree",
+            "current_base_tree",
+            'git rev-parse --verify HEAD^{tree}',
             'git rev-parse --verify "$draft_parent^{tree}"',
-            skill_text,
-        )
-        self.assertIn(
             'git rev-parse --verify "$current_parent^{tree}"',
-            skill_text,
-        )
-        self.assertNotIn("git rev-parse --verify HEAD^{tree}", skill_text)
-
-    def test_commit_message_pins_attributes_for_every_evidence_diff(self) -> None:
-        skill_text = (ROOT / "skills" / "commit-message" / "SKILL.md").read_text(
-            encoding="utf-8"
-        )
-        evidence_start = skill_text.index("### 1) Collect evidence")
-        commit_start = skill_text.index("### 6) Re-check and commit")
-        evidence_text = skill_text[evidence_start:commit_start]
-
-        self.assertIn(
-            'git --no-pager --attr-source="$staged_tree" diff --no-color '
-            '--no-ext-diff --no-textconv',
-            evidence_text,
-        )
-        self.assertNotIn("--text", evidence_text)
+        ):
+            with self.subTest(lookup=separate_tree_lookup):
+                self.assertNotIn(separate_tree_lookup, skill_text)
 
     def test_commit_message_scenarios_cover_parent_and_aba_drift(self) -> None:
         scenario_text = (
@@ -833,10 +831,15 @@ class AgentSkillsConformanceTests(unittest.TestCase):
             "evidence read failure",
             "explicitly exit",
             "merge in progress",
+            "pseudoref path",
+            "tag named `merge_head`",
+            "repeated merge gate",
             "baseline lookup",
-            "attr-source",
             "no-textconv",
             "no-color",
+            "patch-with-stat",
+            "summary",
+            "effective git object/configuration view",
             "bounded metadata",
         ):
             with self.subTest(marker=marker):
