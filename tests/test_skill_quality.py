@@ -17,7 +17,10 @@ SKILL_BUDGETS = {
         "ceiling": 1_550,
         "always_loaded": ("references/exploration-modes.md",),
     },
-    "commit-message": {"ceiling": 600, "always_loaded": ()},
+    "commit-message": {
+        "ceiling": 750,
+        "always_loaded": ("references/conventions.md",),
+    },
     "integration-branch-orchestrator": {
         "ceiling": 1_150,
         "always_loaded": (),
