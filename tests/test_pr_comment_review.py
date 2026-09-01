@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -165,6 +166,303 @@ class PostPRRepliesTests(unittest.TestCase):
         self.assertIn("would_post=1", result.stdout)
         self.assertIn("skipped=1", result.stdout)
         self.assertIn("thread PRRT_resolved already resolved", result.stdout)
+
+    def test_post_rejects_reply_bytes_changed_after_preview_approval(self) -> None:
+        """Approval covers the canonical target and body, not a mutable file."""
+        with tempfile.TemporaryDirectory(prefix="pr-comment-approval-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "printf '%s\\n' '[{\"thread_id\":\"PRRT_one\",\"comment_id\":101}]' > \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ $* == *' -X POST '* ]]; then echo POST >> \"$FAKE_POST_LOG\"; exit 0; fi\n"
+                "printf '%s\\n' '{\"data\":{\"node\":{\"isResolved\":false,\"pullRequest\":{\"number\":7,\"repository\":{\"owner\":{\"login\":\"g0ld2k\"},\"name\":\"Skills\"}},\"comments\":{\"nodes\":[{\"databaseId\":101,\"replyTo\":null}]}}}}'\n"
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies_path = temp_path / "replies.json"
+            preview_path = temp_path / "preview.json"
+            replies_path.write_text(
+                json.dumps(
+                    [{"thread_id": "PRRT_one", "comment_id": 101, "body": "A"}]
+                )
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FAKE_POST_LOG"] = str(post_log)
+            base = [
+                "bash",
+                str(scripts_path / "post_pr_replies.sh"),
+                "--owner",
+                "g0ld2k",
+                "--repo",
+                "Skills",
+                "--pr",
+                "7",
+                "--replies-file",
+                str(replies_path),
+                "--preview-file",
+                str(preview_path),
+            ]
+            preview = subprocess.run(
+                [*base, "--dry-run"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+            digest_match = re.search(r"sha256:[0-9a-f]{64}", preview.stdout)
+            self.assertIsNotNone(digest_match)
+
+            replies_path.write_text(
+                json.dumps(
+                    [{"thread_id": "PRRT_one", "comment_id": 101, "body": "B"}]
+                )
+            )
+            result = subprocess.run(
+                [*base, "--approved-digest", digest_match.group(0)],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("approval preview", result.stderr)
+            self.assertFalse(post_log.exists())
+
+    def test_post_sends_large_body_through_json_input(self) -> None:
+        """The reply body must not enter the GitHub client's argument list."""
+        with tempfile.TemporaryDirectory(prefix="pr-comment-payload-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "printf '%s\\n' '[{\"thread_id\":\"PRRT_one\",\"comment_id\":101}]' > \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            marker = "BODY_SENT_VIA_INPUT"
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    if [[ "$*" == *" -X POST "* ]]; then
+                      input=""
+                      previous=""
+                      for argument in "$@"; do
+                        [[ "$argument" != *"$BODY_MARKER"* ]] || exit 41
+                        if [[ "$previous" == "--input" ]]; then input="$argument"; fi
+                        previous="$argument"
+                      done
+                      [[ -n "$input" ]] || exit 42
+                      grep -F "$BODY_MARKER" "$input" >/dev/null
+                      echo POST >> "$FAKE_POST_LOG"
+                      exit 0
+                    fi
+                    printf '%s\n' '{"data":{"node":{"isResolved":false,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":101,"replyTo":null}]}}}}'
+                    """
+                )
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies_path = temp_path / "replies.json"
+            preview_path = temp_path / "preview.json"
+            replies_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "thread_id": "PRRT_one",
+                            "comment_id": 101,
+                            "body": "x" * 200_000 + marker,
+                        }
+                    ]
+                )
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["BODY_MARKER"] = marker
+            environment["FAKE_POST_LOG"] = str(post_log)
+            base = [
+                "bash",
+                str(scripts_path / "post_pr_replies.sh"),
+                "--owner",
+                "g0ld2k",
+                "--repo",
+                "Skills",
+                "--pr",
+                "7",
+                "--replies-file",
+                str(replies_path),
+                "--preview-file",
+                str(preview_path),
+            ]
+            preview = subprocess.run(
+                [*base, "--dry-run"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            digest = re.search(r"sha256:[0-9a-f]{64}", preview.stdout)
+            self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+            self.assertIsNotNone(digest)
+            result = subprocess.run(
+                [*base, "--approved-digest", digest.group(0)],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(post_log.read_text().strip(), "POST")
+
+
+class FetchReviewThreadsTests(unittest.TestCase):
+    def run_fetch(self, responses: list[dict[str, object]]) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory(prefix="pr-comment-fetch-") as temp:
+            temp_path = Path(temp)
+            bin_path = temp_path / "bin"
+            bin_path.mkdir()
+            responses_path = temp_path / "responses"
+            responses_path.mkdir()
+            for index, response in enumerate(responses):
+                (responses_path / f"{index}.json").write_text(json.dumps(response))
+            counter_path = temp_path / "counter"
+            counter_path.write_text("0")
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    index="$(<"$FAKE_COUNTER")"
+                    response="$FAKE_RESPONSES/$index.json"
+                    [[ -f "$response" ]] || exit 90
+                    cat "$response"
+                    echo $((index + 1)) > "$FAKE_COUNTER"
+                    """
+                )
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FAKE_COUNTER"] = str(counter_path)
+            environment["FAKE_RESPONSES"] = str(responses_path)
+            return subprocess.run(
+                [
+                    "bash",
+                    str(SKILL_SCRIPTS / "fetch_unresolved_review_comments.sh"),
+                    "g0ld2k",
+                    "Skills",
+                    "7",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+    @staticmethod
+    def page(comment_id: int, thread_id: str, has_next: bool) -> dict[str, object]:
+        return {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": [
+                                {
+                                    "id": thread_id,
+                                    "isResolved": False,
+                                    "comments": {
+                                        "nodes": [
+                                            {
+                                                "databaseId": comment_id,
+                                                "id": f"node-{comment_id}",
+                                                "body": "Review body",
+                                                "path": f"file-{comment_id}.py",
+                                                "line": 1,
+                                                "originalLine": 1,
+                                                "url": f"https://example.test/discussion_r{comment_id}",
+                                                "createdAt": "2026-09-01T00:00:00Z",
+                                                "author": {"login": "reviewer"},
+                                                "replyTo": None,
+                                            }
+                                        ],
+                                        "pageInfo": {
+                                            "hasNextPage": False,
+                                            "endCursor": None,
+                                        },
+                                    },
+                                }
+                            ],
+                            "pageInfo": {
+                                "hasNextPage": has_next,
+                                "endCursor": "NEXT" if has_next else None,
+                            },
+                        }
+                    }
+                }
+            }
+        }
+
+    def test_fetch_exhausts_outer_thread_pages(self) -> None:
+        """A later page must not disappear behind nested pagination metadata."""
+        result = self.run_fetch(
+            [self.page(101, "PRRT_one", True), self.page(202, "PRRT_two", False)]
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        inventory = json.loads(result.stdout)
+        self.assertEqual(
+            {(item["thread_id"], item["comment_id"]) for item in inventory},
+            {("PRRT_one", 101), ("PRRT_two", 202)},
+        )
+
+    def test_fetch_rejects_errors_or_missing_pr_as_empty_inventory(self) -> None:
+        """Lookup failures cannot masquerade as a PR with no review threads."""
+        invalid_responses = [
+            {"errors": [{"message": "Bad credentials"}], "data": {}},
+            {"data": {"repository": {"pullRequest": None}}},
+        ]
+        for response in invalid_responses:
+            with self.subTest(response=response):
+                result = self.run_fetch([response])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotEqual(result.stdout.strip(), "[]")
 
 
 if __name__ == "__main__":

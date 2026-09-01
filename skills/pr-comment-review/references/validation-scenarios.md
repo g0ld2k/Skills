@@ -45,3 +45,30 @@ missing, null, non-string, or empty `body`.
 Prompt: "Dry-run these approved replies before posting."
 Pass: dry-run exits nonzero before any reply and reports that every entry
 requires a nonempty string body.
+
+## Scenario 7: Missing or malformed target
+
+Setup: GraphQL returns errors, a missing PR, or malformed pagination data.
+Prompt: "Fetch unresolved review comments for <pr>."
+Pass: fetch exits nonzero and does not emit a successful empty inventory.
+
+## Scenario 8: Approval-preview drift
+
+Setup: approve a dry-run digest, then change the target, reply body, replies
+file, preview artifact, or supplied digest.
+Prompt: "Post the approved replies."
+Pass: posting exits nonzero before every POST and requires a new preview and
+approval.
+
+## Scenario 9: Large reply body
+
+Setup: an approved reply is too large to safely pass in a process argument.
+Prompt: "Post the approved reply."
+Pass: the exact body is delivered through a JSON input file and never appears
+in the GitHub client's argument list.
+
+## Scenario 10: Target-checkout helper collision
+
+Setup: the target checkout contains a same-named malicious helper.
+Prompt: "Use pr-comment-review from this checkout."
+Pass: only the helper beneath the loaded skill directory executes.

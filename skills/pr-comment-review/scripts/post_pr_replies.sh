@@ -6,231 +6,120 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/common.sh"
 
 usage() {
-  cat <<USAGE
-Usage: $0 --owner <owner> --repo <repo> --pr <pr_number> --replies-file <replies.json> [--dry-run]
-
-replies.json format:
-[
-  { "comment_id": 12345, "thread_id": "PRRT_xxx", "body": "Reply text" }
-]
-
-"thread_id" is required: fetch_unresolved_review_comments.sh always emits it,
-and it drives a fresh check immediately before each POST that the thread
-belongs to the given --owner/--repo/--pr, is unresolved, and that
-comment_id is its root comment. "body" must be a nonempty string. An entry
-missing any required field, or one that fails any of those checks for a reason
-other than "already resolved", is a hard failure (counted in "failed", exit
-code 2) — it is not silently skipped.
-USAGE
+  echo "Usage: $0 --owner <owner> --repo <repo> --pr <number> --replies-file <file> [--dry-run] [--preview-file <file>] [--approved-digest <sha256:...>]"
 }
 
-owner=""
-repo=""
-pr_number=""
-replies_file=""
-dry_run=false
-
+owner=""; repo=""; pr_number=""; replies_file=""
+preview_file=""; approved_digest=""; dry_run=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --owner)
-      owner="${2:-}"
-      shift 2
-      ;;
-    --repo)
-      repo="${2:-}"
-      shift 2
-      ;;
-    --pr)
-      pr_number="${2:-}"
-      shift 2
-      ;;
-    --replies-file)
-      replies_file="${2:-}"
-      shift 2
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown argument: $1" >&2
-      exit 1
-      ;;
+    --owner) owner="${2:-}"; shift 2 ;;
+    --repo) repo="${2:-}"; shift 2 ;;
+    --pr) pr_number="${2:-}"; shift 2 ;;
+    --replies-file) replies_file="${2:-}"; shift 2 ;;
+    --preview-file) preview_file="${2:-}"; shift 2 ;;
+    --approved-digest) approved_digest="${2:-}"; shift 2 ;;
+    --dry-run) dry_run=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "Unknown argument: $1" ;;
   esac
 done
 
-if [[ -z "$owner" || -z "$repo" || -z "$pr_number" || -z "$replies_file" ]]; then
-  usage >&2
-  exit 1
-fi
-
-if [[ ! -f "$replies_file" ]]; then
-  die "Replies file not found: $replies_file"
+[[ -n "$owner" && -n "$repo" && -n "$pr_number" && -n "$replies_file" ]] \
+  || { usage >&2; exit 1; }
+[[ "$pr_number" =~ ^[1-9][0-9]*$ ]] || die "PR number must be a positive integer"
+[[ -f "$replies_file" ]] || die "Replies file not found: $replies_file"
+if [[ "$dry_run" == false ]]; then
+  [[ -f "$preview_file" && "$approved_digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || die "posting requires a preview file and its approved sha256 digest"
 fi
 
 require_cmd gh
 require_cmd jq
+require_cmd awk
 
-# Refuse partial or duplicated reply batches before checking or posting any
-# individual thread. A clean dry-run must prove that the replies file accounts
-# for every currently unresolved top-level review comment exactly once. Surplus
-# entries are allowed through so the per-thread check can safely skip comments
-# whose threads were resolved after the replies file was prepared.
-fetch_script="$script_dir/fetch_unresolved_review_comments.sh"
-unresolved_file="$(mktemp "${TMPDIR:-/tmp}/post-replies-unresolved.XXXXXX")"
-trap 'rm -f "$unresolved_file"' EXIT
-
-if ! bash "$fetch_script" "$owner" "$repo" "$pr_number" --output "$unresolved_file"; then
-  echo "Failing replies file (could not fetch current unresolved review threads)" >&2
-  exit 2
-fi
-
-if ! jq -e '
-  type == "array"
-  and all(.[].thread_id; type == "string" and length > 0)
-  and all(.[].comment_id; type == "number")
-  and all(.[].body; type == "string" and length > 0)
-' "$replies_file" >/dev/null; then
-  echo "Failing replies file (each entry requires thread_id, numeric comment_id, and nonempty string body)" >&2
-  exit 2
-fi
-
-if ! jq -e --slurpfile unresolved "$unresolved_file" '
-  [.[] | {thread_id, comment_id}] as $reply_pairs
-  | [$unresolved[0][] | {thread_id, comment_id}] as $required_pairs
-  | ($reply_pairs | length) == ($reply_pairs | unique_by(.thread_id) | length)
-    and (($required_pairs - $reply_pairs) | length == 0)
-' "$replies_file" >/dev/null; then
-  echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2
-  exit 2
-fi
-
-# Fresh, single-thread check so a reply posted late in a large batch can't
-# fire against a thread someone resolved after the batch snapshot was taken.
-# Also confirms comment_id is the thread's root comment: GitHub's reply
-# endpoint only accepts the comment that started the thread, not a reply to
-# a reply (https://docs.github.com/en/rest/pulls/comments#create-a-reply-for-a-review-comment).
-#
-# Return codes distinguish a legitimate skip from a failure so a caller can
-# tell "thread already resolved" (fine) apart from "could not verify" or
-# "malformed input" (should fail the run, not be swallowed as a skip):
-#   0  - ok to post
-#   10 - thread is already resolved
-#   20 - GraphQL lookup failed, or the node/isResolved shape was unexpected
-#   21 - comment_id is not in this thread, or is a reply rather than the
-#        thread's root comment
-#   22 - thread belongs to a different repo/PR than --owner/--repo/--pr
-thread_ok_to_post() {
-  local thread_id="$1"
-  local comment_id="$2"
-  local response
-
-  if ! response="$(gh api graphql -f query='
-    query($id: ID!) {
-      node(id: $id) {
-        ... on PullRequestReviewThread {
-          isResolved
-          pullRequest {
-            number
-            repository {
-              owner { login }
-              name
-            }
-          }
-          comments(first: 100) {
-            nodes { databaseId replyTo { id } }
-          }
-        }
-      }
-    }' -F id="$thread_id")"; then
-    return 20
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    die "a SHA-256 utility is required"
   fi
-
-  local is_resolved
-  # Note: avoid `// empty` here — jq's alternative operator treats a real
-  # `false` as falsy too, which would misclassify every unresolved thread
-  # as a lookup failure. `tostring` keeps `false`/`true`/`null` distinct.
-  is_resolved="$(jq -r '.data.node.isResolved | tostring' <<<"$response")"
-  if [[ "$is_resolved" != "true" && "$is_resolved" != "false" ]]; then
-    # Missing/null node: bad thread_id or an unexpected API shape.
-    return 20
-  fi
-
-  # Confirm the thread actually belongs to the requested --owner/--repo/--pr.
-  # thread_id is a global node ID with no inherent tie to the CLI args, so a
-  # replies file built for a different PR (or reused against the wrong one)
-  # would otherwise only surface as a late POST failure — or not at all in
-  # --dry-run, since dry-run never reaches the POST call.
-  # Downcase both sides in jq rather than bash: `${var,,}` needs bash 4+,
-  # but macOS ships bash 3.2 by default under `/usr/bin/env bash`.
-  if ! jq -e --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
-    (.data.node.pullRequest.repository.owner.login | ascii_downcase) == ($owner | ascii_downcase)
-    and (.data.node.pullRequest.repository.name | ascii_downcase) == ($repo | ascii_downcase)
-    and .data.node.pullRequest.number == $pr
-  ' <<<"$response" >/dev/null; then
-    return 22
-  fi
-
-  # Check root-comment membership before treating isResolved as a benign
-  # skip: a mismatched pairing (comment_id doesn't actually belong to
-  # thread_id) must fail even when thread_id happens to be resolved,
-  # otherwise the real, unresolved target comment silently never gets a
-  # reply while the batch reports a clean skip.
-  if ! jq -e --argjson cid "$comment_id" '
-    (.data.node.comments.nodes | map(select(.databaseId == $cid))) as $m
-    | ($m | length) == 1 and ($m[0].replyTo == null)
-  ' <<<"$response" >/dev/null; then
-    return 21
-  fi
-
-  if [[ "$is_resolved" == "true" ]]; then
-    return 10
-  fi
-  return 0
 }
 
-posted=0
-would_post=0
-skipped=0
-failed=0
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-review-post.XXXXXX")"
+cleanup() { rm -rf "$work_dir"; }
+trap cleanup EXIT
+canonical_file="$work_dir/preview.json"
+unresolved_file="$work_dir/unresolved.json"
+iterator_file="$work_dir/replies.ndjson"
+payload_file="$work_dir/payload.json"
 
-while IFS= read -r reply_json; do
-  comment_id="$(jq -r '.comment_id // empty' <<<"$reply_json")"
-  thread_id="$(jq -r '.thread_id // empty' <<<"$reply_json")"
-  body="$(jq -r '.body // ""' <<<"$reply_json")"
+# Snapshot the target and reply bytes once; every gate and POST uses this copy.
+jq -ce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
+  def positive_integer: type == "number" and . > 0 and floor == .;
+  if type == "array" and all(.[];
+      type == "object"
+      and (.thread_id | type == "string" and length > 0)
+      and (.comment_id | positive_integer)
+      and (.body | type == "string" and length > 0))
+  then {owner: $owner, repo: $repo, pr: $pr,
+        replies: [.[] | {thread_id, comment_id, body}]}
+  else error("invalid replies file") end
+' "$replies_file" > "$canonical_file" \
+  || { echo "Failing replies file (each entry requires thread_id, positive-integer comment_id, and nonempty string body)" >&2; exit 2; }
 
-  # Malformed input entries count as failed, not skipped: "skipped" is
-  # reserved for well-formed entries correctly declined because of live
-  # thread state, so a bad replies-file can't look like a clean run.
-  if [[ -z "$comment_id" || "$comment_id" == "null" ]]; then
-    echo "Failing entry without comment_id" >&2
-    failed=$((failed + 1))
-    continue
-  fi
+if [[ "$dry_run" == false ]]; then
+  actual_digest="sha256:$(sha256_file "$canonical_file")"
+  [[ "$actual_digest" == "$approved_digest" ]] \
+    || { echo "Failing approval preview (digest does not cover current target and replies)" >&2; exit 2; }
+  cmp -s "$canonical_file" "$preview_file" \
+    || { echo "Failing approval preview (artifact differs from current target or replies)" >&2; exit 2; }
+fi
 
-  if [[ -z "$thread_id" || "$thread_id" == "null" ]]; then
-    echo "Failing comment $comment_id (missing required thread_id)" >&2
-    failed=$((failed + 1))
-    continue
-  fi
+bash "$script_dir/fetch_unresolved_review_comments.sh" "$owner" "$repo" "$pr_number" --output "$unresolved_file" \
+  || { echo "Failing replies file (could not fetch complete current inventory)" >&2; exit 2; }
 
-  # Authoritative, per-reply check: catches a thread resolved after triage,
-  # confirms comment_id is the thread's root comment, and distinguishes a
-  # legitimate skip (already resolved) from a failure (lookup error or
-  # malformed comment_id/thread_id pairing) so the latter can't be silently
-  # swallowed as "handled".
+jq -e --slurpfile unresolved "$unresolved_file" '
+  [.replies[] | {thread_id, comment_id}] as $provided
+  | [$unresolved[0][] | {thread_id, comment_id}] as $required
+  | ($provided | length) == ($provided | unique_by(.thread_id) | length)
+    and (($required - $provided) | length == 0)
+' "$canonical_file" >/dev/null \
+  || { echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2; exit 2; }
+
+jq -c '.replies[]' "$canonical_file" > "$iterator_file" \
+  || { echo "Failing replies file (could not enumerate replies)" >&2; exit 2; }
+
+thread_state() {
+  local thread_id="$1" comment_id="$2" response_file="$work_dir/thread.json"
+  gh api graphql -f query='query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{number repository{owner{login} name}} comments(first:100){nodes{databaseId replyTo{id}}}}}}' \
+    -F id="$thread_id" > "$response_file" || return 20
+  jq -e --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" --argjson cid "$comment_id" '
+    type == "object"
+    and ((has("errors") | not) or (.errors | type == "array" and length == 0))
+    and (.data.node.isResolved | type == "boolean")
+    and (.data.node.pullRequest.number == $pr)
+    and ((.data.node.pullRequest.repository.owner.login | ascii_downcase) == ($owner | ascii_downcase))
+    and ((.data.node.pullRequest.repository.name | ascii_downcase) == ($repo | ascii_downcase))
+    and ([.data.node.comments.nodes[] | select(.databaseId == $cid and .replyTo == null)] | length == 1)
+  ' "$response_file" >/dev/null || return 20
+  [[ "$(jq -r '.data.node.isResolved' "$response_file")" == false ]] || return 10
+}
+
+posted=0; would_post=0; skipped=0; failed=0
+while IFS= read -r reply; do
+  thread_id="$(jq -r '.thread_id' <<<"$reply")"
+  comment_id="$(jq -r '.comment_id' <<<"$reply")"
   rc=0
-  thread_ok_to_post "$thread_id" "$comment_id" || rc=$?
+  thread_state "$thread_id" "$comment_id" || rc=$?
   if [[ $rc -eq 10 ]]; then
     echo "Skipping comment $comment_id (thread $thread_id already resolved)"
     skipped=$((skipped + 1))
     continue
   elif [[ $rc -ne 0 ]]; then
-    echo "Failing comment $comment_id (thread $thread_id: lookup failed, wrong repo/PR, or comment_id is not its root comment)" >&2
+    echo "Failing comment $comment_id (fresh thread check failed)" >&2
     failed=$((failed + 1))
     continue
   fi
@@ -241,17 +130,28 @@ while IFS= read -r reply_json; do
     continue
   fi
 
-  if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" -f body="$body" >/dev/null; then
+  jq -c '{body}' <<<"$reply" > "$payload_file" \
+    || { echo "Failing comment $comment_id (could not build payload)" >&2; failed=$((failed + 1)); continue; }
+  if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" --input "$payload_file" >/dev/null; then
     echo "Posted reply to comment $comment_id"
     posted=$((posted + 1))
   else
     echo "Failed posting reply to comment $comment_id" >&2
     failed=$((failed + 1))
   fi
-done < <(jq -c '.[]' "$replies_file")
+done < "$iterator_file"
+
+if [[ "$dry_run" == true && $failed -eq 0 ]]; then
+  if [[ -n "$preview_file" ]]; then
+    cp "$canonical_file" "$preview_file" || { echo "Could not write approval preview" >&2; exit 2; }
+    echo "DRY RUN ARTIFACT: $preview_file"
+  else
+    printf 'DRY RUN ARTIFACT: '
+    cat "$canonical_file"
+    echo
+  fi
+  echo "DRY RUN DIGEST: sha256:$(sha256_file "$canonical_file")"
+fi
 
 echo "Summary: posted=$posted would_post=$would_post skipped=$skipped failed=$failed dry_run=$dry_run"
-
-if [[ "$failed" -gt 0 ]]; then
-  exit 2
-fi
+[[ $failed -eq 0 ]] || exit 2
