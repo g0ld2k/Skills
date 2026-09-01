@@ -11,6 +11,19 @@ Always separate:
 - `Tests Changed`: what test files/cases were modified.
 - `Tests Run`: exact commands executed and their outcomes.
 
+## Automated Validation Availability
+
+Classify the repository's automated validation separately:
+
+- Known command and run: record the exact command and observed result.
+- Known command and not run: record the exact command plus `Not run in this
+  session`, with no result claim.
+- No known command: record `Automated validation: not available (no automated
+  test command is known)`.
+
+A known but unrun command may appear in `How to Validate` as an instruction,
+without an attached outcome. Omit the automated step when no command is known.
+
 ## Allowed Phrasing
 
 Use these patterns:

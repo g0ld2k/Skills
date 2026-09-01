@@ -16,8 +16,10 @@ Action:
 
 Action:
 - Show git error.
-- Suggest `git pull --rebase` (if appropriate) or resolve branch permissions.
-- Re-run `git push -u origin <branch>` after conflict resolution.
+- Re-inventory the remote ref and rebuild the publish fingerprint.
+- Resolve the history or permission problem, obtain fresh approval when the
+  fingerprint changed, then retry the approved-OID refspec from
+  `publish-safety.md`.
 
 ### Base branch not found
 
