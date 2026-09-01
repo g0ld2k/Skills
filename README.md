@@ -14,7 +14,7 @@ release notes, and work orchestration.
 | `pr-comment-review` | Triage, fix, and reply to unresolved pull request review feedback. |
 | `pr-generator` | Draft, create, or update GitHub pull requests after explicit approval. |
 | `simplify` | Review changed code for reuse, quality, and efficiency issues. |
-| `testflight-notes` | Draft tester-facing TestFlight or release notes from git history. |
+| `testflight-notes` | Draft tester-facing TestFlight or beta-build notes from git history. |
 | `work-request-orchestration` | Turn issues, milestones, epics, and plans into validated branch-to-PR workflows. |
 
 ## Repository Shape
