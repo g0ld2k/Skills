@@ -389,11 +389,20 @@ def validate_marketplace_adapters(manifest: dict, errors: list[str]) -> None:
     would otherwise ship silently.
     """
     name = manifest.get("name")
+    # Each adapter declares a different entry shape, so the mirrored fields are
+    # per-adapter. A field listed here is required: treating its absence as
+    # "synchronized" would let a deletion pass while a replacement is caught.
     adapters = {
-        ".agents/plugins/marketplace.json": lambda entry: entry.get("source", {}).get("path"),
-        ".github/plugin/marketplace.json": lambda entry: entry.get("source"),
+        ".agents/plugins/marketplace.json": (
+            lambda entry: entry.get("source", {}).get("path"),
+            (),
+        ),
+        ".github/plugin/marketplace.json": (
+            lambda entry: entry.get("source"),
+            ("version", "description"),
+        ),
     }
-    for rel, source_of in adapters.items():
+    for rel, (source_of, mirrored_fields) in adapters.items():
         adapter = load_json(ROOT / rel, errors)
         if adapter is None:
             continue
@@ -404,8 +413,10 @@ def validate_marketplace_adapters(manifest: dict, errors: list[str]) -> None:
         entry = entries[0]
         if source_of(entry) != ".":
             errors.append(f"{rel}: {name} source must point at the repository root '.'")
-        for field in ("version", "description"):
-            if field in entry and entry[field] != manifest.get(field):
+        for field in mirrored_fields:
+            if field not in entry:
+                errors.append(f"{rel}: {name} must declare {field} to match plugin.json")
+            elif entry[field] != manifest.get(field):
                 errors.append(f"{rel}: {name} {field} must match plugin.json")
 
 def main() -> int:

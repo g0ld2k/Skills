@@ -125,10 +125,18 @@ class RepositoryShapeTests(unittest.TestCase):
             ({"version": "9.9.9"}, "version must match"),
             ({"description": "drifted"}, "description must match"),
             ({"source": "./plugins/g0ld2k-skills"}, "source must point at"),
+            # Deleting a mirrored field must fail too: treating absence as
+            # "synchronized" let a deletion through while catching a replacement.
+            ({"version": None}, "must declare version"),
+            ({"description": None}, "must declare description"),
         ):
             with self.subTest(mutation=mutation):
                 data = json.loads(original)
-                data["plugins"][0].update(mutation)
+                for key, value in mutation.items():
+                    if value is None:
+                        data["plugins"][0].pop(key, None)
+                    else:
+                        data["plugins"][0][key] = value
                 adapter.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
                 errors: list[str] = []
                 try:
