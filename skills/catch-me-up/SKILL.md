@@ -1,6 +1,6 @@
 ---
 name: catch-me-up
-description: Use when the user asks to catch them up, get oriented in unfamiliar code, explain architecture, identify conventions or idioms, trace how a feature works, explain unfamiliar syntax or APIs, assess test coverage, or understand code history.
+description: Use when the user asks to "catch me up" on unfamiliar code, architecture, conventions, feature flow, syntax/APIs, test coverage, or history.
 license: MIT
 ---
 
@@ -94,6 +94,10 @@ Final answers should:
 - use a table by default for exploration modes
 - include Mermaid or ASCII diagrams only when they clarify the mental model
 - end with concrete next probes, not generic offers
+
+## Validation Scenarios
+
+Run `references/validation-scenarios.md` before deployment.
 
 ## References
 
