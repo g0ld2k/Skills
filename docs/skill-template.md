@@ -39,11 +39,16 @@ Fill in the placeholder values before validating.
   rejects them. The specification permits experimental `allowed-tools` as a
   space-separated string, but this repository rejects that field as a house
   policy so published skills stay client-neutral.
-- Keep client-specific invocation policy out of portable frontmatter. For an
-  explicit-only skill, add its name to `EXPLICIT_ONLY_SKILLS` in
-  `scripts/validate-skills-repo.py`; the matching `agents/openai.yaml` then
-  needs `policy.allow_implicit_invocation: false` in the block form shown in
-  the stub below. `disable-model-invocation` is not an Agent Skills field.
+- Explicit-only invocation needs a guard per client, because neither client
+  reads the other's. Add the skill's name to `EXPLICIT_ONLY_SKILLS` in
+  `scripts/validate-skills-repo.py`; the validator then requires **both**
+  `disable-model-invocation: true` in this frontmatter (which
+  [Claude Code reads](https://code.claude.com/docs/en/skills)) and
+  `policy.allow_implicit_invocation: false` in `agents/openai.yaml` (which
+  Codex reads), in the block form shown in the stub below.
+  `disable-model-invocation` is a Claude Code extension rather than a portable
+  Agent Skills field, so it is carried deliberately for that install path — do
+  not add it to a skill that is not explicit-only.
 
 ## `# Title`
 

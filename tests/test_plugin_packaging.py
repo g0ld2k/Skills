@@ -57,18 +57,40 @@ class PluginManifestTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_validator_rejects_a_field_the_schema_forbids(self) -> None:
+        errors = self._errors_for({"category": "Developer Tools"})
+
+        self.assertTrue(any("category" in error for error in errors), errors)
+
+    def test_validator_enforces_types_items_and_nested_objects(self) -> None:
+        """The pinned schema constrains more than the top-level field set."""
+        for mutation, expected in (
+            ({"version": []}, "version"),
+            ({"keywords": "not-an-array"}, "keywords"),
+            ({"keywords": ["ok", 5]}, "keywords[1]"),
+            ({"author": {"bogus": 1}}, "author"),
+            ({"extensions": "str"}, "extensions"),
+            ({"name": "a--b"}, "name"),
+            ({"name": "a" * 65}, "name"),
+        ):
+            with self.subTest(mutation=mutation):
+                errors = self._errors_for(mutation)
+                self.assertTrue(
+                    any(expected in error for error in errors),
+                    f"{mutation} produced {errors}",
+                )
+
+    def _errors_for(self, mutation: dict) -> list[str]:
         validator = load_script("validate-skills-repo")
         errors: list[str] = []
         original = MANIFEST.read_text(encoding="utf-8")
         manifest = read_json(MANIFEST)
-        manifest["category"] = "Developer Tools"
+        manifest.update(mutation)
         MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         try:
             validator.validate_plugin_manifest(errors)
         finally:
             MANIFEST.write_text(original, encoding="utf-8")
-
-        self.assertTrue(any("category" in error for error in errors), errors)
+        return errors
 
 
 class RepositoryShapeTests(unittest.TestCase):
@@ -93,6 +115,61 @@ class RepositoryShapeTests(unittest.TestCase):
         self.assertEqual(codex["plugins"][0]["source"]["path"], ".")
         self.assertEqual([p["name"] for p in copilot["plugins"]], ["g0ld2k-skills"])
         self.assertEqual(copilot["plugins"][0]["source"], ".")
+
+    def test_validator_catches_adapter_drift_from_the_root_manifest(self) -> None:
+        """The generated packaging layer used to guarantee this by construction."""
+        validator = load_script("validate-skills-repo")
+        adapter = ROOT / ".github" / "plugin" / "marketplace.json"
+        original = adapter.read_text(encoding="utf-8")
+        for mutation, expected in (
+            ({"version": "9.9.9"}, "version must match"),
+            ({"description": "drifted"}, "description must match"),
+            ({"source": "./plugins/g0ld2k-skills"}, "source must point at"),
+        ):
+            with self.subTest(mutation=mutation):
+                data = json.loads(original)
+                data["plugins"][0].update(mutation)
+                adapter.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                errors: list[str] = []
+                try:
+                    validator.validate_plugin_manifest(errors)
+                finally:
+                    adapter.write_text(original, encoding="utf-8")
+                self.assertTrue(
+                    any(expected in error for error in errors),
+                    f"{mutation} produced {errors}",
+                )
+
+
+class ExplicitOnlyInvocationTests(unittest.TestCase):
+    """Both install paths need their own guard; neither client reads the other's."""
+
+    EXPLICIT_ONLY = ("integration-branch-orchestrator", "work-request-orchestration")
+
+    def test_claude_guard_present_in_frontmatter(self) -> None:
+        for name in self.EXPLICIT_ONLY:
+            with self.subTest(skill=name):
+                text = (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn("disable-model-invocation: true", text)
+
+    def test_codex_guard_present_in_openai_yaml(self) -> None:
+        for name in self.EXPLICIT_ONLY:
+            with self.subTest(skill=name):
+                text = (ROOT / "skills" / name / "agents" / "openai.yaml").read_text(encoding="utf-8")
+                self.assertIn("allow_implicit_invocation: false", text)
+
+    def test_validator_requires_the_claude_guard(self) -> None:
+        validator = load_script("validate-skills-repo")
+        skill = ROOT / "skills" / self.EXPLICIT_ONLY[0] / "SKILL.md"
+        original = skill.read_text(encoding="utf-8")
+        skill.write_text(original.replace("disable-model-invocation: true\n", ""), encoding="utf-8")
+        errors: list[str] = []
+        try:
+            validator.validate_skills(errors)
+        finally:
+            skill.write_text(original, encoding="utf-8")
+
+        self.assertTrue(any("disable-model-invocation" in e for e in errors), errors)
 
 
 class SharedConventionsTests(unittest.TestCase):

@@ -2,6 +2,7 @@
 name: work-request-orchestration
 description: Use when driving a work request (issues, milestone, epic, or external plan) through implementation, validation, PR, and merge.
 license: MIT
+disable-model-invocation: true
 ---
 
 # Work Request Orchestration

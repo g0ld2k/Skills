@@ -238,10 +238,15 @@ def validate_skills(errors: list[str]) -> list[str]:
         if "user-invocable" in frontmatter:
             errors.append(f"skills/{name}/SKILL.md: user-invocable must be absent")
 
-        # Explicit-only invocation is a client concern, enforced below through
-        # agents/openai.yaml. disable-model-invocation is not a portable Agent
-        # Skills field, so it must not appear in published frontmatter.
-        if "disable-model-invocation" in frontmatter:
+        # Explicit-only invocation needs a guard per client: Claude Code reads
+        # disable-model-invocation from frontmatter, Codex reads
+        # policy.allow_implicit_invocation from agents/openai.yaml (checked
+        # below). Both are required so neither install path can invoke a
+        # state-changing orchestrator implicitly.
+        has_disable = frontmatter.get("disable-model-invocation") is True
+        if name in EXPLICIT_ONLY_SKILLS and not has_disable:
+            errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be true")
+        if name not in EXPLICIT_ONLY_SKILLS and "disable-model-invocation" in frontmatter:
             errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be absent")
 
         openai, policy, openai_error = parse_openai_yaml(skill_dir / "agents" / "openai.yaml")
@@ -323,30 +328,85 @@ def validate_shared_conventions(errors: list[str]) -> None:
             )
 
 
+def check_against_schema(value: object, schema: dict, path: str, errors: list[str]) -> None:
+    """Validate `value` against the subset of JSON Schema the pinned manifest uses."""
+    expected = schema.get("type")
+    types = {
+        "object": dict,
+        "array": list,
+        "string": str,
+        "integer": int,
+        "number": (int, float),
+        "boolean": bool,
+    }
+    if expected in types and not isinstance(value, types[expected]):
+        errors.append(f"{path}: must be of type {expected}")
+        return
+
+    if "const" in schema and value != schema["const"]:
+        errors.append(f"{path}: must be {schema['const']!r}")
+    if isinstance(value, str):
+        if "pattern" in schema and not re.match(schema["pattern"], value):
+            errors.append(f"{path}: does not match the required pattern")
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            errors.append(f"{path}: must be at least {schema['minLength']} characters")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            errors.append(f"{path}: must be at most {schema['maxLength']} characters")
+    if isinstance(value, list) and "items" in schema:
+        for index, item in enumerate(value):
+            check_against_schema(item, schema["items"], f"{path}[{index}]", errors)
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                errors.append(f"{path}: missing required field '{key}'")
+        if schema.get("additionalProperties") is False:
+            for key in sorted(set(value) - set(properties)):
+                errors.append(f"{path}: unsupported field '{key}'")
+        extra = schema.get("additionalProperties")
+        for key, item in value.items():
+            if key in properties:
+                check_against_schema(item, properties[key], f"{path}.{key}", errors)
+            elif isinstance(extra, dict):
+                check_against_schema(item, extra, f"{path}.{key}", errors)
+
+
 def validate_plugin_manifest(errors: list[str]) -> None:
     """Check plugin.json against the pinned Agent Plugins v1 manifest schema."""
     schema = load_json(PLUGIN_SCHEMA, errors)
     manifest = load_json(PLUGIN_MANIFEST, errors)
     if schema is None or manifest is None:
         return
+    check_against_schema(manifest, schema, "plugin.json", errors)
+    validate_marketplace_adapters(manifest, errors)
 
-    properties = schema.get("properties", {})
-    for key in sorted(set(manifest) - set(properties)):
-        errors.append(f"plugin.json: unsupported field '{key}' (schema forbids additional properties)")
-    for key in schema.get("required", []):
-        if key not in manifest:
-            errors.append(f"plugin.json: missing required field '{key}'")
 
-    expected_schema = properties.get("$schema", {}).get("const")
-    if expected_schema and manifest.get("$schema") != expected_schema:
-        errors.append(f"plugin.json: $schema must be '{expected_schema}'")
+def validate_marketplace_adapters(manifest: dict, errors: list[str]) -> None:
+    """Keep each client adapter's plugin entry in step with the root manifest.
 
+    The generated packaging layer used to guarantee this by construction. The
+    adapters are now hand-maintained, so a drifted name/description/version
+    would otherwise ship silently.
+    """
     name = manifest.get("name")
-    name_pattern = properties.get("name", {}).get("pattern")
-    if not isinstance(name, str) or not name:
-        errors.append("plugin.json: name must be a non-empty string")
-    elif name_pattern and not re.match(name_pattern, name):
-        errors.append(f"plugin.json: name '{name}' does not match the schema pattern")
+    adapters = {
+        ".agents/plugins/marketplace.json": lambda entry: entry.get("source", {}).get("path"),
+        ".github/plugin/marketplace.json": lambda entry: entry.get("source"),
+    }
+    for rel, source_of in adapters.items():
+        adapter = load_json(ROOT / rel, errors)
+        if adapter is None:
+            continue
+        entries = adapter.get("plugins", [])
+        if [entry.get("name") for entry in entries] != [name]:
+            errors.append(f"{rel}: plugins must list exactly the root manifest's '{name}'")
+            continue
+        entry = entries[0]
+        if source_of(entry) != ".":
+            errors.append(f"{rel}: {name} source must point at the repository root '.'")
+        for field in ("version", "description"):
+            if field in entry and entry[field] != manifest.get(field):
+                errors.append(f"{rel}: {name} {field} must match plugin.json")
 
 def main() -> int:
     errors: list[str] = []

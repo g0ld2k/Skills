@@ -40,11 +40,22 @@ manifest and the canonical skill tree are the distributable artifact.
 
 The manifest schema sets `additionalProperties: false`, so `extensions` — keyed
 by reverse-domain namespace — is the only legal home for future plugin-level
-client-specific data. Keep per-skill client behavior in that client's own
-metadata instead; for example, `agents/openai.yaml` sets
-`policy.allow_implicit_invocation: false` for explicit-only skills.
-`disable-model-invocation` is not a portable Agent Skills field and must not
-appear in `SKILL.md` frontmatter.
+client-specific data.
+
+Per-skill client behavior lives in that client's own metadata, and an
+explicit-only skill needs a guard for **each** install path because neither
+client reads the other's:
+
+| Client | Guard | Location |
+| --- | --- | --- |
+| Claude Code | `disable-model-invocation: true` | `SKILL.md` frontmatter |
+| Codex | `policy.allow_implicit_invocation: false` | `agents/openai.yaml` |
+
+The validator requires both for every skill in `EXPLICIT_ONLY_SKILLS`, and
+forbids the Claude field on every other skill. `disable-model-invocation` is a
+Claude Code extension rather than a portable Agent Skills field; it is carried
+deliberately so `gh skill install … --agent claude-code` cannot leave a
+state-changing orchestrator implicitly invocable.
 
 ### Why `references/conventions.md` is vendored per skill
 
