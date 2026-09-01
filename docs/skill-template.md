@@ -2,7 +2,6 @@
 name: <kebab-case-skill-name>
 description: Use when <trigger 1>, <trigger 2>, or <trigger 3>.
 license: MIT
-# disable-model-invocation: true   # only after updating EXPLICIT_ONLY_SKILLS
 ---
 
 <!-- DOCS-ONLY: this file is a blueprint, not content to keep. The quoted
@@ -36,14 +35,15 @@ Fill in the placeholder values before validating.
   *triggers only* — situations that summon the skill. Never summarize the
   workflow here; that belongs in the body.
 - `license: MIT` is required verbatim.
-- Do not add `tools:`, `allowed-tools`, or `user-invocable` — the validator
-  rejects those frontmatter keys.
-- Add `disable-model-invocation: true` only if this skill must never be
-  auto-invoked by the model (explicit-only, user-must-name-it skills). Before
-  adding it, add the skill name to `EXPLICIT_ONLY_SKILLS` in
-  `scripts/validate-skills-repo.py`. If present, the matching
-  `agents/openai.yaml` needs `policy.allow_implicit_invocation: false` in the
-  block form shown in the stub below.
+- `tools:` and `user-invocable` are not Agent Skills fields and the validator
+  rejects them. The specification permits experimental `allowed-tools` as a
+  space-separated string, but this repository rejects that field as a house
+  policy so published skills stay client-neutral.
+- Keep client-specific invocation policy out of portable frontmatter. For an
+  explicit-only skill, add its name to `EXPLICIT_ONLY_SKILLS` in
+  `scripts/validate-skills-repo.py`; the matching `agents/openai.yaml` then
+  needs `policy.allow_implicit_invocation: false` in the block form shown in
+  the stub below. `disable-model-invocation` is not an Agent Skills field.
 
 ## `# Title`
 
@@ -133,22 +133,24 @@ Reference the vendored shape rather than restating it:
     references/conventions.md for the exact Blocked Report format, capability
     ladder, temp-file rule, and external-text rule.
 
-> If this skill keeps the `references/conventions.md` link, add its name to
-> `shared_conventions_consumers` in `packaging/g0ld2k-skills.json` and run
-> `python3 scripts/sync-shared-conventions.py` before validating — the
-> validator checks that every listed consumer's vendored copy matches
-> `_shared/conventions.md`. If the skill doesn't need the shared file, remove
-> the reference and the link instead of leaving it dangling.
+> If this skill keeps the `references/conventions.md` link, run `python3
+> scripts/sync-shared-conventions.py` before validating. The sync script
+> discovers consumers from that link, and the validator checks that each copy
+> matches `_shared/conventions.md`. If the skill doesn't need the shared file,
+> remove the reference instead of leaving it dangling.
 
 ## `## Validation Scenarios`
 
-Point to `references/validation-scenarios.md` rather than inlining scenarios
-in SKILL.md. Minimum 3 scenarios: happy path, an edge case, and an adversarial
-case (conflicting/malicious/ambiguous input). Per `superpowers:writing-skills`,
-write each scenario RED first — confirm it fails without the skill's guardrail
-— before writing the GREEN behavior the skill should produce. See
+Point to `references/validation-scenarios.md` rather than inlining scenarios in
+SKILL.md. Include at least 3 scenarios: happy path, edge case, and adversarial,
+covering activation and output behavior. This is a repository convention rather
+than a validator check — nothing fails CI if the file is missing, so it is on
+the author to write it. Per `superpowers:writing-skills`, write each scenario
+RED first —
+confirm it fails without the skill's guardrail — before writing the GREEN
+behavior the skill should produce. See
 `skills/pr-closeout-loop/references/validation-scenarios.md` for the format
-(Setup / Prompt / Pass per scenario).
+(Setup / Prompt / Pass per scenario); each label must have non-empty content.
 
 ---
 
@@ -166,15 +168,15 @@ interface:
   short_description: "<25-64 character description of what this does>"
   default_prompt: "Use $<skill-name> to <one-line task description>."
 # policy:
-#   allow_implicit_invocation: false   # required if disable-model-invocation: true above
+#   allow_implicit_invocation: false   # required for explicit-only skills
 ```
 
 - `display_name`, `short_description`, and `default_prompt` are all required.
 - `short_description` must be 25-64 characters (validator-enforced).
 - `default_prompt` must contain the literal token `$<skill-name>` (e.g.
   `$commit-message`) — the validator checks for this exact substring.
-- If SKILL.md sets `disable-model-invocation: true`, add
-  the skill name to `EXPLICIT_ONLY_SKILLS` and use this block form here:
+- For explicit-only skills, add the skill name to `EXPLICIT_ONLY_SKILLS` and use
+  this block form here:
 
 ```yaml
 policy:
