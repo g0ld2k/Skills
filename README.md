@@ -57,6 +57,11 @@ Claude Code extension rather than a portable Agent Skills field; it is carried
 deliberately so `gh skill install … --agent claude-code` cannot leave a
 state-changing orchestrator implicitly invocable.
 
+Model-invoked skills use a `Use when …` trigger description. Explicit-only
+skills use a one-line human-facing summary instead: their client guards remove
+the description from model selection, so a trigger list would spend context
+without being able to fire.
+
 ### Why `references/conventions.md` is vendored per skill
 
 `_shared/conventions.md` is the single source of truth, copied into each

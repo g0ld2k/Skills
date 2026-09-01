@@ -191,6 +191,25 @@ def skill_dirs() -> list[Path]:
     return sorted(path for path in SKILLS_DIR.iterdir() if path.is_dir())
 
 
+def validate_skill_description(
+    name: str,
+    description: str,
+    skill_file: Path,
+    errors: list[str],
+) -> None:
+    """Apply the invocation-specific description policy."""
+    if not description:
+        return
+    if name in EXPLICIT_ONLY_SKILLS:
+        if "\n" in description:
+            errors.append(
+                f"{skill_file}: explicit-only description must be a one-line human-facing summary"
+            )
+        return
+    if not description.startswith("Use when"):
+        errors.append(f"{skill_file}: description must start with 'Use when'")
+
+
 def validate_skills(errors: list[str]) -> list[str]:
     if not has_exact_child(ROOT, "skills"):
         errors.append("skills/: missing")
@@ -221,8 +240,12 @@ def validate_skills(errors: list[str]) -> list[str]:
                 errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
 
         description = str(frontmatter.get("description", ""))
-        if description and not description.startswith("Use when"):
-            errors.append(f"skills/{name}/SKILL.md: description must start with 'Use when'")
+        validate_skill_description(
+            name,
+            description,
+            Path("skills") / name / "SKILL.md",
+            errors,
+        )
 
         declared_name = frontmatter.get("name")
         if declared_name != name:
