@@ -22,7 +22,7 @@ SKILL_BUDGETS = {
         "always_loaded": ("references/conventions.md",),
     },
     "integration-branch-orchestrator": {
-        "ceiling": 1_150,
+        "ceiling": 1_050,
         "always_loaded": (),
     },
     "pr-closeout-loop": {"ceiling": 1_200, "always_loaded": ()},
