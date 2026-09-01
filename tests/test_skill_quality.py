@@ -51,7 +51,7 @@ SKILL_BUDGETS = {
             "references/format-guide.md",
         ),
     },
-    "work-request-orchestration": {"ceiling": 1_200, "always_loaded": ()},
+    "work-request-orchestration": {"ceiling": 1_050, "always_loaded": ()},
 }
 
 
