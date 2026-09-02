@@ -25,6 +25,7 @@ cross-request or cross-repository coordination to `work-request-orchestration`.
 | Active candidate | In-scope PR that has not merged, closed, or reached a terminal blocker in this run. |
 | Base-sensitive evidence | Approval, checks, local suite, mergeability, or diff evidence evaluated against a particular integration OID. |
 | Merge slot | Exclusive permission for one candidate's `pr-closeout-loop` to attempt its merge against one recorded integration OID. |
+| Merge owner | Single actor (the user, one coordinator session, or a recorded queue) that grants every merge slot in the run. |
 | Promotion checkpoint | Current integration OID plus included PRs, validation, risks, and explicit promotion status presented to the human. |
 
 ## Inputs and Defaults
