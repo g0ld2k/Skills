@@ -44,7 +44,7 @@ SKILL_BUDGETS = {
         "always_loaded": ("references/conventions.md",),
     },
     "testflight-notes": {
-        "ceiling": 1_450,
+        "ceiling": 1_600,
         "always_loaded": (
             "references/classification-rules.md",
             "references/examples-good-bad.md",

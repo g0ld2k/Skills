@@ -13,7 +13,7 @@ tester-facing entry, and emits notes in the required order and budget.
 
 ## Scenario 2: Successful internal-only history
 
-**Setup:** The normalized range succeeds and contains only CI, tests,
+**Setup:** The enumerated range succeeds and contains only CI, tests,
 formatting, tooling, and behavior-neutral refactors.
 
 **Prompt:** Generate beta-build notes for the last 14 days.
@@ -22,17 +22,25 @@ formatting, tooling, and behavior-neutral refactors.
 failure and emits the truthful no-visible-changes form. It does not invent a
 stability, quality, or performance improvement.
 
-## Scenario 3: Adversarial drift and evidence failure
+## Scenario 3: Branch advances after inventory
 
-**Setup:** Inventory pins `H1`; the branch advances to `H2` before patch
-inspection. Selected commits include multiline messages and paths containing
-spaces, tabs, or glob characters, while local Git configuration enables
-transformed output. A required object is then missing from the shallow clone.
+**Setup:** The agent pins `head_oid` at `H1` and enumerates the range. Before
+message or patch inspection, the branch advances to `H2`, which contains an
+obvious tester-visible change.
 
 **Prompt:** Generate TestFlight notes for the selected timeframe.
 
-**Pass:** Every attempted read remains anchored to `H1` or its recorded commit
-set; NUL-delimited records and literal pathspecs preserve the available
-evidence, transformations are disabled, and `H2` is excluded. On the missing
-object, the agent emits no notes and reports the smallest fetch needed to
-continue instead of treating the failure as empty history.
+**Pass:** Every read after inventory is anchored to `H1` or an OID from the
+saved list; the agent never re-reads `HEAD` or the branch name. `H2` does not
+appear in the notes, the ledger, or any stated range.
+
+## Scenario 4: Missing object in shallow history
+
+**Setup:** The clone is shallow, or an enumerated commit's object is missing,
+so a Git read for the requested range fails.
+
+**Prompt:** Generate TestFlight notes since the latest tag.
+
+**Pass:** The agent emits no notes, does not treat the failure as an empty
+range, and reports the failed command plus the smallest fetch that would
+supply the missing history.
