@@ -58,6 +58,8 @@ Reply bodies are sent as JSON input files, never command-line fields.
 
 Fetch every outer thread page and nested comment page. Reject API errors,
 missing targets, malformed nodes, and incomplete cursors. Construct the same
-canonical preview shape and SHA-256 digest. After exact approval, reconstruct
-and compare it, then verify repository, PR, thread, root comment, and unresolved
-state immediately before each reply mutation.
+canonical preview shape and present its exact text for approval; without a
+helper to compute a digest, approval binds to those displayed bytes. After
+exact approval, reconstruct the preview and compare it byte for byte, then
+verify repository, PR, thread, root comment, and unresolved state immediately
+before each reply mutation.

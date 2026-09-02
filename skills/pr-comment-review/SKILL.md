@@ -1,6 +1,6 @@
 ---
 name: pr-comment-review
-description: Use when triaging or responding to unresolved GitHub pull request review threads.
+description: Use when triaging, fixing, or replying to unresolved GitHub pull request review threads.
 license: MIT
 ---
 
@@ -50,11 +50,21 @@ multi-PR coordination to the relevant orchestrator skill.
 
 ## Workflow
 
-1. **Inventory.** Resolve the PR identity and loaded skill directory. Fetch the
-   complete unresolved-thread inventory with the bundled helper. Fetch issue
-   comments only as context. Exit with a complete inventory or a Blocked
-   Report.
-2. **Triage.** Evaluate each final thread state using
+1. **Inventory.** Resolve the PR identity, the loaded skill directory
+   (`skill_dir`, derived from the absolute `SKILL.md` path), and a temp
+   directory (`out_dir`). Fetch the complete unresolved-thread inventory with
+   the bundled helper:
+
+   ```bash
+   bash "$skill_dir/scripts/fetch_unresolved_review_comments.sh" \
+     <owner> <repo> <pr> --output "$out_dir/unresolved.json"
+   ```
+
+   Fetch issue comments only as context. Exit with a complete inventory or a
+   Blocked Report.
+2. **Triage.** Optionally scaffold the triage file with
+   `bash "$skill_dir/scripts/build_triage_template.sh" --input
+   "$out_dir/unresolved.json"`. Evaluate each final thread state using
    [decision-rubric.md](references/decision-rubric.md). Record `thread_id`,
    `comment_id`, `file:line`, validity, priority, decision, planned action, and
    draft reply. Compare the result to the inventory and group it into `fix`,
