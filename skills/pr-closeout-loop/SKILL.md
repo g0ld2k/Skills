@@ -1,6 +1,6 @@
 ---
 name: pr-closeout-loop
-description: Use when executing review, CI, approval, or merge closeout for an existing GitHub pull request.
+description: Use when driving an existing GitHub pull request to merge by addressing review feedback, fixing CI, waiting for approval, and merging.
 license: MIT
 ---
 

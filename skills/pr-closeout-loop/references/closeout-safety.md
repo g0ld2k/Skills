@@ -58,9 +58,9 @@ snapshot after either mutation; never reuse the prior G4 result.
 
 Freeze the PR, closeout-surface digest, complete feedback digest, gate evidence,
 target, method, authorization, and expected head OID. Re-fetch every input and
-evaluate G1–G7 together immediately before the merge request. Use a merge
-operation conditioned on the expected head OID, such as GitHub's REST merge
-`sha` parameter. If the available client cannot enforce the condition, block;
+evaluate G1–G7 together immediately before the merge request. Use a merge operation conditioned on the expected head OID: with the CLI,
+`gh pr merge <number> --match-head-commit <expected_oid>`; with the REST
+API, the merge endpoint's `sha` parameter. If the available client cannot enforce the condition, block;
 a separate refresh cannot close that race.
 
 After the request, fetch terminal PR state and the merge commit. Report success
