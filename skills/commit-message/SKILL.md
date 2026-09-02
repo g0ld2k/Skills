@@ -11,7 +11,8 @@ only that authorized draft.
 
 ## When to Use
 
-Staging, amend, and push are separate workflows.
+Merge commits are separate: draft identity records one parent, but merges have
+several. Staging, amend, and push are also separate.
 
 ## Definitions
 
@@ -57,8 +58,8 @@ only when parent, tree, and diff are recorded; any other Git status blocks.
 
 ### 2. Draft
 
-Use project docs only to improve terminology. Choose a Conventional Commit
-type (`feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`,
+Choose a Conventional Commit type (`feat`, `fix`, `refactor`, `perf`, `docs`,
+`test`, `build`, `ci`,
 `chore`, `style`, or `revert`). Add a scope only when staged paths or content
 consistently name one component. Use `!` and a `BREAKING CHANGE:` footer only
 for an evidenced incompatible change.
@@ -66,8 +67,8 @@ for an evidenced incompatible change.
 Use `<type>[optional scope][!]: <subject>`, with optional body and footer.
 Write an imperative subject of at most 72 characters and add a wrapped body for
 non-obvious why or impact. Issue identifiers, tests, and product claims require
-support from the diff, user, or repository context. Complete this step by
-displaying one message, its parent/tree identity, and a brief rationale.
+support from the diff, user, or repository context. Exit with one message, its
+parent/tree identity, and rationale.
 
 ### 3. Authorize
 
