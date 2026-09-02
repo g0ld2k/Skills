@@ -1,27 +1,17 @@
 # Commit Safety
 
-Use this procedure to create and revalidate a draft identity while preserving
-normal Git behavior.
+Read this reference for an initial commit, and always before committing in
+`message+commit` mode. The snapshot commands themselves live in `SKILL.md`
+step 1.
 
-## Snapshot
+## Snapshot notes
 
-1. Confirm `git rev-parse --is-inside-work-tree` succeeds and returns `true`.
-2. Resolve the per-worktree merge marker with `git rev-parse --git-path
-   MERGE_HEAD`. Block if that path exists; a branch or tag named `MERGE_HEAD`
-   is not a merge marker.
-3. Preserve the exit status of `git diff --cached --quiet`: `0` means no staged
-   changes, `1` means continue, and every other status is a Git error.
-4. Record `draft_parent` from `git rev-parse --verify HEAD`. For an initial
-   commit, confirm `HEAD` is symbolic and its target ref is absent, record
-   `unborn:<ref>`, and create the repository-format empty-tree OID with
-   `git mktree </dev/null>`. Other lookup failures block. A normal parent is
-   also the evidence base.
-5. Record `staged_tree` with `git write-tree`.
-6. Read the snapshot once with `git --no-pager diff --no-color --no-ext-diff
-   --no-textconv --patch-with-stat --summary <evidence-base> <staged-tree>`.
-   Capture and report failures. Do not combine later live-index reads with this
-   evidence; the object-to-object diff prevents index ABA changes from mixing
-   snapshots.
+- The merge marker is the per-worktree path from `git rev-parse --git-path
+  MERGE_HEAD`; a branch or tag named `MERGE_HEAD` is not a merge marker.
+- For an initial commit, `git rev-parse --verify HEAD` fails. Confirm `HEAD` is
+  symbolic and its target ref is absent, record `draft_parent` as
+  `unborn:<ref>`, and use the empty tree from `git mktree </dev/null` as the
+  evidence base for the diff. Any other lookup failure blocks.
 
 ## Revalidate and commit
 

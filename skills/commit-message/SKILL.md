@@ -41,9 +41,19 @@ Staging, amend, and push are separate workflows.
 
 ### 1. Snapshot staged evidence
 
-Read and apply `references/commit-safety.md`. Record the parent and staged tree,
-then collect one immutable parent-to-tree diff. Complete this step only when
-both identity and evidence are fixed; unexpected Git statuses block.
+```bash
+git rev-parse --is-inside-work-tree                 # must print true
+test -e "$(git rev-parse --git-path MERGE_HEAD)"    # exists = merge in progress: block
+git diff --cached --quiet; echo $?                  # 0 nothing staged; 1 continue; else Git error
+draft_parent="$(git rev-parse --verify HEAD)"       # unborn HEAD: see commit-safety.md
+staged_tree="$(git write-tree)"
+git --no-pager diff --no-color --no-ext-diff --no-textconv \
+  --patch-with-stat --summary "$draft_parent" "$staged_tree"
+```
+
+Read the diff once from those two OIDs, never from later live-index reads, so
+an index that changes and changes back cannot mix snapshots. Complete this step
+only when parent, tree, and diff are recorded; any other Git status blocks.
 
 ### 2. Draft
 
