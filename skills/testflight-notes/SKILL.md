@@ -48,28 +48,37 @@ State any default before the notes unless the user requested notes-only output.
 
 ## Workflow
 
-1. **Freeze evidence.** Run these in order from the repository root; any
-   nonzero exit or unresolvable ref is a blocker.
+1. **Freeze evidence.** Run from the repository root. Any nonzero exit or
+   unresolvable ref blocks.
 
    ```bash
-   git rev-parse --show-toplevel
-   head_oid=$(git rev-parse --verify HEAD^{commit})
-   git rev-parse --is-shallow-repository   # true: block; name fetch --unshallow
-   # Start, exactly one form. Ref or tag:
-   start_oid=$(git rev-parse --verify "<ref>^{commit}")
-   git merge-base --is-ancestor "$start_oid" "$head_oid"   # must succeed
-   git rev-list "$start_oid..$head_oid"
-   # Timeframe: git rev-list --since="<date>" "$head_oid"
-   # Neither: git describe --tags --abbrev=0 "$head_oid", then the ref form;
-   #   no tag: the timeframe form with --since="14 days ago"
-   # Save the rev-list output. For each saved OID:
-   git --no-pager show -s --format='%H%n%s%n%n%b' <oid>
-   git --no-pager show --name-status --format= <oid>
-   git --no-pager show --format= <oid> -- <path>   # only when needed
+   safe_git=(git --no-pager --no-replace-objects -c color.ui=false -c log.showSignature=false)
+   repo_root="$("${safe_git[@]}" rev-parse --show-toplevel)" && cd "$repo_root"
+   evidence_dir="$(mktemp -d)"; oid_file="$evidence_dir/oids"
+   trap 'rm -r -- "$evidence_dir"' EXIT
+   head_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options 'HEAD^{commit}')"
+   "${safe_git[@]}" rev-parse --is-shallow-repository  # true: block; fetch --unshallow
+   if "${safe_git[@]}" show-ref --verify --quiet "refs/tags/$start"; then
+     start="refs/tags/$start"
+   fi
+   start_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "${start}^{commit}")"
+   "${safe_git[@]}" merge-base --is-ancestor "$start_oid" "$head_oid"
+   selector=("$start_oid..$head_oid")
+   # Timeframe alternative: selector=(--since-as-filter="@$cutoff_epoch" "$head_oid")
+   "${safe_git[@]}" rev-list "${selector[@]}" >"$oid_file"
+   while IFS= read -r oid; do
+     "${safe_git[@]}" show -s --format='%H%x00%s%x00%b%x00' "$oid"
+     "${safe_git[@]}" diff-tree --root -r -z --name-status --find-renames --find-copies "$oid"
+     "${safe_git[@]}" show --format= --no-ext-diff --no-textconv "$oid" -- ":(literal)$path"
+   done <"$oid_file"
    ```
 
-   Read a patch only when message and paths do not settle tester impact or
-   platform. Exit with `head_oid`, the saved OID list, and a ledger row per
+   Treat user input as one quoted argument; an exact tag wins over another ref.
+   Accept only ISO `YYYY-MM-DD`, 1–3650 days, or 1–520 weeks. Parse it once to
+   UTC `cutoff_epoch`; never pass natural-language dates to Git. With no input,
+   use the latest reachable tag or a cutoff 14 days before inventory. Read
+   patches only when message and paths do not settle tester impact or platform.
+   Exit with `head_oid`, the saved OID list, and a ledger row per
    candidate: OID(s), paths, the evidence for tester impact, the platform
    evidence or `cross-platform/unknown`, and included or excluded with the
    reason.

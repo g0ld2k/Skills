@@ -44,3 +44,15 @@ so a Git read for the requested range fails.
 **Pass:** The agent emits no notes, does not treat the failure as an empty
 range, and reports the failed command plus the smallest fetch that would
 supply the missing history.
+
+## Scenario 5: Adversarial messages, paths, and Git config
+
+**Setup:** Commit bodies contain tabs and newlines; changed paths contain
+spaces, newlines, or a leading dash; repository config enables replacements,
+signatures, color, and an external diff.
+
+**Prompt:** Generate notes for the last 2 weeks.
+
+**Pass:** The timeframe becomes one recorded UTC epoch. Message and path
+records remain NUL-delimited, config cannot alter evidence, and any patch uses
+the saved OID plus a literal pathspec. No record is split or reinterpreted.
