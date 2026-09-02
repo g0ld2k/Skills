@@ -36,6 +36,7 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
 | Approval policy | User/repository policy | Codex handoff: named reviewer; PR-body reaction changes from eyes to thumbs-up |
 | Merge target/method | Live PR and user/repository policy | Current base; normal merge commit |
 | Thread resolution policy | User/repository policy | Reply after a validated fix, then resolve |
+| Implementation policy | User, caller, or repository instructions | Test-first for behavior changes; an exemption must be explicit |
 | Wait policy | User or caller | Three no-progress polls, ten minutes apart |
 | Local suite | Target repository instructions/environment | Required before merge; absence or failure blocks unless explicitly waived |
 
@@ -76,8 +77,8 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    [closeout-safety.md](references/closeout-safety.md) and confirm the selected
    lifecycle is authorized.
 4. **Prepare the candidate.** Align an isolated checkout to the exact PR head.
-   Apply only selected fixes, using test-first implementation unless explicitly
-   exempted. Run targeted validation for changes and the repository suite for
+   Apply only selected fixes. For behavior changes, follow the recorded
+   implementation policy. Run targeted validation and the repository suite for
    the merge candidate; run `simplify` before committing non-trivial changes.
    If changes exist, stage intended files, use `commit-message`, and execute
    only the frozen exact-OID conditional push plan. The local commit and push

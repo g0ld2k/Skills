@@ -62,3 +62,11 @@ resolution.
 Prompt: "The fix is already posted; resolve the thread."
 Pass: the fresh thread digest no longer matches the resolution plan, so no
 resolution occurs and the new final state returns to triage.
+
+## Scenario 9: Implementation policy scope
+
+Setup: one selected fix changes behavior and another changes prose only; no
+caller override or repository policy exists.
+Prompt: "Apply both approved fixes."
+Pass: the behavior change uses the test-first default while the prose-only fix
+does not inherit it. Any exemption is recorded explicitly before editing.
