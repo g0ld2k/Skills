@@ -20,14 +20,22 @@ closeout, and the orchestration skills for multi-PR control.
 ## Definitions
 
 - **Evidence head:** the exact commit whose diff supports the draft.
-- **Publish fingerprint:** one immutable record containing the create/update
-  action and PR identity or confirmed absence; target repository; current PR
-  metadata digest; base ref/OID; head repository/ref; local, published, and
-  evidence-head OIDs; frozen title/body digest; validation evidence; push
-  requirement, effective push URL/ref, before/approved OIDs; and create-head
-  selector. Any unapproved observed change invalidates the plan. G4 permits
-  only the live remote OID to move from the recorded before OID to the approved
-  OID.
+- **Publish fingerprint:** one immutable record of the fields below. Any
+  unapproved observed change invalidates the plan; G4 permits only the live
+  remote OID to move from the recorded before OID to the approved OID.
+
+| Fingerprint field | Value |
+| --- | --- |
+| Action | `create` or `update`, with the PR number or confirmed absence |
+| Repository | Target repository |
+| PR metadata | Digest of the current title, body, and base (update only) |
+| Base | Ref and OID |
+| Head | Repository and ref |
+| OIDs | Local `HEAD`, published head, and evidence head |
+| Draft | Frozen title/body digest |
+| Validation | Tests changed, tests run, automated-validation availability |
+| Push | Required or not; effective push URL/ref; before and approved OIDs |
+| Selector | Head selector used for create |
 
 ## Inputs and Defaults
 

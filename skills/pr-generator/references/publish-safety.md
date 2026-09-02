@@ -10,6 +10,15 @@ a configured remote whose effective push URL maps to that repository; resolve
 it with `git remote get-url --push <remote>`. Query the exact branch with
 `git ls-remote`. Its OID must match the inventoried PR head OID before approval.
 
+```bash
+gh pr list --head "$branch" --state open \
+  --json number,url,title,baseRefName,headRefOid,headRepositoryOwner
+git ls-remote "$push_remote" "refs/heads/$branch" "refs/heads/$base_branch"
+```
+
+An empty `gh pr list` result is the documented no-open-PR state; a command
+error is a lookup failure.
+
 For a new PR, derive the head repository from the effective push URL, not the
 remote name or fetch URL. Use a bare branch selector when that destination is
 the target repository. For a cross-repository head, the owner-qualified form
@@ -45,6 +54,12 @@ observed state.
 5. For update, edit only the approved PR number after its head repository/ref
    and current metadata digest still match. For create, require the approved PR
    absence and base to remain current, then create with the approved selector.
+
+   ```bash
+   gh pr edit "$pr_number" --title "$title" --body-file "$pr_body_file"
+   gh pr create --base "$base_branch" --head "$head_selector" \
+     --title "$title" --body-file "$pr_body_file"
+   ```
 
 The MCP path performs the equivalent observations and mutations in the same
 order. Any invalidation returns to inventory and requires a newly displayed
