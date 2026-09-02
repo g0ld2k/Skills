@@ -32,8 +32,13 @@ SKILL_BUDGETS = {
         ),
     },
     "pr-generator": {
-        "ceiling": 1_150,
-        "always_loaded": ("references/conventions.md",),
+        "ceiling": 1_850,
+        "always_loaded": (
+            "references/conventions.md",
+            "references/style-guide.md",
+            "references/testing-language.md",
+            "references/title-heuristics.md",
+        ),
     },
     "simplify": {"ceiling": 1_100, "always_loaded": ()},
     "testflight-notes": {
