@@ -8,24 +8,23 @@ disable-model-invocation: true
 # Integration Branch Orchestrator
 
 Coordinate PRs through one integration branch while keeping unattended work
-outside the protected branch. Produce an auditable promotion checkpoint.
+outside protected branches. Produce a promotion checkpoint.
 
 ## When to Use
 
-Use this explicit control plane for multi-PR integration. Route one
-concrete PR to `pr-closeout-loop`, initial PR metadata to `pr-generator`, and
+Route one concrete PR to `pr-closeout-loop`, initial PR metadata to `pr-generator`, and
 cross-request or cross-repository coordination to `work-request-orchestration`.
 
 ## Definitions
 
 | Term | Definition |
 | --- | --- |
-| Run | Exact sources or PRs, integration ref, protected target, and authorization; changes are run-scoped only when reachable from those sources or explicitly authorized topology mutations. |
+| Run | Sources or PRs, integration ref, protected target, and authorization; changes are run-scoped only if reachable from a source or explicitly authorized topology mutations. |
 | Topology snapshot | Protected ref/OID, integration remote/ref/OID or verified absence, and every source PR identity, head, and base from one complete read. |
 | Active candidate | In-scope PR that has not merged, closed, or reached a terminal blocker in this run. |
 | Base-sensitive evidence | Approval, checks, local suite, mergeability, or diff evidence evaluated against a particular integration OID. |
 | Merge slot | Exclusive permission for one candidate's `pr-closeout-loop` to attempt its merge against one recorded integration OID. |
-| Merge owner | Single actor (the user, one coordinator session, or a recorded queue) that grants every merge slot in the run. |
+| Merge owner | One user, coordinator session, or recorded queue granting every merge slot. |
 | Promotion checkpoint | Current integration OID plus included PRs, validation, risks, and explicit promotion status presented to the human. |
 
 ## Inputs and Defaults
