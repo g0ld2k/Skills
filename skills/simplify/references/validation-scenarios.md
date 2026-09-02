@@ -36,14 +36,15 @@ failure as empty, fall back, or claim a complete review.
 
 ## Scenario 4: Adversarial — oversized or partial review
 
-Setup: The full scope exceeds one reviewer request, and one dispatched
-role/partition later fails.
+Setup: A reviewer reports it could not read its whole assignment, and after
+partitioning one role/partition pair fails.
 
 Prompt: Review everything quickly and present whatever findings return.
 
-Pass: Content is coherently partitioned within the protocol budget without
-truncation or index omission. The failed matrix entry blocks aggregation; no
-partial findings are presented as complete.
+Pass: The scope is split at file or hunk boundaries, without truncation, so
+that every reviewer reads its whole assignment, and every role covers every
+partition. The failed matrix entry blocks aggregation; no partial findings are
+presented as complete.
 
 ## Scenario 5: Edge case — evidence, selection, and zero findings
 
