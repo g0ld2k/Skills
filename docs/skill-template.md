@@ -53,6 +53,13 @@ Fill in the placeholder values before validating.
   Agent Skills field, so it is carried deliberately for that install path — do
   not add it to a skill that is not explicit-only. Explicit-only skills are
   exempt from the validator's model-facing "Use when" description rule.
+- Add the skill to `SKILL_BUDGETS` in `tests/test_skill_quality.py`. Its
+  whitespace-delimited ceiling covers `SKILL.md` and every reference that all
+  valid runs must load. Declare those files explicitly under `always_loaded`;
+  do not infer them from prose. A reference selected only for an observable
+  mode, condition, blocked path, or skill-authoring scenario remains
+  progressive disclosure. Lower the ceiling when a review reduces the total;
+  raising it requires explicit justification and approval.
 
 ## `# Title`
 

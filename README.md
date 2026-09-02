@@ -85,11 +85,20 @@ or removing that link is all it takes to opt in or out.
    scenarios (happy path, edge case, adversarial) — the template's Validation
    Scenarios section points at it.
 4. Add a row for the skill to the `## Skill Catalog` table above.
-5. Run the sync and validation commands:
+5. Add the skill to `SKILL_BUDGETS` in `tests/test_skill_quality.py`. The
+   ceiling counts whitespace-delimited words in `SKILL.md` plus each reference
+   listed under `always_loaded`. List a reference when every valid run must
+   load it; references reached only for an observable mode, condition, blocked
+   path, or skill-authoring scenario remain progressive disclosure and are not
+   listed. Lower ceilings when reviews reduce instructions. Do not raise one
+   without explicit justification and approval.
+6. Run the sync, repository tests, validator, and publisher check:
 
 ```bash
 python3 scripts/sync-shared-conventions.py
 python3 scripts/validate-skills-repo.py
+python3 -m unittest discover -s tests
+gh skill publish --dry-run
 ```
 
 ## Direct Agent Skills Install

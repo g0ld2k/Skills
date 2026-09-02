@@ -5,23 +5,63 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORD_BUDGETS = {
-    "catch-me-up": 800,
-    "commit-message": 600,
-    "integration-branch-orchestrator": 1_150,
-    "pr-closeout-loop": 1_900,
-    "pr-comment-review": 900,
-    "pr-generator": 950,
-    "simplify": 1_100,
-    "testflight-notes": 600,
-    "work-request-orchestration": 1_200,
+SKILL_BUDGETS = {
+    "catch-me-up": {
+        "ceiling": 1_550,
+        "always_loaded": ("references/exploration-modes.md",),
+    },
+    "commit-message": {"ceiling": 600, "always_loaded": ()},
+    "integration-branch-orchestrator": {
+        "ceiling": 1_150,
+        "always_loaded": (),
+    },
+    "pr-closeout-loop": {"ceiling": 1_900, "always_loaded": ()},
+    "pr-comment-review": {
+        "ceiling": 1_450,
+        "always_loaded": (
+            "references/conventions.md",
+            "references/decision-rubric.md",
+            "references/reply-templates.md",
+        ),
+    },
+    "pr-generator": {
+        "ceiling": 1_150,
+        "always_loaded": ("references/conventions.md",),
+    },
+    "simplify": {"ceiling": 1_100, "always_loaded": ()},
+    "testflight-notes": {
+        "ceiling": 1_450,
+        "always_loaded": (
+            "references/classification-rules.md",
+            "references/examples-good-bad.md",
+            "references/format-guide.md",
+        ),
+    },
+    "work-request-orchestration": {"ceiling": 1_200, "always_loaded": ()},
 }
+
+
+def count_instruction_words(skill_dir: Path, always_loaded: tuple[str, ...]) -> int:
+    """Count tier-1 instructions plus references every valid run must load."""
+    root = skill_dir.resolve()
+    paths = [skill_dir / "SKILL.md"]
+    for relative in always_loaded:
+        path = (skill_dir / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise AssertionError(f"mandatory reference escapes skill directory: {relative}") from exc
+        if not path.is_file():
+            raise AssertionError(f"mandatory reference is not a file: {relative}")
+        paths.append(path)
+    return sum(len(path.read_text(encoding="utf-8").split()) for path in paths)
 
 
 def load_validator() -> ModuleType:
@@ -43,7 +83,7 @@ class DescriptionPolicyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.validator = load_validator()
 
-    def validate(self, name: str, description: str) -> list[str]:
+    def validate(self, name: str, description: object) -> list[str]:
         errors: list[str] = []
         self.validator.validate_skill_description(
             name,
@@ -78,20 +118,70 @@ class DescriptionPolicyTests(unittest.TestCase):
             )
         )
 
+    def test_explicit_only_summary_is_not_a_model_trigger(self) -> None:
+        self.assertTrue(
+            self.validate(
+                "integration-branch-orchestrator",
+                "Use when coordinating several pull requests.",
+            )
+        )
+
+    def test_description_must_be_a_string(self) -> None:
+        self.assertTrue(self.validate("pr-generator", True))
+
+
+class FrontmatterParserTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.validator = load_validator()
+
+    def test_unquoted_colon_space_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: sample-skill\n"
+                "description: Use when drafting: publishing metadata.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            _, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNotNone(error)
+
 
 class SkillWordBudgetTests(unittest.TestCase):
+    def test_declared_mandatory_references_count_toward_the_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_dir = Path(directory)
+            (skill_dir / "references").mkdir()
+            (skill_dir / "SKILL.md").write_text("one two", encoding="utf-8")
+            (skill_dir / "references" / "required.md").write_text(
+                "three four five", encoding="utf-8"
+            )
+
+            total = count_instruction_words(
+                skill_dir,
+                ("references/required.md",),
+            )
+
+        self.assertEqual(total, 5)
+
     def test_each_skill_stays_within_its_budget(self) -> None:
         actual_names = {
             path.parent.name for path in (ROOT / "skills").glob("*/SKILL.md")
         }
-        self.assertEqual(actual_names, set(WORD_BUDGETS))
+        self.assertEqual(actual_names, set(SKILL_BUDGETS))
 
-        for name, budget in WORD_BUDGETS.items():
+        for name, budget in SKILL_BUDGETS.items():
             with self.subTest(skill=name):
-                text = (ROOT / "skills" / name / "SKILL.md").read_text(
-                    encoding="utf-8"
+                total = count_instruction_words(
+                    ROOT / "skills" / name,
+                    budget["always_loaded"],
                 )
-                self.assertLessEqual(len(text.split()), budget)
+                self.assertLessEqual(total, budget["ceiling"])
 
 
 if __name__ == "__main__":

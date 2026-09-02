@@ -82,7 +82,10 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
         if not separator:
             continue
         current_key = key.strip()
-        parsed_value = strip_quotes(value.strip())
+        raw_value = value.strip()
+        if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
+            return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
+        parsed_value = strip_quotes(raw_value)
         if parsed_value == "true":
             data[current_key] = True
         elif parsed_value == "false":
@@ -193,15 +196,18 @@ def skill_dirs() -> list[Path]:
 
 def validate_skill_description(
     name: str,
-    description: str,
+    description: object,
     skill_file: Path,
     errors: list[str],
 ) -> None:
     """Apply the invocation-specific description policy."""
+    if not isinstance(description, str):
+        errors.append(f"{skill_file}: description must be a string")
+        return
     if not description:
         return
     if name in EXPLICIT_ONLY_SKILLS:
-        if "\n" in description:
+        if "\n" in description or description.startswith("Use when"):
             errors.append(
                 f"{skill_file}: explicit-only description must be a one-line human-facing summary"
             )
@@ -239,7 +245,7 @@ def validate_skills(errors: list[str]) -> list[str]:
             if key not in frontmatter or not frontmatter[key]:
                 errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
 
-        description = str(frontmatter.get("description", ""))
+        description = frontmatter.get("description", "")
         validate_skill_description(
             name,
             description,
