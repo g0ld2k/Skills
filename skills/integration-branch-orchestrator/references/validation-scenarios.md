@@ -1,13 +1,14 @@
 # Integration Branch Orchestrator Validation Scenarios
 
-## Scenario 1: Happy path — one integration candidate
+## Scenario 1: Happy path — serialized integration candidates
 
 Setup: the remote integration branch descends from the protected OID, contains
-only run-scoped changes, and one authorized source PR targets it.
-Prompt: "Coordinate this PR through integration and prepare promotion review."
-Pass: delegates closeout with the recorded scope, verifies the remote result,
-runs integration validation at that exact OID, and presents a checkpoint
-without promoting to the protected branch.
+only run-scoped changes, and two authorized source PRs target it.
+Prompt: "Coordinate these PRs through integration and prepare promotion review."
+Pass: both prepare concurrently without merge scope. One receives the exclusive
+slot; after it lands and validation passes at the new OID, the other revalidates
+and receives the next slot. The final source set is refreshed before a validated
+checkpoint is presented without protected-branch promotion.
 
 ## Scenario 2: Edge case — unsafe existing integration branch
 
@@ -87,3 +88,19 @@ Setup: Validation passes at I1, then checkpoint preparation re-fetches I2.
 
 Pass: I1 evidence cannot mark I2 ready. The run validates I2 or blocks before
 presenting a promotion checkpoint.
+
+## Scenario 12: Preparation without merge authority
+
+Setup: A candidate has resolved feedback and passing checks, but merge scope is
+reserved for a later slot.
+
+Pass: `pr-closeout-loop` reaches the preparation terminal and returns ready;
+it does not interpret the delegated task as an impossible merge request.
+
+## Scenario 13: Source or checkpoint waiver drift
+
+Setup: Integration validation passed, then a source changes state; separately,
+a waiver names another OID or permits merging but not checkpoint preparation.
+
+Pass: Source refresh blocks the first checkpoint. Neither mismatched waiver can
+substitute for passing validation at the exact checkpoint OID and action.

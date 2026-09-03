@@ -7,8 +7,7 @@ disable-model-invocation: true
 
 # Integration Branch Orchestrator
 
-Coordinate PRs through an integration branch and produce a human promotion
-checkpoint outside protected branches.
+Coordinate PRs through integration to a human promotion checkpoint.
 
 ## When to Use
 
@@ -25,6 +24,7 @@ and cross-request/repository work to `work-request-orchestration`.
 | Base-sensitive evidence | Approval, checks, suite, mergeability, or diff bound to an integration OID. |
 | Merge slot | Exclusive merge permission at a recorded integration OID. |
 | Merge owner | User, coordinator, or queue granting every slot. |
+| Preparation terminal | PR ready for merge, with merge authorization excluded. |
 | Promotion checkpoint | Integration OID, included PRs, validation, risks, and status. |
 
 ## Inputs and Defaults
@@ -79,11 +79,9 @@ and cross-request/repository work to `work-request-orchestration`.
    actionable feedback to its owning workflow. Use `pr-generator` for each new
    integration-targeted PR. Exit when each source is blocked or has a verified
    PR based on the integration ref.
-3. **Prepare candidates.** Delegate each verified PR to `pr-closeout-loop` with
-   its exact target and action scope, always excluding merge authorization.
-   Preparation
-   may proceed concurrently in isolated worktrees; record each candidate as
-   ready, waiting, or blocked.
+3. **Prepare candidates.** Delegate each PR to `pr-closeout-loop` with the
+   `Preparation terminal` and exact action scope, excluding merge authorization.
+   Use concurrent isolated worktrees; record ready, waiting, or blocked.
 4. **Consume merge slots.** Repeat until no active candidate remains:
    1. Fetch the remote integration OID. Require fresh integration validation at
       that OID before granting a slot; changed tips invalidate every candidate's
@@ -100,11 +98,12 @@ and cross-request/repository work to `work-request-orchestration`.
       and promotion even when no active candidate remains.
    Keep slot discipline until the run ends; a shrinking queue does not restore
    blanket merge authorization.
-5. **Prepare the checkpoint.** Re-fetch the integration OID and require passing
-   `integration_validation` for that exact OID; otherwise revalidate or block.
-   Summarize the run against it. If promotion is requested, present it for
-   human approval and route the resulting concrete promotion PR through
-   `pr-closeout-loop`. Exit with readiness or the owning blocker.
+5. **Prepare the checkpoint.** Re-fetch integration OID and every source;
+   require each source included, intentionally completed, or explicitly waived.
+   Require passing validation for that OID, or an exact OID/action waiver
+   covering checkpoint preparation. Summarize the run against it. If promotion
+   is requested, seek human approval and route its concrete PR through
+   `pr-closeout-loop`. Exit ready or with the owning blocker.
 
 ## State Ledger
 
