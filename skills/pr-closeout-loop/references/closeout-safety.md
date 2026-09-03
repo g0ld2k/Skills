@@ -41,29 +41,40 @@ the PR and remote ref. Accept only the recorded before→approved transition;
 concurrent head, base, body, or PR-state drift returns to inventory and renews
 stale evidence or approval.
 
-## Replies and Resolution
+## Acknowledgements and Resolution
 
 Use `pr-comment-review`'s canonical reply preview and approved digest. Its
 complete inventory and fresh per-thread target checks own reply posting.
 
-Before resolving, freeze the repository and PR, thread/root IDs, complete
-thread digest, required reply or acknowledgement ID, resolution policy, and
-authorization. Immediately re-fetch the full thread and target. Require the
-same digest, unresolved state, required acknowledgement, policy eligibility,
-and exact authorization. New comments or changed state return to triage. After
-resolution, verify that exact thread is resolved. Re-fetch the closeout
-snapshot after either mutation; never reuse the prior G4 result.
+For PR-conversation or review-level feedback, freeze repository/PR, feedback ID
+and digest, exact acknowledgement bytes/digest, channel, before-state, intended
+after-state, and authorization. Immediately before posting, re-fetch that
+surface and require an exact match; drift returns to triage. Verify the posted
+bytes and identity, then refresh closeout state.
+
+Thread resolution requires a mutation that atomically conditions on the frozen
+complete-thread digest or version. If the platform lacks that condition, keep
+the thread unresolved. A replied unresolved thread is G4-clear only when the
+latest complete inventory shows no actionable final-state content; later
+replies remain visible and return to triage. When an atomic condition exists,
+freeze repository/PR, thread/root IDs, digest/version, acknowledgement,
+resolution policy, and authorization; verify resolution afterward. Never reuse
+the prior G4 result after any mutation.
 
 ## Merge
 
-Freeze the PR, closeout-surface digest, complete feedback digest, gate evidence,
-target, method, authorization, and expected head OID. Re-fetch every input and
-evaluate G1–G7 together immediately before the merge request. Use a merge operation conditioned on the expected head OID: with the CLI,
-`gh pr merge <number> --match-head-commit <expected_oid>`; with the REST
-API, the merge endpoint's `sha` parameter. If the available client cannot enforce the condition, block;
-a separate refresh cannot close that race.
+Freeze the PR URL/target repository, closeout and feedback digests, gate
+evidence, target ref/base OID, explicit method, authorization, and head OID.
+Re-fetch every input and evaluate G1–G7 together immediately before requesting
+merge. The operation must bind the recorded repository and method and
+atomically reject either head or base-surface drift. GitHub CLI
+`--match-head-commit` and the REST `sha` parameter constrain only head; when no
+available operation also enforces base ref/OID, block automated merge and name
+the exact manual or queue action required. A separate refresh cannot close the
+race.
 
 After the request, fetch terminal PR state and the merge commit. Report success
 only when the expected PR is merged by the approved method into the approved
 target. A closed-but-unmerged PR, unexpected head/base transition, or ambiguous
-result is a blocker, not success.
+result is a blocker. Confirmed merge-queue enrollment is progress, not success:
+return to monitoring until terminal state or wait exhaustion.

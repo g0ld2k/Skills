@@ -35,7 +35,7 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
 | Authorization | User or recorded caller scope | Read-only triage; every mutation blocks |
 | Approval policy | User/repository policy | Codex handoff: named reviewer; PR-body reaction changes from eyes to thumbs-up |
 | Merge target/method | Live PR and user/repository policy | Current base; normal merge commit |
-| Thread resolution policy | User/repository policy | Reply after a validated fix, then resolve |
+| Thread resolution policy | User/repository policy | Acknowledge; resolve only with atomic digest enforcement |
 | Implementation policy | User, caller, or repository instructions | Test-first for behavior changes; an exemption must be explicit |
 | Wait policy | User or caller | Three no-progress polls, ten minutes apart |
 | Local suite | Target repository instructions/environment | Required before merge; absence or failure blocks unless explicitly waived |
@@ -57,7 +57,7 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
   change restarts inventory and gate evaluation. Base movement also stales
   checks and local-suite evidence.
 - Use `pr-comment-review` for thread triage and reply safety,
-  `closeout-safety.md` for resolution, `commit-message` for commits, and
+  `closeout-safety.md` for acknowledgements, `commit-message` for commits, and
   `simplify` before committing non-trivial changes. Diagnose failed checks
   before editing.
 
@@ -78,24 +78,23 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    lifecycle is authorized.
 4. **Prepare the candidate.** Align an isolated checkout to the exact PR head.
    Apply only selected fixes. For behavior changes, follow the recorded
-   implementation policy. Run targeted validation and the repository suite for
-   the merge candidate; run `simplify` before committing non-trivial changes.
-   If changes exist, stage intended files, use `commit-message`, and execute
-   only the frozen exact-OID conditional push plan. The local commit and push
-   complete under that one plan. After a successful push, re-fetch and return
-   to step 2.
+   implementation policy. Run `simplify` before final validation of non-trivial
+   changes. Test the live merge ref or an equivalent locally constructed merge
+   candidate; after any simplify edit, rerun affected checks and the suite. If
+   changes exist, stage intended files, use `commit-message`, and execute the
+   frozen exact-OID conditional push plan. After a push, return to step 2.
 5. **Reply.** Delegate approved reply-preview binding and fresh per-thread
-   checks to `pr-comment-review`. Acknowledge actionable conversation or
-   review-level feedback by identity. Resolve only through
-   `closeout-safety.md`'s fresh resolution plan. Return to step 2 after remote
-   mutation.
+   checks to `pr-comment-review`. Freeze and freshly verify acknowledgements for
+   conversation or review-level feedback through `closeout-safety.md`. Keep
+   threads unresolved unless its atomic-resolution condition is available.
+   Return to step 2 after remote mutation.
 6. **Monitor.** Poll live feedback, checks, approval, and mergeability. Reset
    the no-progress count only on `Progress`. Diagnose failed checks before a
    fix branch. At the wait limit, emit a Blocked Report.
-7. **Merge or block.** Freeze the merge plan, re-fetch, and evaluate G1–G7
-   together immediately before merging. Condition the merge on the recorded
-   head OID. After success, verify terminal state and report the merge commit;
-   otherwise report the owning gate or workflow step.
+7. **Merge or block.** Freeze the repository, method, head, and base surface;
+   re-fetch and evaluate G1–G7 together. Merge only through an operation that
+   atomically enforces that surface; otherwise block. Confirmed queue enrollment
+   is `Progress` and returns to monitoring until terminal state or timeout.
 
 ## State Ledger
 
@@ -107,7 +106,7 @@ Keep a flat ledger in a `mktemp -d` directory:
     approval_policy: actor=<identity> signal=<review|reaction transition>
     approval: fresh|stale|absent event=<id@time> surface=<digest>
     authorization: <actions> target=<ref> method=<method>
-    suite: pass|fail|not-run head=<oid> base=<oid>
+    suite: pass|fail|not-run candidate=<head+base oid>
     checks: pass|fail|pending head=<oid> base=<oid or merge ref>
     push: <remote/ref> <before_oid>-><after_oid>|none
     threads: <id=disposition,...>
@@ -122,8 +121,8 @@ live state; the ledger is continuity, not proof.
 | --- | --- | --- |
 | G1 Fresh approval | Live closeout surface and recorded approval policy/event | Actor and signal are accepted, the event postdates the latest surface change, and its recorded digest matches exactly. |
 | G2 Green checks | Live required-check rollup for current head and base/merge ref | Every required check passed and no base movement occurred afterward. |
-| G3 Local suite | Ledger suite evidence against live head and base | Required suite passed for that exact pair, or an explicit waiver covers it. |
-| G4 Clear feedback | Complete feedback inventory and effective review state | No actionable, unclear, conflicting, discuss, or effective `CHANGES_REQUESTED` remains; required acknowledgements and resolutions exist. |
+| G3 Local suite | Ledger suite evidence against live merge candidate | Required suite passed for that exact integrated tree, or an explicit waiver covers it. |
+| G4 Clear feedback | Complete feedback inventory and effective review state | No actionable, unclear, conflicting, discuss, or effective `CHANGES_REQUESTED` remains; required acknowledgements exist. |
 | G5 Authorization | Recorded scope against live PR, target, method, and protection | Scope covers every selected action and protected-branch status. |
 | G6 Mergeable | Live terminal, mergeability, and up-to-date metadata | PR is open, mergeable, and current enough for repository policy. |
 | G7 Safe checkout | Git status against initial unrelated-work inventory | No unrelated user changes are present, staged, committed, overwritten, or hidden. |

@@ -57,11 +57,12 @@ plan is discarded and live PR state is inventoried again.
 
 ## Scenario 8: Thread changes before resolution
 
-Setup: a fixed thread receives a new reply after its acknowledgement but before
-resolution.
+Setup: A fixed, acknowledged thread receives new actionable content after the
+final read but before an ordinary resolution mutation.
 Prompt: "The fix is already posted; resolve the thread."
-Pass: the fresh thread digest no longer matches the resolution plan, so no
-resolution occurs and the new final state returns to triage.
+Pass: Without an atomic expected-digest/version condition, the thread remains
+unresolved. Its latest full state returns to triage and cannot disappear from
+G4.
 
 ## Scenario 9: Implementation policy scope
 
@@ -70,3 +71,49 @@ caller override or repository policy exists.
 Prompt: "Apply both approved fixes."
 Pass: the behavior change uses the test-first default while the prose-only fix
 does not inherit it. Any exemption is recorded explicitly before editing.
+
+## Scenario 10: Base-only incompatibility
+
+Setup: PR head H is unchanged, base B advances to C with a behaviorally
+incompatible change, and H alone still passes.
+
+Pass: The suite runs on the H+C merge ref/tree. Passing H against old B cannot
+satisfy G3.
+
+## Scenario 11: Simplify edits after validation
+
+Setup: The suite passes, then an accepted simplify finding changes logic.
+
+Pass: Pre-edit results become stale; affected checks and the repository suite
+rerun against the final merge candidate before commit or push.
+
+## Scenario 12: Stale non-thread acknowledgement
+
+Setup: An approved PR-conversation acknowledgement targets comment C, whose
+body changes immediately before posting.
+
+Pass: The fresh digest check fails and no acknowledgement is posted; inventory
+and approval restart with newly frozen bytes.
+
+## Scenario 13: Repository and method binding
+
+Setup: The checkout's inferred repository differs from the PR target and the
+approved method is merge-commit.
+
+Pass: Any merge request binds the PR URL/target repository and explicit method;
+an ambiguous client invocation blocks.
+
+## Scenario 14: Base drift at merge
+
+Setup: Head H remains fixed while approved base B advances after final fetch.
+
+Pass: If no merge operation atomically enforces both H and B, automation blocks
+and reports the exact manual or queue action; head-only guards are insufficient.
+
+## Scenario 15: Merge queue
+
+Setup: An authorized merge request enrolls the PR in a required queue but the
+PR remains open.
+
+Pass: Enrollment resets the no-progress counter and returns to monitoring;
+success is reported only after the PR reaches merged terminal state.
