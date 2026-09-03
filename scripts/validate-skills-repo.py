@@ -21,6 +21,7 @@ EXPLICIT_ONLY_SKILLS = {
     "work-request-orchestration",
 }
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+BLOCK_SCALAR_HEADER_RE = re.compile(r"^[|>](?:[+-][1-9]?|[1-9][+-]?)?$")
 LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
@@ -49,6 +50,188 @@ def strip_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
     return value
+
+
+DOUBLE_QUOTED_ESCAPES = {
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "t": "\t",
+    "n": "\n",
+    "v": "\v",
+    "f": "\f",
+    "r": "\r",
+    "e": "\x1b",
+    " ": " ",
+    '"': '"',
+    "/": "/",
+    "\\": "\\",
+    "N": "\x85",
+    "_": "\xa0",
+    "L": "\u2028",
+    "P": "\u2029",
+}
+HEX_ESCAPE_WIDTHS = {"x": 2, "u": 4, "U": 8}
+
+
+def decode_quoted_scalar(value: str) -> str:
+    """Decode the YAML single- or double-quoted scalar forms used here."""
+    if not value or value[0] not in {"'", '"'}:
+        return value
+    quote = value[0]
+    if len(value) < 2 or value[-1] != quote:
+        raise ValueError("unterminated quoted scalar")
+
+    inner = value[1:-1]
+    if quote == "'":
+        result: list[str] = []
+        index = 0
+        while index < len(inner):
+            if inner[index] != "'":
+                result.append(inner[index])
+                index += 1
+                continue
+            if index + 1 == len(inner) or inner[index + 1] != "'":
+                raise ValueError("unescaped apostrophe in single-quoted scalar")
+            result.append("'")
+            index += 2
+        return "".join(result)
+
+    result: list[str] = []
+    index = 0
+    while index < len(inner):
+        character = inner[index]
+        if character != "\\":
+            if character == '"':
+                raise ValueError("unescaped quote in double-quoted scalar")
+            result.append(character)
+            index += 1
+            continue
+
+        index += 1
+        if index == len(inner):
+            raise ValueError("trailing backslash in double-quoted scalar")
+        escape = inner[index]
+        if escape in DOUBLE_QUOTED_ESCAPES:
+            result.append(DOUBLE_QUOTED_ESCAPES[escape])
+            index += 1
+            continue
+        width = HEX_ESCAPE_WIDTHS.get(escape)
+        if width is None:
+            raise ValueError(f"unsupported double-quoted escape: \\{escape}")
+        digits = inner[index + 1 : index + 1 + width]
+        if len(digits) != width or not all(char in "0123456789abcdefABCDEF" for char in digits):
+            raise ValueError(f"invalid double-quoted escape: \\{escape}{digits}")
+        codepoint = int(digits, 16)
+        if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+            raise ValueError(f"invalid Unicode scalar: U+{codepoint:04X}")
+        result.append(chr(codepoint))
+        index += width + 1
+    return "".join(result)
+
+
+YAML_INTEGER_RE = re.compile(
+    r"[-+]?(?:[0-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+)$"
+)
+YAML_FLOAT_RE = re.compile(
+    r"[-+]?(?:(?:[0-9][0-9_]*)?\.[0-9_]+(?:[eE][-+]?[0-9]+)?|"
+    r"[0-9][0-9_]*[eE][-+]?[0-9]+|\.inf|\.Inf|\.INF|\.nan|\.NaN|\.NAN)$"
+)
+
+
+def decode_yaml_scalar(value: str) -> object:
+    """Decode the supported YAML scalar node without string-coercing types."""
+    if not value:
+        return ""
+    if value[0] in {"'", '"'}:
+        return decode_quoted_scalar(value)
+    if value[0] in {"&", "*", "!"}:
+        raise ValueError("anchors, aliases, and explicit tags are not supported")
+    if value[0] in {"[", "{"}:
+        raise ValueError("flow collections are not supported")
+
+    lowered = value.lower()
+    if lowered in {"null", "~"}:
+        return None
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if YAML_INTEGER_RE.fullmatch(value):
+        digits = value.replace("_", "")
+        unsigned = digits.lstrip("-+")
+        base = 8 if unsigned.startswith("0o") else 16 if unsigned.startswith("0x") else 10
+        return int(digits, base)
+    if YAML_FLOAT_RE.fullmatch(value):
+        return float(value.replace("_", ""))
+    return value
+
+
+def strip_yaml_inline_comment(value: str) -> str:
+    """Remove a YAML comment while preserving hashes inside quoted scalars."""
+    quote: str | None = None
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote == "'":
+            if character == "'":
+                if index + 1 < len(value) and value[index + 1] == "'":
+                    index += 2
+                    continue
+                quote = None
+        elif quote == '"':
+            if character == "\\":
+                index += 2
+                continue
+            if character == '"':
+                quote = None
+        elif character in {"'", '"'}:
+            quote = character
+        elif character == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+        index += 1
+    return value
+
+
+def decode_block_scalar(header: str, source_lines: list[str]) -> str:
+    """Decode the folding and chomping needed by top-level frontmatter."""
+    nonempty = [line for line in source_lines if line.strip()]
+    indicated_indent = next((int(char) for char in header if char.isdigit()), None)
+    indent = indicated_indent or min(
+        (len(line) - len(line.lstrip(" ")) for line in nonempty), default=0
+    )
+    lines = [line[indent:] if line.strip() else "" for line in source_lines]
+    more_indented = [
+        bool(line.strip()) and len(line) - len(line.lstrip(" ")) > indent
+        for line in source_lines
+    ]
+    if header.startswith("|"):
+        value = "\n".join(lines)
+    else:
+        folded = [lines[0]] if lines else []
+        for index in range(1, len(lines)):
+            previous = lines[index - 1]
+            current = lines[index]
+            if previous and not current:
+                separator = ""
+            elif not previous or more_indented[index - 1] or more_indented[index]:
+                separator = "\n"
+            else:
+                separator = " "
+            folded.extend((separator, current))
+        value = "".join(folded)
+
+    value = value.rstrip("\n")
+    if "-" in header:
+        return value
+    if "+" in header:
+        trailing_blanks = 0
+        for line in reversed(lines):
+            if line:
+                break
+            trailing_blanks += 1
+        return value + "\n" * max(1, trailing_blanks + 1)
+    return value + "\n"
 
 
 def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
@@ -82,24 +265,29 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
         if not separator:
             continue
         current_key = key.strip()
-        parsed_value = strip_quotes(value.strip())
-        if parsed_value == "true":
-            data[current_key] = True
-        elif parsed_value == "false":
-            data[current_key] = False
-        elif parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
+        raw_value = strip_yaml_inline_comment(value.strip())
+        is_quoted = bool(raw_value) and raw_value[0] in {"'", '"'}
+        block_header = (
+            raw_value
+            if not is_quoted and BLOCK_SCALAR_HEADER_RE.fullmatch(raw_value)
+            else None
+        )
+        if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
+            return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
+        try:
+            parsed_value = decode_yaml_scalar(raw_value)
+        except ValueError as exc:
+            return {}, f"invalid YAML scalar for {current_key}: {exc}"
+        if block_header is not None:
             block_lines: list[str] = []
             while index < len(frontmatter_lines):
                 block_line = frontmatter_lines[index]
                 if block_line.strip() and not block_line.startswith((" ", "\t")):
                     break
-                if block_line.strip():
-                    block_lines.append(block_line.strip())
+                block_lines.append(block_line)
                 index += 1
-            data[current_key] = (
-                " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
-            )
-        elif parsed_value:
+            data[current_key] = decode_block_scalar(block_header, block_lines)
+        elif parsed_value is not None and parsed_value != "":
             data[current_key] = parsed_value
         else:
             data[current_key] = []
@@ -191,6 +379,32 @@ def skill_dirs() -> list[Path]:
     return sorted(path for path in SKILLS_DIR.iterdir() if path.is_dir())
 
 
+def validate_skill_description(
+    name: str,
+    description: object,
+    skill_file: Path,
+    errors: list[str],
+) -> None:
+    """Apply the invocation-specific description policy."""
+    if not isinstance(description, str):
+        errors.append(f"{skill_file}: description must be a string")
+        return
+    if not description:
+        return
+    if name in EXPLICIT_ONLY_SKILLS:
+        if (
+            not description.strip()
+            or description.splitlines() != [description]
+            or description.startswith("Use when")
+        ):
+            errors.append(
+                f"{skill_file}: explicit-only description must be a one-line human-facing summary"
+            )
+        return
+    if not description.startswith("Use when"):
+        errors.append(f"{skill_file}: description must start with 'Use when'")
+
+
 def validate_skills(errors: list[str]) -> list[str]:
     if not has_exact_child(ROOT, "skills"):
         errors.append("skills/: missing")
@@ -220,9 +434,13 @@ def validate_skills(errors: list[str]) -> list[str]:
             if key not in frontmatter or not frontmatter[key]:
                 errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
 
-        description = str(frontmatter.get("description", ""))
-        if description and not description.startswith("Use when"):
-            errors.append(f"skills/{name}/SKILL.md: description must start with 'Use when'")
+        description = frontmatter.get("description", "")
+        validate_skill_description(
+            name,
+            description,
+            Path("skills") / name / "SKILL.md",
+            errors,
+        )
 
         declared_name = frontmatter.get("name")
         if declared_name != name:

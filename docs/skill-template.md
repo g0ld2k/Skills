@@ -31,9 +31,12 @@ The template starts with real YAML frontmatter so copying it directly to
 Fill in the placeholder values before validating.
 
 - `name` must match the containing directory exactly, kebab-case.
-- `description` must start with the literal words "Use when" and list
-  *triggers only* — situations that summon the skill. Never summarize the
-  workflow here; that belongs in the body.
+- For model-invoked skills, `description` must start with the literal words
+  "Use when" and list *triggers only* — situations that summon the skill.
+  Never summarize the workflow here; that belongs in the body.
+- For explicit-only skills, `description` is instead a one-line human-facing
+  summary. It carries no model-facing trigger list because only the user can
+  invoke the skill.
 - `license: MIT` is required verbatim.
 - `tools:` and `user-invocable` are not Agent Skills fields and the validator
   rejects them. The specification permits experimental `allowed-tools` as a
@@ -48,7 +51,15 @@ Fill in the placeholder values before validating.
   Codex reads), in the block form shown in the stub below.
   `disable-model-invocation` is a Claude Code extension rather than a portable
   Agent Skills field, so it is carried deliberately for that install path — do
-  not add it to a skill that is not explicit-only.
+  not add it to a skill that is not explicit-only. Explicit-only skills are
+  exempt from the validator's model-facing "Use when" description rule.
+- Add the skill to `SKILL_BUDGETS` in `tests/test_skill_quality.py`. Its
+  whitespace-delimited ceiling covers `SKILL.md` and every reference that all
+  valid runs must load. Declare those files explicitly under `always_loaded`;
+  do not infer them from prose. A reference selected only for an observable
+  mode, condition, blocked path, or skill-authoring scenario remains
+  progressive disclosure. Lower the ceiling when a review reduces the total;
+  raising it requires explicit justification and approval.
 
 ## `# Title`
 
