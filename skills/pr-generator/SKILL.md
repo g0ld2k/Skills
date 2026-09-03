@@ -78,7 +78,8 @@ every fingerprint identity and OID is observed.
   defaults to published/no push; a push plan must first select an authorized
   head verified as a descendant of the published OID, or block.
 
-Collect commits, changed paths, stats, and patch from the selected base/head.
+Collect commits with `base..head`; collect paths, stats, and patch with
+merge-base semantics (`base...head`).
 Use project docs only for terminology. Block on failed evidence collection or
 an empty diff. Bind validation to its tested OID and clean tree; use an isolated
 checkout or treat modified-worktree results as other-context evidence. Apply

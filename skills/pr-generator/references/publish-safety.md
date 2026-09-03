@@ -27,7 +27,9 @@ error is a lookup failure.
 
 Derive the unqualified `approved_head_branch` from the fingerprint's full head
 ref, not the local branch. Never pass `owner:branch` to `gh pr list`; verify the
-returned head repository separately and reject zero or multiple exact matches.
+returned head repository separately. Approved creation requires zero exact
+matches; any match is action drift. Updates query the approved number directly
+and require that one PR's identity.
 
 For create, re-derive the approved selector from the effective push URL: a bare
 branch for the target repository; `user:branch` only for a verified user-owned

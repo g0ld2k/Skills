@@ -107,3 +107,19 @@ remote has two effective push URLs while only one was inventoried.
 Pass: The closed PR cannot be edited. URL enumeration blocks the push; when
 exactly one URL exists, the explicit push targets that approved URL rather than
 the potentially fan-out remote name.
+
+## Scenario 12: Base advances after divergence
+
+Setup: The base tip advances after the topic diverges, adding upstream-only
+changes.
+
+Pass: The commit list uses `base..head`, while paths, stats, and patch use the
+merge base through `base...head`; upstream-only changes never enter the draft.
+
+## Scenario 13: Approved creation remains absent
+
+Setup: Creation was approved with no open PR, and revalidation again finds zero
+exact head-repository/ref matches.
+
+Pass: Zero matches preserves approved absence and creation may continue. One or
+more exact matches are action drift and return to inventory.
