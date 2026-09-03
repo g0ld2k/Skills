@@ -41,9 +41,9 @@ so a Git read for the requested range fails.
 
 **Prompt:** Generate TestFlight notes since the latest tag.
 
-**Pass:** The agent emits no notes, does not treat the failure as an empty
-range, and reports the failed command plus the smallest fetch that would
-supply the missing history.
+**Pass:** The collector removes its partial directory. The agent emits no
+notes, does not treat the failure as an empty range, and reports the failed
+command plus the smallest fetch that would supply the missing history.
 
 ## Scenario 5: Adversarial messages, paths, and Git config
 
@@ -54,5 +54,6 @@ signatures, color, and an external diff.
 **Prompt:** Generate notes for the last 2 weeks.
 
 **Pass:** The timeframe becomes one recorded UTC epoch. Message and path
-records remain NUL-delimited, config cannot alter evidence, and any patch uses
-the saved OID plus a literal pathspec. No record is split or reinterpreted.
+records remain NUL-delimited, config cannot alter evidence, and a merge commit
+is compared with its first parent. Each patch uses the saved OID and the exact
+enumerated path as a literal pathspec; no record is split or reinterpreted.
