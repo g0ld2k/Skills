@@ -10,10 +10,11 @@ Prints a temporary evidence-directory path on success. The directory contains:
   selection                 start<TAB>ref<TAB>oid or cutoff<TAB>epoch
   oids                      selected commit OIDs, oldest first
   commits/<oid>/message.z   OID, subject, and body as NUL records
-  commits/<oid>/paths.z     changed paths as NUL records
-  commits/<oid>/path-N      exact bytes for path N
-  commits/<oid>/patch-N     patch limited to path N
-  commits/<oid>/meta        comparison base, commit kind, and path count
+  commits/<oid>/changes.z   status plus one/two paths as NUL records
+  commits/<oid>/paths.z     every changed path as NUL records
+  commits/<oid>/path-N*     exact path bytes for change N
+  commits/<oid>/patch-N     patch limited to change N's path(s)
+  commits/<oid>/meta        comparison base, kind, change/path counts
 
 The caller owns deletion of the returned directory.
 EOF
@@ -82,6 +83,17 @@ safe_git=(git -C "$repo_root" --no-pager --no-replace-objects -c color.ui=false 
 head_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options 'HEAD^{commit}')"
 printf '%s\n' "$head_oid" >"$evidence_dir/head_oid"
 
+objects_dir="$("${safe_git[@]}" rev-parse --path-format=absolute --git-path objects)"
+object_format="$("${safe_git[@]}" rev-parse --show-object-format)"
+isolated_git_dir="$evidence_dir/isolated.git"
+git init --bare -q --object-format="$object_format" "$isolated_git_dir"
+diff_git=(git --git-dir="$isolated_git_dir" --no-pager --no-replace-objects \
+  -c color.ui=false -c core.attributesFile=/dev/null)
+run_diff_git() {
+  GIT_CONFIG_NOSYSTEM=1 GIT_ATTR_SOURCE="$head_oid" \
+    GIT_OBJECT_DIRECTORY="$objects_dir" "${diff_git[@]}" "$@"
+}
+
 shallow="$("${safe_git[@]}" rev-parse --is-shallow-repository)"
 if [[ "$shallow" == "true" ]]; then
   printf 'ERROR: shallow repository; fetch complete history before generating notes\n' >&2
@@ -110,7 +122,21 @@ elif [[ -n "$cutoff_epoch" ]]; then
   selector=("--since-as-filter=@$cutoff_epoch" "$head_oid")
   printf 'cutoff\t%s\n' "$cutoff_epoch" >"$evidence_dir/selection"
 else
-  if latest_tag="$("${safe_git[@]}" describe --tags --abbrev=0 "$head_oid" 2>/dev/null)"; then
+  tags_file="$evidence_dir/tags"
+  "${safe_git[@]}" for-each-ref --format='%(refname)' refs/tags >"$tags_file"
+  reachable_tag=false
+  while IFS= read -r tag_ref; do
+    [[ -n "$tag_ref" ]] || continue
+    tag_commit="$("${safe_git[@]}" rev-parse --verify --end-of-options "${tag_ref}^{commit}")"
+    if "${safe_git[@]}" merge-base --is-ancestor "$tag_commit" "$head_oid"; then
+      reachable_tag=true
+    else
+      status=$?
+      ((status == 1)) || exit "$status"
+    fi
+  done <"$tags_file"
+  if [[ "$reachable_tag" == true ]]; then
+    latest_tag="$("${safe_git[@]}" describe --tags --abbrev=0 "$head_oid")"
     resolved_start="refs/tags/$latest_tag"
     start_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "${resolved_start}^{commit}")"
     selector=("$start_oid..$head_oid")
@@ -126,7 +152,7 @@ fi
 
 "${safe_git[@]}" rev-list --reverse "${selector[@]}" >"$evidence_dir/oids"
 mkdir "$evidence_dir/commits"
-empty_tree="$("${safe_git[@]}" mktree </dev/null)"
+empty_tree="$("${safe_git[@]}" hash-object -t tree --stdin </dev/null)"
 
 while IFS= read -r oid; do
   [[ "$oid" =~ ^[0-9a-fA-F]{40,64}$ ]] || {
@@ -135,7 +161,7 @@ while IFS= read -r oid; do
   }
   commit_dir="$evidence_dir/commits/$oid"
   mkdir "$commit_dir"
-  "${safe_git[@]}" show -s --format='%H%x00%s%x00%b%x00' "$oid" >"$commit_dir/message.z"
+  "${safe_git[@]}" show -s --format='format:%H%x00%s%x00%b%x00' "$oid" >"$commit_dir/message.z"
 
   parent_record="$("${safe_git[@]}" rev-list --parents -n 1 "$oid")"
   IFS=' ' read -r -a lineage <<<"$parent_record"
@@ -148,21 +174,38 @@ while IFS= read -r oid; do
     ((${#lineage[@]} == 2)) || commit_kind="merge-first-parent"
   fi
 
-  "${safe_git[@]}" diff --no-color --no-ext-diff --no-textconv \
-    --name-only -z --find-renames --find-copies \
-    "$comparison_base" "$oid" -- >"$commit_dir/paths.z"
+  run_diff_git diff --no-color --no-ext-diff --no-textconv \
+    --ignore-submodules=none --name-status -z --find-renames --find-copies \
+    "$comparison_base" "$oid" -- >"$commit_dir/changes.z"
+  : >"$commit_dir/paths.z"
 
-  path_index=0
-  while IFS= read -r -d '' path; do
-    ((path_index += 1))
-    printf -v suffix '%06d' "$path_index"
-    printf '%s' "$path" >"$commit_dir/path-$suffix"
-    "${safe_git[@]}" diff --no-color --no-ext-diff --no-textconv \
-      "$comparison_base" "$oid" -- ":(literal)$path" >"$commit_dir/patch-$suffix"
-  done <"$commit_dir/paths.z"
+  change_index=0
+  path_count=0
+  while IFS= read -r -d '' change_status; do
+    IFS= read -r -d '' first_path
+    ((change_index += 1))
+    ((path_count += 1))
+    printf -v suffix '%06d' "$change_index"
+    printf '%s\0' "$first_path" >>"$commit_dir/paths.z"
+    pathspecs=(":(literal)$first_path")
+    if [[ "$change_status" == R* || "$change_status" == C* ]]; then
+      IFS= read -r -d '' second_path
+      ((path_count += 1))
+      printf '%s' "$first_path" >"$commit_dir/path-$suffix-from"
+      printf '%s' "$second_path" >"$commit_dir/path-$suffix-to"
+      printf '%s\0' "$second_path" >>"$commit_dir/paths.z"
+      pathspecs+=(":(literal)$second_path")
+    else
+      printf '%s' "$first_path" >"$commit_dir/path-$suffix"
+    fi
+    printf '%s\n' "$change_status" >"$commit_dir/status-$suffix"
+    run_diff_git diff --no-color --no-ext-diff --no-textconv \
+      --ignore-submodules=none --find-renames --find-copies \
+      "$comparison_base" "$oid" -- "${pathspecs[@]}" >"$commit_dir/patch-$suffix"
+  done <"$commit_dir/changes.z"
 
-  printf 'base\t%s\nkind\t%s\npaths\t%s\n' \
-    "$comparison_base" "$commit_kind" "$path_index" >"$commit_dir/meta"
+  printf 'base\t%s\nkind\t%s\nchanges\t%s\npaths\t%s\n' \
+    "$comparison_base" "$commit_kind" "$change_index" "$path_count" >"$commit_dir/meta"
 done <"$evidence_dir/oids"
 
 trap - EXIT INT TERM

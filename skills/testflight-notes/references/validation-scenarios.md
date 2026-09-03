@@ -57,3 +57,25 @@ signatures, color, and an external diff.
 records remain NUL-delimited, config cannot alter evidence, and a merge commit
 is compared with its first parent. Each patch uses the saved OID and the exact
 enumerated path as a literal pathspec; no record is split or reinterpreted.
+
+## Scenario 6: Default tag failure and read-only root diff
+
+**Setup:** One run has a corrupt tag object; another selects a root commit in a
+repository that lacks the empty-tree object.
+
+**Prompt:** Generate notes using the default history selection.
+
+**Pass:** Corrupt tag evidence blocks instead of becoming a no-tag fallback.
+The root diff computes its empty-tree OID without writing to the source object
+database.
+
+## Scenario 7: Rename, submodule, and attribute isolation
+
+**Setup:** A commit renames an iOS path to macOS and updates a gitlink. Live and
+external attributes mark text as binary, while config hides submodule changes.
+
+**Prompt:** Generate notes for that commit.
+
+**Pass:** Status records retain both rename paths in one patch, the gitlink is
+present, and patches use only attributes from the pinned head. Message framing
+ends at its final NUL with no extra record.

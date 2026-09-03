@@ -198,6 +198,99 @@ class EvidenceCollectorTests(unittest.TestCase):
             self.assertIn(b"odd-only-marker", odd_patch)
             self.assertNotIn(b"other-only-marker", odd_patch)
 
+    def test_default_selection_propagates_corrupt_tag_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = self.init_repo(root)
+            self.commit_file(repo, "base.txt", "base\n", "base")
+            self.git(repo, "tag", "-a", "build-1", "-m", "build")
+            tag_object = self.git(repo, "rev-parse", "build-1^{tag}")
+            (repo / ".git" / "objects" / tag_object[:2] / tag_object[2:]).unlink()
+            temp_root = root / "tmp"
+            temp_root.mkdir()
+
+            result = self.collect(repo, temp_root=temp_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(list(temp_root.glob("testflight-evidence.*")), [])
+
+    def test_root_diff_does_not_write_the_empty_tree_object(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            self.commit_file(repo, "root.txt", "root\n", "root")
+            before = self.git(repo, "count-objects", "-v")
+
+            self.successful_evidence(self.collect(repo, "--cutoff-epoch", "1"))
+
+            self.assertEqual(self.git(repo, "count-objects", "-v"), before)
+
+    def test_message_records_end_with_nul_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            head = self.commit_file(repo, "next.txt", "next\n", "subject\n\nbody")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+            message = (evidence / "commits" / head / "message.z").read_bytes()
+
+            self.assertTrue(message.endswith(b"\0"))
+            self.assertEqual(len(message.split(b"\0")), 4)
+
+    def test_rename_ledger_retains_both_paths_and_one_rename_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            old_path = "ios/Feature.txt"
+            new_path = "macos/Feature.txt"
+            base = self.commit_file(repo, old_path, "feature\n", "base")
+            (repo / new_path).parent.mkdir()
+            self.git(repo, "mv", old_path, new_path)
+            self.git(repo, "commit", "-q", "-m", "move feature")
+            head = self.git(repo, "rev-parse", "HEAD")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+            commit_dir = evidence / "commits" / head
+
+            changes = (commit_dir / "changes.z").read_bytes().split(b"\0")
+            self.assertTrue(changes[0].startswith(b"R"))
+            self.assertEqual(changes[1:3], [old_path.encode(), new_path.encode()])
+            patch = (commit_dir / "patch-000001").read_bytes()
+            self.assertIn(f"rename from {old_path}".encode(), patch)
+            self.assertIn(f"rename to {new_path}".encode(), patch)
+
+    def test_submodule_changes_ignore_hiding_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            self.commit_file(repo, "base.txt", "base\n", "base")
+            first = "1" * 40
+            second = "2" * 40
+            self.git(repo, "update-index", "--add", "--cacheinfo", f"160000,{first},vendor/sub")
+            self.git(repo, "commit", "-q", "-m", "add submodule pointer")
+            base = self.git(repo, "rev-parse", "HEAD")
+            self.git(repo, "update-index", "--cacheinfo", f"160000,{second},vendor/sub")
+            self.git(repo, "commit", "-q", "-m", "update submodule pointer")
+            head = self.git(repo, "rev-parse", "HEAD")
+            self.git(repo, "config", "diff.ignoreSubmodules", "all")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+
+            paths = (evidence / "commits" / head / "paths.z").read_bytes()
+            self.assertIn(b"vendor/sub\0", paths)
+
+    def test_patch_attributes_come_only_from_the_pinned_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            base = self.commit_file(repo, "visible.txt", "before\n", "base")
+            head = self.commit_file(repo, "visible.txt", "after-marker\n", "change")
+            (repo / ".gitattributes").write_text("*.txt binary\n", encoding="utf-8")
+            info_attributes = repo / ".git" / "info" / "attributes"
+            info_attributes.write_text("*.txt binary\n", encoding="utf-8")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+            patch = next((evidence / "commits" / head).glob("patch-*")).read_bytes()
+
+            self.assertIn(b"after-marker", patch)
+            self.assertNotIn(b"Binary files", patch)
+
 
 if __name__ == "__main__":
     unittest.main()
