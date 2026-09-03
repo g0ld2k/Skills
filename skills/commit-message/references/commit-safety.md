@@ -24,16 +24,31 @@ commit when any are active; require a human or policy-specific path that runs
 the hooks and presents any resulting tree/message for fresh authorization.
 Never bypass them with `--no-verify`.
 
-Otherwise create a unique message file under the shared temp-file rule and
-arrange cleanup on success, failure, and interruption. Immediately before
-committing:
+Otherwise create a unique message file under the shared temp-file rule,
+canonicalized with one final LF, and arrange cleanup on success, failure, and
+interruption. Immediately before committing:
 
 1. Repeat the staged-status check, parent resolution, and `git write-tree`.
 2. Compare the current parent and tree with the approved draft identity.
 3. Resolve and check the per-worktree merge marker again.
 
 Any mismatch deletes the temporary message, discards the draft, and returns to
-inventory and authorization. When all checks match, run normal `git commit -F
-<message-file>` so repository hooks and policy remain active. If it fails,
-report the command, status, and Git error without commit metadata. After
-success, read the SHA and subject from Git before reporting them.
+inventory and authorization. A porcelain `git commit` cannot take the approved
+parent and tree as operands, so do not use it for exact-identity automation.
+Instead:
+
+1. Create a candidate with `git commit-tree <approved-tree> [-p
+   <approved-parent>] -F <message-file>`. This binds the immutable tree and
+   parent directly and performs no message cleanup. Initial commits omit `-p`.
+2. Read the candidate object and require its tree, parent list, and message
+   bytes to equal the approved identity. Do not move a ref on mismatch.
+3. Atomically install it with `git update-ref <approved-head-ref>
+   <candidate-oid> <approved-parent-oid>`. For an unborn ref, use the all-zero
+   old OID; for detached HEAD, target `HEAD`. A compare-and-swap failure leaves
+   the live ref untouched and returns to inventory.
+
+Resolve and freeze the symbolic head ref before authorization. Block this
+plumbing path when repository policy requires a porcelain-only hook lifecycle;
+an unreachable candidate object after a failed ref update is not a successful
+commit. After success, read the installed SHA, tree, parents, and message from
+Git before reporting them.

@@ -79,7 +79,8 @@ tree.
 
 ### 4. Revalidate and commit
 
-Immediately before normal `git commit -F`, follow `references/commit-safety.md`.
+Immediately before plumbing-based commit creation, follow
+`references/commit-safety.md`.
 Parent, tree, or merge drift returns to Step 1 and renews authorization. Report
 metadata only after success.
 
