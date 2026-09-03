@@ -98,6 +98,17 @@ recorded parent-to-tree diff with attributes sourced from that staged tree.
 Setup: Another Git process tries to begin a sequencer operation or change
 symbolic HEAD after final revalidation but before ref installation.
 
-Pass: An exclusively held index lock covers operation revalidation through the
-ref transaction; its symbolic-HEAD assertion and branch update are atomic. A
-pre-existing lock blocks without being removed.
+Pass: Exclusively held index and HEAD locks cover operation and symbolic-ref
+revalidation through installation. A branch-ref compare-and-swap expects the
+approved parent. Any pre-existing lock blocks without being removed, and every
+owned lock is removed on success, failure, `INT`, or `TERM`.
+
+## Scenario 12: Compatible installation and reflog identity
+
+Setup: Git 2.43 has no `symref-verify`. The approved subject is `fix(ui): align
+labels`, and the branch still points to the approved parent.
+
+Pass: The agent does not use unsupported transaction verbs. While holding the
+index and HEAD locks, it updates the approved branch ref with the compatible
+old-OID compare-and-swap and reflog reason `commit: fix(ui): align labels`, then
+verifies the installed object and reflog before reporting success.

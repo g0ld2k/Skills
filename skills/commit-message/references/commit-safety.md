@@ -33,10 +33,14 @@ Otherwise create a unique message file under the shared temp-file rule,
 canonicalized with one final LF, and arrange cleanup on success, failure, and
 interruption. Automated installation requires symbolic HEAD; detached
 `message+commit` blocks because Git cannot transactionally assert a non-symbolic
-HEAD while replacing it. Create and verify the candidate from the approved
-identity, then exclusively create the per-worktree index lock returned by `git
-rev-parse --git-path index.lock`. Never replace or remove another process's
-lock. Retain the owned lock through ref installation.
+HEAD while replacing it. Before locking, create and verify the candidate from
+the approved identity. Resolve the per-worktree locks with `git rev-parse
+--git-path index.lock` and `git rev-parse --git-path HEAD.lock`, then exclusively
+create the index lock followed by the HEAD lock. Immediately record ownership
+and install cleanup for normal exit, error, `INT`, and `TERM`; cleanup removes
+only locks and temporary files this process created. If either acquisition
+fails, release any earlier owned lock and block. Retain both locks through ref
+installation.
 
 While holding both locks:
 
@@ -58,16 +62,17 @@ path:
    the immutable tree and parent directly. Initial commits omit `-p`.
 2. Before locking, read the candidate object and require its tree, parent list,
    and message bytes to equal the approved identity.
-3. While holding the index lock, use one `git update-ref --stdin` transaction
-   containing `symref-verify HEAD <approved-head-ref>` and `update
-   <approved-head-ref> <candidate-oid> <approved-parent-oid>`. For an unborn
-   ref, use the all-zero old OID. The transaction atomically binds symbolic HEAD
-   and its target; the index lock excludes normal operation-state changes.
-   Release the owned lock after the transaction. Failure leaves refs untouched
-   and returns to inventory.
+3. Derive the reflog reason `commit: <approved-subject>` from the frozen message.
+   While holding both locks, run Git's compatible compare-and-swap form:
+   `git update-ref -m <reason> <approved-head-ref> <candidate-oid>
+   <approved-parent-oid>`. For an unborn ref, use the all-zero old OID. Do not
+   update `HEAD` directly. The HEAD lock preserves its symbolic target, the
+   index lock excludes ordinary index and sequencer changes, and `update-ref`
+   atomically requires the approved branch value. Failure leaves the ref
+   untouched and returns to inventory; cleanup then releases owned resources.
 
 Resolve and freeze symbolic-versus-detached HEAD plus any symbolic ref before
 authorization. Block this plumbing path when repository policy requires a
 porcelain-only lifecycle. An unreachable candidate after failed ref update is
 not a successful commit. After success, read the installed SHA, tree, parents,
-message, and required signature from Git before reporting them.
+message, reflog reason, and required signature from Git before reporting them.
