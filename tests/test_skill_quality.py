@@ -43,7 +43,10 @@ SKILL_BUDGETS = {
             "references/title-heuristics.md",
         ),
     },
-    "simplify": {"ceiling": 1_100, "always_loaded": ()},
+    "simplify": {
+        "ceiling": 1_050,
+        "always_loaded": ("references/conventions.md",),
+    },
     "testflight-notes": {
         "ceiling": 1_450,
         "always_loaded": (

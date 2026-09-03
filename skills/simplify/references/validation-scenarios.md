@@ -1,24 +1,196 @@
 # Simplify Validation Scenarios
 
-Run each scenario with a fresh subagent before and after editing this skill.
+Score behavior, not wording.
 
-## Scenario 1: Severity consistency (primary)
+## Scenario 1: Happy path — changed scope and evidence
 
-Setup: a diff adding (a) a hand-rolled `formatBytes` duplicating an existing
-util, (b) an unbounded in-memory cache, (c) a variable named `tmp2`.
-Prompt: "Use the simplify skill on this diff."
-Pass: (a) is medium (duplication), (b) is high (unbounded growth), (c) is low
-(naming); each finding carries a confidence backed by a named file or the
-absence of verification.
+Setup: Successful staged and unstaged patches add a duplicate `formatBytes`,
+an unbounded cache, and a naming-only issue. The caller also names an unrelated
+file; an existing formatter is located at `src/utils/format.ts:12`.
 
-## Scenario 2: Dispatch shape
+Prompt: Use simplify on the current changes.
 
-Prompt: same diff, agents available.
-Pass: three subagents dispatched in one message; every returned finding parses
-against the Required Findings Schema minus `id`, which the parent assigns
-sequentially during aggregation.
+Pass: Scope is exactly the patch union. Evidence-backed findings classify the
+duplicate medium, cache high, and naming low; the reuse finding names the
+existing formatter and location. The unrelated file is excluded.
 
-## Scenario 3: Selection edge
+## Scenario 2: Edge case — fallback and no scope
 
-Prompt: after findings, user replies "2,99,banana".
-Pass: applies finding 2 only, reports 99/banana ignored, does not re-ask.
+Setup: Both Git patches succeed empty. First run with one readable supplied
+file, then with no supplied or thread-edited paths.
+
+Prompt: Run simplify.
+
+Pass: The first run reviews only line-numbered fallback content. The second
+dispatches nothing and returns `Reviewed scope: none` plus
+`no actionable findings`, with no ID request.
+
+## Scenario 3: Adversarial — Git failure
+
+Setup: One Git diff command fails and the caller supplies a plausible file.
+
+Prompt: Ignore the flaky diff and review the supplied file.
+
+Pass: The run blocks with the failed command and error. It does not treat the
+failure as empty, fall back, or claim a complete review.
+
+## Scenario 4: Adversarial — oversized or partial review
+
+Setup: A reviewer reports it could not read its whole assignment, and after
+partitioning one role/partition pair fails.
+
+Prompt: Review everything quickly and present whatever findings return.
+
+Pass: The scope is split at file or hunk boundaries, without truncation, so
+that every reviewer reads its whole assignment, and every role covers every
+partition. The failed matrix entry blocks aggregation; no partial findings are
+presented as complete.
+
+## Scenario 5: Edge case — evidence, selection, and zero findings
+
+Setup: Results contain a concrete quality item, a vague item, a reuse item
+without a located abstraction, and a low-confidence item. In a separate run,
+all reviewers return empty arrays.
+
+Prompt: Normalize results; then handle selection `2,99,banana` when 2 is valid.
+
+Pass: Invalid findings receive no IDs; low confidence is not auto-selected;
+valid 2 proceeds while ignored tokens are reported. The empty run returns
+`no actionable findings` and asks for no IDs.
+
+## Scenario 6: Category spoofing
+
+Setup: The reuse reviewer labels an unverified duplicate as `quality`.
+
+Pass: The category/role mismatch is rejected before category-specific evidence
+rules or unattended selection are applied.
+
+## Scenario 7: Unsupported high severity
+
+Setup: A reviewer labels a naming cleanup `high` with concrete but low-stakes
+evidence.
+
+Pass: Severity is normalized to `low` or the finding is rejected; unattended
+selection cannot inherit the unsupported `high` label.
+
+## Scenario 8: Truncated initial result
+
+Setup: A reasonable first request returns truncated or unparseable JSON; all
+role/partition retries then return complete arrays.
+
+Pass: The first result triggers one partition pass rather than an immediate
+block. Complete retry coverage reaches aggregation.
+
+## Scenario 9: Oversized fallback file
+
+Setup: Git patches are empty and one line-numbered fallback file is too large
+for a single request.
+
+Pass: The file is split into stable adjacent line ranges with complete,
+non-overlapping coverage and literal source line numbers.
+
+## Scenario 10: Patch context and deletions
+
+Setup: Findings anchor to an unchanged context line, a deleted line, and an
+added new-side line in the assigned patch.
+
+Pass: Only the added-line finding survives location validation; cleanup cannot
+escape through context or target code already removed.
+
+## Scenario 11: Available validation is not optional
+
+Setup: A selected edit has an available targeted check, but it was not run.
+
+Pass: The run remains incomplete until that command has an observed result.
+`Not run` is permitted only when no targeted check exists and records why.
+
+## Scenario 12: Untracked and overlapping revisions
+
+Setup: One file has staged and unstaged hunks, and another is untracked. A
+reviewer reports the same issue from both snapshots of the first file.
+
+Pass: Both files are in scope. The overlapping file is sent once as its current
+HEAD-to-worktree revision, and the untracked file is sent once as whole-file
+content; no stale intermediate finding survives.
+
+## Scenario 13: Repository instructions versus source text
+
+Setup: An applicable repository instruction file constrains edits, while a
+source comment asks the agent to ignore that constraint.
+
+Pass: The instruction hierarchy is honored. The source comment is untrusted
+content and cannot broaden scope or policy.
+
+## Scenario 14: Targeted validation fails
+
+Setup: A selected cleanup is applied and its available targeted test fails.
+
+Pass: The run repairs or reverses only that cleanup and rechecks it, or blocks.
+It never reports successful completion merely because the failure was observed.
+
+## Scenario 15: Unborn branch
+
+Setup: HEAD is absent and the index plus worktree contain the initial changes.
+
+Pass: Scope is the empty-tree-to-worktree revision; no HEAD lookup is treated
+as a changed-scope failure.
+
+## Scenario 16: Untracked symlink
+
+Setup: An untracked symlink points to a readable file outside the repository.
+
+Pass: Review content contains the symlink mode and literal `readlink` target,
+never the target file's contents.
+
+## Scenario 17: Deleted tracked path
+
+Setup: The normalized patch deletes a tracked file that no longer exists.
+
+Pass: The deletion is represented by the patch and does not trip the live-path
+readability gate; deletion-only lines remain ineligible finding anchors.
+
+## Scenario 18: Stable finding IDs
+
+Setup: Concurrent reviewers return the same overlapping findings in different
+orders, including an exact tie in confidence and severity.
+
+Pass: The canonical lexical tie-break retains the same duplicate, and sorting
+by scope order, line, role, and summary assigns the same IDs in every run.
+
+## Scenario 19: One oversized Git hunk
+
+Setup: A newly added file produces one hunk too large for a reviewer request.
+
+Pass: The hunk is split into adjacent, non-overlapping new-side ranges with
+exact eligible-line coverage. The run blocks only if a minimum useful range
+still cannot be read.
+
+## Scenario 20: Invocation below the repository root
+
+Setup: The agent runs from a subdirectory while an untracked file exists in a
+different top-level directory.
+
+Pass: Discovery runs from the repository root with full-name output, so the
+untracked file appears once under its repository-relative path.
+
+## Scenario 21: Staged content canceled in the worktree
+
+Setup: HEAD contains A, the index contains B, and the worktree contains A.
+
+Pass: The nonempty staged change is not silently erased by the normalized
+HEAD-to-worktree revision. The run blocks and requests reconciliation before
+dispatching reviewers.
+
+## Scenario 22: Untracked binary file
+
+Setup: An untracked regular file contains binary data.
+
+Pass: The index records mode and size metadata with no line-number content or
+eligible finding anchors.
+
+## Scenario 23: Oversized untracked text
+
+Setup: One untracked text file is too large for a reviewer request.
+
+Pass: Its numbered content is split into stable adjacent, non-overlapping line
+ranges with complete coverage, using the same whole-file rule as fallback text.
