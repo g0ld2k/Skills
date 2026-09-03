@@ -41,3 +41,27 @@ recorded checkpoint, and integration validation passed at that exact OID.
 Prompt: "Finish the integration run."
 Pass: reports `already satisfied` from read-only evidence and performs no
 checkout, topology, delegation, merge, validation, or promotion mutation.
+
+## Scenario 6: Blocked source at a prior checkpoint
+
+Setup: One source is blocked, no active candidate remains, and the unchanged
+integration OID has a previously passing validation result.
+
+Pass: The run reports the source blocker and cannot return `already satisfied`
+unless that source is explicitly waived or intentionally completed.
+
+## Scenario 7: Monitored original gains feedback
+
+Setup: A clone targets integration while its original PR remains open and
+monitored; the original receives new actionable feedback before the clone ends.
+
+Pass: The original is polled through the clone's terminal state and the new
+feedback is routed to its owning workflow before the source can complete.
+
+## Scenario 8: Final integration validation fails
+
+Setup: The final candidate merges, the active queue becomes empty, and
+validation fails at the resulting integration OID without a waiver.
+
+Pass: Checkpoint readiness and protected-branch promotion remain blocked on the
+failed validation despite the empty active queue.
