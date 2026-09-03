@@ -6,8 +6,7 @@ license: MIT
 
 # PR Closeout Loop
 
-Drive one PR to its requested terminal state or a precise blocker, with every
-mutation bound to live evidence and scoped authorization.
+Drive one PR to its terminal state or a precise, evidence-bound blocker.
 
 ## When to Use
 
@@ -19,7 +18,7 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
 
 | Term | Definition |
 | --- | --- |
-| Closeout surface | Exact tuple of PR identity and open state, head repository/ref/OID, base ref/OID, and PR-body SHA-256. Approval covers one tuple; any field change makes it stale. |
+| Closeout surface | PR/open state, head repository/ref/OID, base ref/OID, and body digest; any change stales approval. |
 | Complete feedback inventory | All unresolved threads/replies, conversation comments, and effective reviews fetched without lookup, shape, authorization, or pagination error. |
 | Progress | Changed terminal/surface/feedback/check/approval/mergeability state. |
 | Non-trivial change | Logic, behavior, tests, CI, package, workflow, public-contract, or meaningful process/documentation work. |
@@ -70,10 +69,11 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    approval event, mergeability, and current remote refs. Use
    `pr-comment-review` for unresolved threads. Exit with one internally
    consistent snapshot or a Blocked Report.
-3. **Disposition.** Classify every feedback item as `fix`, `reply`, or
-   `discuss` from its final state. Treat effective `CHANGES_REQUESTED`,
-   unclear, conflicting, and discuss items as blockers. Before the first
-   mutation, read mandatory
+3. **Disposition.** From final state, classify each item as `fix`, `reply`,
+   `discuss`, `ignore` (non-actionable), or `already-addressed` (current
+   evidence satisfies it). Evidence the last two; acknowledgement may remain.
+   Effective `CHANGES_REQUESTED`, unclear, conflicting, and `discuss` items
+   block. Before the first mutation, read mandatory
    [closeout-safety.md](references/closeout-safety.md) and confirm the selected
    lifecycle is authorized.
 4. **Prepare the candidate.** Align an isolated checkout to the exact PR head.
@@ -88,9 +88,10 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    conversation or review-level feedback through `closeout-safety.md`. Keep
    threads unresolved unless its atomic-resolution condition is available.
    Return to step 2 after remote mutation.
-6. **Monitor.** Poll live feedback, checks, approval, and mergeability. Reset
-   the no-progress count only on `Progress`. Diagnose failed checks before a
-   fix branch. At the wait limit, emit a Blocked Report.
+6. **Monitor.** Poll feedback, checks, approval, and mergeability. Actionable
+   feedback returns to steps 2–3; failed checks return to diagnosed step 4;
+   terminal or surface drift returns to steps 1–2. Wait only on pending state.
+   Only `Progress` resets the counter; at its limit, report blocked.
 7. **Merge or block.** Freeze the repository, method, head, and base surface;
    re-fetch and evaluate G1–G7 together. Merge only through an operation that
    atomically enforces that surface; otherwise block. Queue enrollment requires
@@ -123,7 +124,7 @@ live state; the ledger is continuity, not proof.
 | G1 Fresh approval | Live closeout surface and recorded approval policy/event | Actor and signal are accepted, the event postdates the latest surface change, and its recorded digest matches exactly. |
 | G2 Green checks | Live required-check rollup for current head and base/merge ref | Every required check passed and no base movement occurred afterward. |
 | G3 Local suite | Ledger suite evidence against live merge candidate | Required suite passed for that exact integrated tree, or an explicit waiver covers it. |
-| G4 Clear feedback | Complete feedback inventory and effective review state | No actionable, unclear, conflicting, discuss, or effective `CHANGES_REQUESTED` remains; required acknowledgements exist. |
+| G4 Clear feedback | Complete feedback inventory and effective review state | No actionable, unclear, conflicting, discuss, or effective `CHANGES_REQUESTED` remains; `ignore`/`already-addressed` have evidence and required acknowledgements. |
 | G5 Authorization | Recorded scope against live PR, target, method, and protection | Scope covers every selected action and protected-branch status. |
 | G6 Mergeable | Live terminal, mergeability, and up-to-date metadata | PR is open, mergeable, and current enough for repository policy. |
 | G7 Safe checkout | Git status against initial unrelated-work inventory | No unrelated user changes are present, staged, committed, overwritten, or hidden. |

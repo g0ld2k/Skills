@@ -125,3 +125,21 @@ PR lands first, advancing the base to C.
 Pass: The loop cancels/dequeues before C can merge, discards G1–G3, and
 rebuilds them for C. If timely cancellation is unavailable, it never enrolls
 without explicit moving-base authorization.
+
+## Scenario 17: Non-actionable feedback
+
+Setup: One comment is invalid and another asks for a change already present in
+the current diff.
+
+Pass: They receive evidenced `ignore` and `already-addressed` dispositions,
+not fabricated fixes or permanent `discuss` blockers. Required acknowledgements
+still follow reply safety.
+
+## Scenario 18: Monitor discovers work
+
+Setup: While waiting for approval, a new actionable thread appears and a
+required check later fails.
+
+Pass: The loop returns to inventory/disposition for the thread and to diagnosed
+candidate preparation for the check. It does not count either state as another
+passive wait poll.
