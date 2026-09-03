@@ -17,9 +17,12 @@ its whole assignment says so, and the parent partitions and re-dispatches.
 2. Split an oversized fallback file into stable, adjacent, non-overlapping
    line ranges and retain its original line numbers.
 3. Split an oversized Git-patch file by hunk, keeping each hunk intact with
-   Git's context lines; partitions do not overlap.
-4. If one hunk or minimum useful line range is still too large, block and name
-   it; never truncate content.
+   Git's context lines.
+4. Split an oversized hunk into stable adjacent, non-overlapping new-side line
+   ranges, retaining original line numbers and only the context needed for each
+   range. Eligible new-side coverage must remain exact and non-overlapping.
+5. If a minimum useful line range is still too large, block and name it; never
+   truncate content.
 
 Give each partition a stable identifier (`path`, `path#hunkN`, or
 `path#L<start>-L<end>`). Every request carries the complete scope index and

@@ -127,3 +127,40 @@ Setup: A selected cleanup is applied and its available targeted test fails.
 
 Pass: The run repairs or reverses only that cleanup and rechecks it, or blocks.
 It never reports successful completion merely because the failure was observed.
+
+## Scenario 15: Unborn branch
+
+Setup: HEAD is absent and the index plus worktree contain the initial changes.
+
+Pass: Scope is the empty-tree-to-worktree revision; no HEAD lookup is treated
+as a changed-scope failure.
+
+## Scenario 16: Untracked symlink
+
+Setup: An untracked symlink points to a readable file outside the repository.
+
+Pass: Review content contains the symlink mode and literal `readlink` target,
+never the target file's contents.
+
+## Scenario 17: Deleted tracked path
+
+Setup: The normalized patch deletes a tracked file that no longer exists.
+
+Pass: The deletion is represented by the patch and does not trip the live-path
+readability gate; deletion-only lines remain ineligible finding anchors.
+
+## Scenario 18: Stable finding IDs
+
+Setup: Concurrent reviewers return the same overlapping findings in different
+orders, including an exact tie in confidence and severity.
+
+Pass: The canonical lexical tie-break retains the same duplicate, and sorting
+by scope order, line, role, and summary assigns the same IDs in every run.
+
+## Scenario 19: One oversized Git hunk
+
+Setup: A newly added file produces one hunk too large for a reviewer request.
+
+Pass: The hunk is split into adjacent, non-overlapping new-side ranges with
+exact eligible-line coverage. The run blocks only if a minimum useful range
+still cannot be read.

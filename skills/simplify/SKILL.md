@@ -47,9 +47,11 @@ specification audit. Retain incidental in-scope risks; route broader diagnosis.
 Run staged/unstaged Git diffs and
 `git ls-files --others --exclude-standard -z`; preserve output, status, and
 errors, and block on failure. Deduplicate paths. For either patch, review one
-normalized HEAD-to-worktree revision, not separate staged/unstaged snapshots.
-Include untracked files once as line-numbered whole-file content. Unreadable
-changed paths block. Caller paths cannot broaden non-empty changed scope. Index
+normalized base-to-worktree revision, using HEAD or the empty tree when HEAD is
+unborn. Include untracked regular files once as line-numbered whole-file
+content. Represent an untracked symlink by its mode and `readlink` target,
+without reading through it. Deleted tracked paths come from the patch; unreadable
+live paths block. Caller paths cannot broaden non-empty changed scope. Index
 status, hunks/ranges, and eligible current-side lines.
 
 When changed scope is empty, index readable supplied/thread-edited whole files
@@ -90,9 +92,11 @@ For an oversized, unreadable, truncated, or unparseable result, read
 Reject missing/invalid fields, role mismatches, ineligible locations, vague
 evidence, and reuse without a located abstraction.
 Downgrade unsupported confidence; normalize severity to the highest level its
-evidence supports or reject ambiguity. Never upgrade. Deduplicate overlaps,
-keep the clearest item, then assign IDs. If none remain, report the scope and
-`no actionable findings` without asking for IDs.
+evidence supports or reject ambiguity. Never upgrade. For overlapping
+duplicates, retain highest confidence, then severity, then lexical canonical
+JSON. Sort survivors by scope-index order, line, role, and summary before
+assigning IDs. If none remain, report the scope and `no actionable findings`
+without asking for IDs.
 
 ### 4. Select
 
