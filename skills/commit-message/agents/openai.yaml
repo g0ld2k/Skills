@@ -1,4 +1,4 @@
 interface:
   display_name: "Commit Message"
-  short_description: "Draft evidence-based commit messages"
-  default_prompt: "Use $commit-message to propose a Conventional Commit message for the staged changes."
+  short_description: "Draft or commit Conventional Commit messages"
+  default_prompt: "Use $commit-message to draft or commit a Conventional Commit message for the staged changes."
