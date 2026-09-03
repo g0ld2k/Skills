@@ -149,18 +149,15 @@ else
     fi
   done <"$tag_refs_file"
   if [[ "$reachable_tag" == true ]]; then
-    latest_tag="$("${safe_git[@]}" describe --tags --abbrev=0 "$head_oid")"
+    while IFS=$'\t' read -r frozen_ref frozen_tag_oid _; do
+      run_diff_git update-ref "$frozen_ref" "$frozen_tag_oid"
+    done <"$tags_file"
+    latest_tag="$(run_diff_git describe --tags --abbrev=0 "$head_oid")"
     resolved_start="refs/tags/$latest_tag"
     selection_record="$(awk -F '\t' -v ref="$resolved_start" '$1 == ref {print $2 "\t" $3}' "$tags_file")"
     [[ -n "$selection_record" && "$(printf '%s\n' "$selection_record" | wc -l | tr -d ' ')" == 1 ]] \
       || { printf 'ERROR: selected tag was not in the frozen candidate set\n' >&2; exit 1; }
-    IFS=$'\t' read -r selected_tag_oid start_oid <<<"$selection_record"
-    current_tag_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "$resolved_start")"
-    current_start_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "${resolved_start}^{commit}")"
-    [[ "$current_tag_oid" == "$selected_tag_oid" && "$current_start_oid" == "$start_oid" ]] \
-      || { printf 'ERROR: selected tag changed during inventory\n' >&2; exit 1; }
-    "${safe_git[@]}" merge-base --is-ancestor "$start_oid" "$head_oid" \
-      || { printf 'ERROR: selected tag is not an ancestor of frozen HEAD\n' >&2; exit 1; }
+    IFS=$'\t' read -r frozen_tag_oid start_oid <<<"$selection_record"
     selector=("$start_oid..$head_oid")
     printf 'start\t%s\t%s\n' "$resolved_start" "$start_oid" >"$evidence_dir/selection"
   else

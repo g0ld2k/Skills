@@ -230,7 +230,7 @@ class EvidenceCollectorTests(unittest.TestCase):
                 (evidence / "selection").read_text(encoding="utf-8").startswith("cutoff\t")
             )
 
-    def test_default_selection_rejects_tag_move_after_scan(self) -> None:
+    def test_default_selection_uses_frozen_tags_after_live_move(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = self.init_repo(root)
@@ -270,9 +270,14 @@ class EvidenceCollectorTests(unittest.TestCase):
                 env=environment,
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("tag changed", result.stderr)
-            self.assertEqual(list(temp_root.glob("testflight-evidence.*")), [])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            evidence = Path(result.stdout.strip())
+            self.addCleanup(shutil.rmtree, evidence, True)
+            self.assertEqual(
+                (evidence / "selection").read_text(encoding="utf-8"),
+                f"start\trefs/tags/build-1\t{base}\n",
+            )
+            self.assertEqual(self.git(repo, "rev-parse", "build-1"), head)
 
     def test_commit_messages_are_normalized_to_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

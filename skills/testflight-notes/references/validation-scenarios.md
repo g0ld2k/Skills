@@ -80,11 +80,19 @@ external attributes mark text as binary, while config hides submodule changes.
 present, and patches use only attributes from the pinned head. Message framing
 ends at its final NUL with no extra record.
 
-## Scenario 8: Non-commit tags, tag drift, and message encoding
+## Scenario 8: Non-commit tags, frozen selection, and message encoding
 
 **Setup:** Valid tags point to a blob and tree, a reachable commit tag moves
 after candidate scan, and one commit declares a legacy message encoding.
 
-**Pass:** Non-commit tags are ignored without hiding corrupt objects. The moved
-tag fails its saved raw/peeled OID checks; a stable tag uses saved OIDs. Commit
-messages are emitted as UTF-8 regardless of their stored encoding.
+**Pass:** Non-commit tags are ignored without hiding corrupt objects. Selection
+runs against the saved candidate refs/OIDs, so a later live move is irrelevant.
+Commit messages are emitted as UTF-8 regardless of their stored encoding.
+
+## Scenario 9: Evidence survives across tool calls
+
+**Setup:** The client runs shell commands in isolated sessions.
+
+**Pass:** The collector's printed absolute directory is retained through
+classification and rendering. No EXIT trap from the collection call removes
+it; the caller explicitly deletes it only after Step 4.
