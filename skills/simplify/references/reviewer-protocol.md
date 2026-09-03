@@ -13,17 +13,17 @@ its whole assignment says so, and the parent partitions and re-dispatches.
 
 ## Partitioning
 
-1. Split by whole file first, in scope-index order. Fallback content splits by
-   whole line-numbered file the same way.
-2. If one file is still too large, split that file by hunk, keeping each hunk
-   intact with the context lines Git already attached to it. Hunk boundaries
-   carry their own context, so partitions do not overlap.
-3. If a single hunk is still too large, block and name its location; never
-   truncate content.
+1. Split by whole file first, in scope-index order.
+2. Split an oversized fallback file into stable, adjacent, non-overlapping
+   line ranges and retain its original line numbers.
+3. Split an oversized Git-patch file by hunk, keeping each hunk intact with
+   Git's context lines; partitions do not overlap.
+4. If one hunk or minimum useful line range is still too large, block and name
+   it; never truncate content.
 
-Give each partition a stable identifier (`path`, or `path#hunkN`). Every
-request still carries the complete scope index so reviewers can see the rest
-of the change and keep findings anchored to their own partition.
+Give each partition a stable identifier (`path`, `path#hunkN`, or
+`path#L<start>-L<end>`). Every request carries the complete scope index and
+keeps findings anchored to its partition.
 
 ## Coverage
 

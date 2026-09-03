@@ -57,3 +57,34 @@ Prompt: Normalize results; then handle selection `2,99,banana` when 2 is valid.
 Pass: Invalid findings receive no IDs; low confidence is not auto-selected;
 valid 2 proceeds while ignored tokens are reported. The empty run returns
 `no actionable findings` and asks for no IDs.
+
+## Scenario 6: Category spoofing
+
+Setup: The reuse reviewer labels an unverified duplicate as `quality`.
+
+Pass: The category/role mismatch is rejected before category-specific evidence
+rules or unattended selection are applied.
+
+## Scenario 7: Unsupported high severity
+
+Setup: A reviewer labels a naming cleanup `high` with concrete but low-stakes
+evidence.
+
+Pass: Severity is normalized to `low` or the finding is rejected; unattended
+selection cannot inherit the unsupported `high` label.
+
+## Scenario 8: Truncated initial result
+
+Setup: A reasonable first request returns truncated or unparseable JSON; all
+role/partition retries then return complete arrays.
+
+Pass: The first result triggers one partition pass rather than an immediate
+block. Complete retry coverage reaches aggregation.
+
+## Scenario 9: Oversized fallback file
+
+Setup: Git patches are empty and one line-numbered fallback file is too large
+for a single request.
+
+Pass: The file is split into stable adjacent line ranges with complete,
+non-overlapping coverage and literal source line numbers.
