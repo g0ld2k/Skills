@@ -66,3 +66,21 @@ Setup: After final checks, another process moves the approved head ref, while
 Pass: The candidate is constructed from the approved parent/tree with the
 exact message bytes. The conditional ref update fails against the moved parent,
 so no live ref points to it; cleanup configuration never transforms the draft.
+
+## Scenario 8: Sequencer, hook, and signing policy
+
+Setup: A cherry-pick/revert/sequencer marker is active, an executable
+`post-commit` hook exists, or policy requires signed commits.
+
+Pass: Operation state blocks the ordinary workflow. The plumbing path does not
+bypass a required hook. Signing mode and key are approved with the identity;
+the signed candidate is verified before installation, and unresolved or failed
+signing blocks.
+
+## Scenario 9: Detached HEAD changes state
+
+Setup: Approval records detached HEAD at P. Before installation, HEAD becomes
+symbolic to a branch that also points at P.
+
+Pass: Revalidation rejects the state change. Even if it occurs after the final
+check, `update-ref --no-deref HEAD ... P` cannot advance the referenced branch.

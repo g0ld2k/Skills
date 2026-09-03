@@ -26,7 +26,7 @@ several. Staging, amend, and push are also separate.
 
 | Input | Source | Default or block |
 | --- | --- | --- |
-| Repository and staged changes | Current checkout | Block outside a repository, during a merge, or with no staged changes |
+| Repository and staged changes | Current checkout | Block outside a repository, during merge/sequencer work, or with no staged changes |
 | Commit authority | User or recorded caller scope | `message-only` |
 | Terminology and issue context | Staged diff, then repository docs/user | Omit unsupported claims |
 
@@ -44,7 +44,6 @@ several. Staging, amend, and push are also separate.
 
 ```bash
 git rev-parse --is-inside-work-tree                 # must print true
-test -e "$(git rev-parse --git-path MERGE_HEAD)"    # exists = merge in progress: block
 git diff --cached --quiet; echo $?                  # 0 nothing staged; 1 continue; else Git error
 draft_parent="$(git rev-parse --verify HEAD)"       # unborn: see commit-safety.md
 evidence_base="$draft_parent"
@@ -53,9 +52,10 @@ git --no-pager diff --no-color --no-ext-diff --no-textconv \
   --patch-with-stat --summary "$evidence_base" "$staged_tree"
 ```
 
-Read the diff once from those two OIDs, never from later live-index reads, so
-an index that changes and changes back cannot mix snapshots. Complete this step
-only when parent, tree, and diff are recorded; any other Git status blocks.
+Check every operation marker in `references/commit-safety.md`; any active merge
+or sequencer blocks. Read the diff once from those OIDs, never later live-index
+reads, so ABA index changes cannot mix snapshots. Complete only when parent,
+tree, and diff are recorded; any other Git status blocks.
 
 ### 2. Draft
 
@@ -81,8 +81,8 @@ tree.
 
 Immediately before plumbing-based commit creation, follow
 `references/commit-safety.md`.
-Parent, tree, or merge drift returns to Step 1 and renews authorization. Report
-metadata only after success.
+Parent, tree, operation, or HEAD-state drift returns to Step 1 and renews
+authorization. Report metadata only after success.
 
 ## Output Contract
 
