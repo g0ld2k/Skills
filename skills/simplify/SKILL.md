@@ -6,8 +6,7 @@ license: MIT
 
 # Simplify
 
-Review one resolved scope for evidence-backed cleanup, then apply only selected
-findings.
+Review one scope, then apply only selected evidence-backed cleanup.
 
 ## When to Use
 
@@ -19,9 +18,9 @@ specification review elsewhere.
 | Term | Definition |
 | --- | --- |
 | Changed-diff scope | Union of successful unstaged and staged Git patches |
-| Fallback scope | Readable supplied or thread-edited files, only after both patches succeed empty |
-| Attended selection | Present valid findings and wait for the user’s IDs, `all`, or `none` |
-| Unattended selection | Apply a recorded caller policy without asking |
+| Fallback scope | Readable supplied/thread-edited files after both patches succeed empty |
+| Attended selection | User chooses presented IDs, `all`, or `none` |
+| Unattended selection | Recorded caller policy chooses |
 
 ## Inputs and Defaults
 
@@ -48,13 +47,13 @@ specification review elsewhere.
 Run the unstaged and staged Git diff commands, preserving output, status, and
 errors; any failure blocks. When either patch is non-empty, review only their
 union; caller-mentioned files do not broaden it. Index each path with status,
-line counts, and hunk boundaries.
+hunks, and added/modified new-side lines eligible for finding anchors.
 
 Only after both patches succeed empty, index readable supplied or thread-edited
 whole files with source and line count and send line-numbered content. An
 unreadable requested file blocks without
-broadening scope. With no fallback paths, complete with `Reviewed scope: none`
-and `no actionable findings`; dispatch no reviewers and request no IDs.
+broadening scope. With no fallback paths, return `Reviewed scope: none` and
+`no actionable findings`; dispatch no reviewers.
 
 ### 2. Dispatch reviewers
 
@@ -76,7 +75,7 @@ read the repository but anchor findings to the scope.
 | `category` | Must equal the dispatched `reuse`, `quality`, or `efficiency` role |
 | `severity` | `high`: correctness, security, data-loss, unbounded-growth, or measurable hot-path risk; `medium`: verified duplication, leaky abstraction, compounding redundant work; `low`: naming or optional cleanup |
 | `confidence` | `high`: alternative or hot path located; `medium`: concrete evidence, alternative unverified; `low`: heuristic |
-| `location` | `path:line` inside the assigned scope |
+| `location` | `path:line` on an added/modified new-side patch line, or inside an assigned fallback range |
 | `observed_evidence` | Concrete symbol, operation, or behavior at that location |
 | `summary` | One-sentence problem |
 | `proposed_fix` | One-sentence remedy |
@@ -88,8 +87,9 @@ an incomplete role/partition retry blocks.
 
 ### 3. Validate findings
 
-Reject missing fields, invalid enums, category/role mismatches, out-of-scope
-locations, vague evidence, and reuse items without a located abstraction.
+Reject missing fields, invalid enums, category/role mismatches, context-only,
+deletion-only or out-of-scope locations, vague evidence, and reuse items
+without a located abstraction.
 Downgrade unsupported confidence; normalize severity to the highest level its
 evidence supports or reject ambiguity. Never upgrade. Deduplicate overlaps,
 keep the clearest item, then assign IDs. If none remain, report the scope and
@@ -112,8 +112,8 @@ requires explicit policy coverage.
 Apply only selected IDs with minimal edits. Prefer a located existing
 abstraction. Skip a selected false positive with a one-line reason. Run
 targeted tests, lint, or type checks for touched areas. Complete when every
-selected ID is applied or accounted for and every validation result is
-observed or marked not run.
+selected ID is accounted for and every available targeted check has an
+observed result. If none is available, record why it was not run.
 
 ## Output Contract
 
@@ -121,7 +121,7 @@ observed or marked not run.
 - Valid and rejected findings, including rejection reasons.
 - Applied, skipped-selected, unselected, and ignored IDs/tokens.
 - Selection source: user choice or named unattended policy.
-- Validation commands and observed results, or `Not run in this session`.
+- Validation commands/results, or why no targeted check was available.
 - Exact `no actionable findings` result for no-scope or zero-valid-finding runs.
 
 ## Blocked Report

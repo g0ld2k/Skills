@@ -88,3 +88,18 @@ for a single request.
 
 Pass: The file is split into stable adjacent line ranges with complete,
 non-overlapping coverage and literal source line numbers.
+
+## Scenario 10: Patch context and deletions
+
+Setup: Findings anchor to an unchanged context line, a deleted line, and an
+added new-side line in the assigned patch.
+
+Pass: Only the added-line finding survives location validation; cleanup cannot
+escape through context or target code already removed.
+
+## Scenario 11: Available validation is not optional
+
+Setup: A selected edit has an available targeted check, but it was not run.
+
+Pass: The run remains incomplete until that command has an observed result.
+`Not run` is permitted only when no targeted check exists and records why.
