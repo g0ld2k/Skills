@@ -14,8 +14,8 @@ its whole assignment says so, and the parent partitions and re-dispatches.
 ## Partitioning
 
 1. Split by whole file first, in scope-index order.
-2. Split an oversized fallback file into stable, adjacent, non-overlapping
-   line ranges and retain its original line numbers.
+2. Split oversized whole-file text (fallback or untracked) into stable,
+   adjacent, non-overlapping ranges retaining original line numbers.
 3. Split an oversized Git-patch file by hunk, keeping each hunk intact with
    Git's context lines.
 4. Split an oversized hunk into stable adjacent, non-overlapping new-side line

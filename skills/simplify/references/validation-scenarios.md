@@ -164,3 +164,33 @@ Setup: A newly added file produces one hunk too large for a reviewer request.
 Pass: The hunk is split into adjacent, non-overlapping new-side ranges with
 exact eligible-line coverage. The run blocks only if a minimum useful range
 still cannot be read.
+
+## Scenario 20: Invocation below the repository root
+
+Setup: The agent runs from a subdirectory while an untracked file exists in a
+different top-level directory.
+
+Pass: Discovery runs from the repository root with full-name output, so the
+untracked file appears once under its repository-relative path.
+
+## Scenario 21: Staged content canceled in the worktree
+
+Setup: HEAD contains A, the index contains B, and the worktree contains A.
+
+Pass: The nonempty staged change is not silently erased by the normalized
+HEAD-to-worktree revision. The run blocks and requests reconciliation before
+dispatching reviewers.
+
+## Scenario 22: Untracked binary file
+
+Setup: An untracked regular file contains binary data.
+
+Pass: The index records mode and size metadata with no line-number content or
+eligible finding anchors.
+
+## Scenario 23: Oversized untracked text
+
+Setup: One untracked text file is too large for a reviewer request.
+
+Pass: Its numbered content is split into stable adjacent, non-overlapping line
+ranges with complete coverage, using the same whole-file rule as fallback text.
