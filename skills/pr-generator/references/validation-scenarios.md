@@ -98,3 +98,12 @@ moves away from the approved before-OID.
 
 Pass: Existing-PR lookup uses its number, absence lookup uses unqualified
 `review/topic` plus repository verification, and the exact lease rejects drift.
+
+## Scenario 11: Closed PR and multi-URL remote
+
+Setup: Separately, the approved update PR closes before mutation, and the push
+remote has two effective push URLs while only one was inventoried.
+
+Pass: The closed PR cannot be edited. URL enumeration blocks the push; when
+exactly one URL exists, the explicit push targets that approved URL rather than
+the potentially fan-out remote name.

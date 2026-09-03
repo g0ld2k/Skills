@@ -13,12 +13,13 @@ OID comes from the target repository URL.
 ```bash
 # Existing update: query its approved number, then verify head repo/ref.
 gh pr view "$pr_number" --repo "$target_repo" \
-  --json number,url,title,body,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner
+  --json number,url,state,title,body,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner
 # Approved absence: list by the unqualified branch, then verify every candidate's head repo.
 gh pr list --repo "$target_repo" --head "$approved_head_branch" --state open \
   --json number,url,title,body,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner
 git ls-remote "$target_url" "refs/heads/$base_branch"
 git ls-remote "$push_url" "refs/heads/$push_branch"
+git remote get-url --push --all "$push_remote"
 ```
 
 An empty `gh pr list` result is the documented no-open-PR state; a command
@@ -35,6 +36,12 @@ that supports it explicitly or blocks.
 
 A lookup error blocks. An absent candidate head for an approved create remains
 a valid observed state only when the fingerprint recorded that absence.
+An approved update also requires the exact PR to remain `OPEN`.
+
+Enumerate every effective push URL for the selected remote. Require exactly
+one, freeze its credential-free identity and secret transport digest, and
+re-enumerate before pushing. Multiple URLs block; never let one approved remote
+name fan the refspec out to several destinations.
 
 ## Revalidate and mutate
 
@@ -49,7 +56,7 @@ a valid observed state only when the fingerprint recorded that absence.
    ```bash
    git push \
      --force-with-lease="refs/heads/$push_branch:$approved_before_oid" \
-     "$push_remote" \
+     "$push_url" \
      "$approved_local_oid:refs/heads/$push_branch"
    ```
 
@@ -63,9 +70,10 @@ a valid observed state only when the fingerprint recorded that absence.
 4. Rebuild all other fingerprint inputs. A new/disappeared PR, changed PR
    number or metadata input, base movement, unexpected head movement, changed
    selector, or changed title/body/validation evidence invalidates the plan.
-5. For update, edit only the approved PR number after its head repository/ref
-   and current metadata digest still match. For create, require the approved PR
-   absence and base to remain current, then create with the approved selector.
+5. For update, edit only the approved PR number after its `OPEN` state, head
+   repository/ref, and current metadata digest still match. For create, require
+   the approved PR absence and base to remain current, then create with the
+   approved selector.
 
    ```bash
    gh pr edit "$pr_number" --repo "$target_repo" \
