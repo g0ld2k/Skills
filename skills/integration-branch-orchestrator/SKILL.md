@@ -7,8 +7,8 @@ disable-model-invocation: true
 
 # Integration Branch Orchestrator
 
-Coordinate PRs through one integration branch, keep unattended work outside
-protected branches, and produce a promotion checkpoint.
+Coordinate PRs through an integration branch and produce a human promotion
+checkpoint outside protected branches.
 
 ## When to Use
 
@@ -19,13 +19,13 @@ and cross-request/repository work to `work-request-orchestration`.
 
 | Term | Definition |
 | --- | --- |
-| Run | Sources/PRs, integration ref, protected target, and authorization; scope is source-reachable changes plus authorized topology mutations. |
-| Topology snapshot | One complete read of protected and integration ref/OIDs plus every source PR head/base. |
-| Active candidate | In-scope PR that has not merged, closed, or reached a terminal blocker in this run. |
-| Base-sensitive evidence | Approval, checks, suite, mergeability, or diff bound to one integration OID. |
-| Merge slot | Exclusive permission for one PR closeout merge at a recorded integration OID. |
+| Run | Sources/PRs, refs, authorization, and source-reachable scope. |
+| Topology snapshot | Complete ref/OIDs and every source PR head/base. |
+| Active candidate | In-scope PR not merged, closed, or terminally blocked. |
+| Base-sensitive evidence | Approval, checks, suite, mergeability, or diff bound to an integration OID. |
+| Merge slot | Exclusive merge permission at a recorded integration OID. |
 | Merge owner | User, coordinator, or queue granting every slot. |
-| Promotion checkpoint | Integration OID, included PRs, validation, risks, and promotion status for human review. |
+| Promotion checkpoint | Integration OID, included PRs, validation, risks, and status. |
 
 ## Inputs and Defaults
 
@@ -80,8 +80,8 @@ and cross-request/repository work to `work-request-orchestration`.
    integration-targeted PR. Exit when each source is blocked or has a verified
    PR based on the integration ref.
 3. **Prepare candidates.** Delegate each verified PR to `pr-closeout-loop` with
-   its exact target and action scope. With multiple active candidates, exclude
-   merge authorization from every delegation for the entire run. Preparation
+   its exact target and action scope, always excluding merge authorization.
+   Preparation
    may proceed concurrently in isolated worktrees; record each candidate as
    ready, waiting, or blocked.
 4. **Consume merge slots.** Repeat until no active candidate remains:
@@ -90,17 +90,19 @@ and cross-request/repository work to `work-request-orchestration`.
       base-sensitive evidence.
    2. Grant exactly one ready candidate a slot and record its `slot_base_oid`.
       The merge owner may choose by readiness, not source order.
-   3. The selected `pr-closeout-loop` re-inventories live PR state and evaluates
-      its G1–G7 against `slot_base_oid` immediately before its expected-head
-      merge. A tip change revokes the slot without merging.
+   3. Grant merge scope only to the slot holder. Its `pr-closeout-loop`
+      re-inventories and evaluates G1–G7, then merges only through an operation
+      atomically bound to `slot_base_oid`; otherwise it blocks. Revoke and clear
+      the slot on every non-merge return or tip change before selecting again.
    4. After a merge, fetch the new integration OID and run integration
       validation from that exact result. No other slot may be granted until it
       passes or an exact waiver is recorded. Failure blocks checkpoint readiness
       and promotion even when no active candidate remains.
    Keep slot discipline until the run ends; a shrinking queue does not restore
    blanket merge authorization.
-5. **Prepare the checkpoint.** Re-fetch the integration OID and summarize the
-   run against it. If promotion is requested, present the exact checkpoint for
+5. **Prepare the checkpoint.** Re-fetch the integration OID and require passing
+   `integration_validation` for that exact OID; otherwise revalidate or block.
+   Summarize the run against it. If promotion is requested, present it for
    human approval and route the resulting concrete promotion PR through
    `pr-closeout-loop`. Exit with readiness or the owning blocker.
 

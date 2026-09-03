@@ -65,3 +65,25 @@ validation fails at the resulting integration OID without a waiver.
 
 Pass: Checkpoint readiness and protected-branch promotion remain blocked on the
 failed validation despite the empty active queue.
+
+## Scenario 9: Single-candidate preparation has no merge scope
+
+Setup: Exactly one candidate is active before any slot validation.
+
+Pass: Preparation cannot merge it. Merge authority is granted only after the
+integration tip is validated and its slot records that base OID.
+
+## Scenario 10: Slot base changes or closeout waits
+
+Setup: A slot holder either returns waiting/blocked without merging, or its
+integration base changes before the merge request.
+
+Pass: Waiting/blocked clears the slot. A merge operation that cannot atomically
+bind the recorded base blocks; another candidate receives no overlapping scope.
+
+## Scenario 11: Checkpoint tip changes
+
+Setup: Validation passes at I1, then checkpoint preparation re-fetches I2.
+
+Pass: I1 evidence cannot mark I2 ready. The run validates I2 or blocks before
+presenting a promotion checkpoint.
