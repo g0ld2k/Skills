@@ -26,7 +26,8 @@ the repository, or write public release notes, changelogs, or version bumps.
 | Length ceiling | User or repository convention | 4000 characters; draft to 3800. |
 | Platform scope | Message, paths, or patch | No suffix when uncertain. |
 
-State any default before the notes unless the user requested notes-only output.
+Keep defaults internal for notes-only output; disclose them only in requested
+supporting detail.
 
 ## Guardrails
 
@@ -39,7 +40,8 @@ State any default before the notes unless the user requested notes-only output.
 
 ## Workflow
 
-1. **Freeze evidence.** Invoke this skill's collector. Pass a starting ref as
+1. **Freeze evidence.** Derive `skill_dir` from the loaded `SKILL.md`'s absolute
+   directory, never the checkout. Invoke its collector. Pass a starting ref as
    quoted `--start`; tags win.
    For timeframes, accept only ISO `YYYY-MM-DD`, 1–3650 days, or 1–520 weeks,
    convert once to a UTC epoch, and pass `--cutoff-epoch`. With no selector,
@@ -51,12 +53,11 @@ State any default before the notes unless the user requested notes-only output.
      --repo "$PWD" "${selection_args[@]}")"
    ```
 
-   Keep Steps 1–4 in this shell, then `rm -rf -- "$evidence_dir"`. If shell
-   state will not persist, record its absolute path for reads and
-   deletion. Use `--help` for the ledger layout. Nonzero exits block without a
-   partial ledger. Use its saved OIDs, NUL paths, and path-bound patches.
-   Record each candidate's OIDs, paths, impact and platform evidence, and
-   include/exclude reason. Inspect patches only to settle impact or platform.
+   Keep `evidence_dir` through Steps 1–4 (record its absolute path across shell
+   calls), then `rm -rf -- "$evidence_dir"`. Nonzero exits block without partial
+   evidence. `--help` defines the layout and on-demand renderer. From saved OIDs
+   and NUL paths, record each candidate's impact/platform evidence and decision;
+   render only a needed change's patch.
 2. **Classify.** Apply `references/classification-rules.md`. Exit with only
    high-confidence, tester-visible candidates.
 3. **Synthesize.** Collapse one logical change. Assign one `NEW`, `IMPROVED`, or

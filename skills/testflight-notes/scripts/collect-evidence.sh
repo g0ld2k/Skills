@@ -13,8 +13,11 @@ Prints a temporary evidence-directory path on success. The directory contains:
   commits/<oid>/changes.z   status plus one/two paths as NUL records
   commits/<oid>/paths.z     every changed path as NUL records
   commits/<oid>/path-N*     exact path bytes for change N
-  commits/<oid>/patch-N     patch limited to change N's path(s)
   commits/<oid>/meta        comparison base, kind, change/path counts
+  objects-dir.z             source object directory as one NUL record
+
+Generate a path-bound patch only when needed with render-evidence-patch.sh.
+Copy detection is best effort; unchanged sources are not exhaustively scanned.
 
 The caller owns deletion of the returned directory.
 EOF
@@ -86,13 +89,14 @@ head_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options 'HEAD^{commit}'
 printf '%s\n' "$head_oid" >"$evidence_dir/head_oid"
 
 objects_dir="$("${safe_git[@]}" rev-parse --path-format=absolute --git-path objects)"
+printf '%s\0' "$objects_dir" >"$evidence_dir/objects-dir.z"
 object_format="$("${safe_git[@]}" rev-parse --show-object-format)"
 isolated_git_dir="$evidence_dir/isolated.git"
 git init --bare -q --object-format="$object_format" "$isolated_git_dir"
 diff_git=(git --git-dir="$isolated_git_dir" --no-pager --no-replace-objects \
   -c color.ui=false -c core.attributesFile=/dev/null)
 run_diff_git() {
-  GIT_CONFIG_NOSYSTEM=1 GIT_ATTR_SOURCE="$head_oid" \
+  GIT_CONFIG_NOSYSTEM=1 GIT_ATTR_NOSYSTEM=1 GIT_ATTR_SOURCE="$head_oid" \
     GIT_OBJECT_DIRECTORY="$objects_dir" "${diff_git[@]}" "$@"
 }
 
@@ -134,12 +138,12 @@ else
     tag_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "$tag_ref")"
     tag_type="$("${safe_git[@]}" cat-file -t "$tag_oid")"
     if [[ "$tag_type" == tag ]]; then
-      peeled_type="$("${safe_git[@]}" cat-file -t "${tag_ref}^{}")"
+      peeled_type="$("${safe_git[@]}" cat-file -t "${tag_oid}^{}")"
       [[ "$peeled_type" == commit ]] || continue
     elif [[ "$tag_type" != commit ]]; then
       continue
     fi
-    tag_commit="$("${safe_git[@]}" rev-parse --verify --end-of-options "${tag_ref}^{commit}")"
+    tag_commit="$("${safe_git[@]}" rev-parse --verify --end-of-options "${tag_oid}^{commit}")"
     if "${safe_git[@]}" merge-base --is-ancestor "$tag_commit" "$head_oid"; then
       reachable_tag=true
       printf '%s\t%s\t%s\n' "$tag_ref" "$tag_oid" "$tag_commit" >>"$tags_file"
@@ -194,8 +198,26 @@ while IFS= read -r oid; do
   fi
 
   run_diff_git diff --no-color --no-ext-diff --no-textconv \
-    --ignore-submodules=none --name-status -z --find-renames --find-copies \
+    --ignore-submodules=none --name-status -z --find-renames --find-copies -l0 \
     "$comparison_base" "$oid" -- >"$commit_dir/changes.z"
+  raw_file="$commit_dir/objects.z"
+  run_diff_git diff --no-color --no-ext-diff --no-textconv \
+    --ignore-submodules=none --raw -z --no-abbrev --find-renames --find-copies -l0 \
+    "$comparison_base" "$oid" -- >"$raw_file"
+  while IFS= read -r -d '' raw_header <&3; do
+    IFS=' ' read -r old_mode new_mode old_object new_object raw_status <<<"$raw_header"
+    old_mode="${old_mode#:}"
+    IFS= read -r -d '' _ <&3
+    if [[ "$raw_status" == R* || "$raw_status" == C* ]]; then
+      IFS= read -r -d '' _ <&3
+    fi
+    if [[ "$old_mode" != 000000 && "$old_mode" != 160000 ]]; then
+      run_diff_git cat-file -e "$old_object"
+    fi
+    if [[ "$new_mode" != 000000 && "$new_mode" != 160000 ]]; then
+      run_diff_git cat-file -e "$new_object"
+    fi
+  done 3<"$raw_file"
   : >"$commit_dir/paths.z"
 
   change_index=0
@@ -206,21 +228,16 @@ while IFS= read -r oid; do
     ((path_count += 1))
     printf -v suffix '%06d' "$change_index"
     printf '%s\0' "$first_path" >>"$commit_dir/paths.z"
-    pathspecs=(":(literal)$first_path")
     if [[ "$change_status" == R* || "$change_status" == C* ]]; then
       IFS= read -r -d '' second_path
       ((path_count += 1))
-      printf '%s' "$first_path" >"$commit_dir/path-$suffix-from"
-      printf '%s' "$second_path" >"$commit_dir/path-$suffix-to"
+      printf '%s\0' "$first_path" >"$commit_dir/path-$suffix-from"
+      printf '%s\0' "$second_path" >"$commit_dir/path-$suffix-to"
       printf '%s\0' "$second_path" >>"$commit_dir/paths.z"
-      pathspecs+=(":(literal)$second_path")
     else
-      printf '%s' "$first_path" >"$commit_dir/path-$suffix"
+      printf '%s\0' "$first_path" >"$commit_dir/path-$suffix"
     fi
     printf '%s\n' "$change_status" >"$commit_dir/status-$suffix"
-    run_diff_git diff --no-color --no-ext-diff --no-textconv \
-      --ignore-submodules=none --find-renames --find-copies \
-      "$comparison_base" "$oid" -- "${pathspecs[@]}" >"$commit_dir/patch-$suffix"
   done <"$commit_dir/changes.z"
 
   printf 'base\t%s\nkind\t%s\nchanges\t%s\npaths\t%s\n' \

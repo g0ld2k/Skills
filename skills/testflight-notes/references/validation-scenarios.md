@@ -56,7 +56,8 @@ signatures, color, and an external diff.
 **Pass:** The timeframe becomes one recorded UTC epoch. Message and path
 records remain NUL-delimited, config cannot alter evidence, and a merge commit
 is compared with its first parent. Each patch uses the saved OID and the exact
-enumerated path as a literal pathspec; no record is split or reinterpreted.
+enumerated path as a literal pathspec; system attributes are disabled and the
+rename limit is explicit, so no record is split or reinterpreted.
 
 ## Scenario 6: Default tag failure and read-only root diff
 
@@ -76,18 +77,19 @@ external attributes mark text as binary, while config hides submodule changes.
 
 **Prompt:** Generate notes for that commit.
 
-**Pass:** Status records retain both rename paths in one patch, the gitlink is
-present, and patches use only attributes from the pinned head. Message framing
-ends at its final NUL with no extra record.
+**Pass:** Status records retain both rename paths for one on-demand patch, the
+gitlink is present, and patches use only attributes from the pinned head.
+Message framing ends at its final NUL with no extra record.
 
 ## Scenario 8: Non-commit tags, frozen selection, and message encoding
 
 **Setup:** Valid tags point to a blob and tree, a reachable commit tag moves
 after candidate scan, and one commit declares a legacy message encoding.
 
-**Pass:** Non-commit tags are ignored without hiding corrupt objects. Selection
-runs against the saved candidate refs/OIDs, so a later live move is irrelevant.
-Commit messages are emitted as UTF-8 regardless of their stored encoding.
+**Pass:** Non-commit tags are ignored without hiding corrupt objects. Each
+candidate is peeled through its saved tag-object OID, and selection uses the
+frozen candidates, so a later live move is irrelevant. Commit messages are
+emitted as UTF-8 regardless of their stored encoding.
 
 ## Scenario 9: Evidence survives across tool calls
 
@@ -96,3 +98,20 @@ Commit messages are emitted as UTF-8 regardless of their stored encoding.
 **Pass:** The collector's printed absolute directory is retained through
 classification and rendering. No EXIT trap from the collection call removes
 it; the caller explicitly deletes it only after Step 4.
+
+## Scenario 10: Notes-only output with defaults
+
+**Setup:** The user requests notes only and supplies no history or length limit.
+
+**Pass:** Defaults guide evidence and rendering internally, but output still
+begins with `What's new in this build:`. No preamble precedes the notes.
+
+## Scenario 11: Installed location and lazy patches
+
+**Setup:** The target checkout has a malicious same-named collector and one
+commit changes many paths, only one of which needs patch inspection.
+
+**Pass:** `skill_dir` comes from the absolute loaded-skill path. Collection
+creates no patches; the installed renderer materializes only the requested
+path-bound patch from pinned evidence. Copy detection remains best effort and
+does not scan unchanged source files exhaustively.

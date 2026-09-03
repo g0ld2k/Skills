@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills" / "testflight-notes" / "scripts" / "collect-evidence.sh"
+PATCH_SCRIPT = ROOT / "skills" / "testflight-notes" / "scripts" / "render-evidence-patch.sh"
 
 
 class EvidenceCollectorTests(unittest.TestCase):
@@ -64,6 +66,16 @@ class EvidenceCollectorTests(unittest.TestCase):
         self.assertTrue(evidence.is_dir())
         self.addCleanup(shutil.rmtree, evidence, True)
         return evidence
+
+    def render_patch(
+        self, evidence: Path, oid: str, change: int
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(PATCH_SCRIPT), "--evidence-dir", str(evidence),
+             "--oid", oid, "--change", str(change)],
+            capture_output=True,
+            text=True,
+        )
 
     def test_rejects_shallow_history_without_leaving_a_partial_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -191,8 +203,11 @@ class EvidenceCollectorTests(unittest.TestCase):
             self.assertIn(odd_path.encode(), paths)
             odd_patch: bytes | None = None
             for path_file in commit_dir.glob("path-*"):
-                if path_file.read_bytes() == odd_path.encode():
-                    odd_patch = (commit_dir / path_file.name.replace("path-", "patch-")).read_bytes()
+                if path_file.read_bytes() == odd_path.encode() + b"\0":
+                    change = int(path_file.name.removeprefix("path-"))
+                    rendered = self.render_patch(evidence, head, change)
+                    self.assertEqual(rendered.returncode, 0, rendered.stderr)
+                    odd_patch = Path(rendered.stdout.strip()).read_bytes()
                     break
             self.assertIsNotNone(odd_patch)
             self.assertIn(b"odd-only-marker", odd_patch)
@@ -279,6 +294,51 @@ class EvidenceCollectorTests(unittest.TestCase):
             )
             self.assertEqual(self.git(repo, "rev-parse", "build-1"), head)
 
+    def test_default_selection_peels_the_saved_tag_object(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = self.init_repo(root)
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            self.git(repo, "tag", "-a", "build-1", "-m", "build", base)
+            tag_oid = self.git(repo, "rev-parse", "build-1")
+            head = self.commit_file(repo, "next.txt", "next\n", "next")
+            bin_path = root / "bin"
+            bin_path.mkdir()
+            marker = root / "moved"
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            wrapper = bin_path / "git"
+            wrapper.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ $* == *\" cat-file -t $RACE_TAG_OID\"* && ! -e $RACE_MARKER ]]; then\n"
+                "  : > \"$RACE_MARKER\"\n"
+                "  \"$REAL_GIT\" -C \"$RACE_REPO\" tag -f build-1 \"$RACE_NEW_OID\" >/dev/null\n"
+                "fi\n"
+                "exec \"$REAL_GIT\" \"$@\"\n"
+            )
+            wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["REAL_GIT"] = real_git
+            environment["RACE_TAG_OID"] = tag_oid
+            environment["RACE_MARKER"] = str(marker)
+            environment["RACE_REPO"] = str(repo)
+            environment["RACE_NEW_OID"] = head
+
+            result = subprocess.run(
+                ["bash", str(SCRIPT), "--repo", str(repo)],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            evidence = self.successful_evidence(result)
+            self.assertEqual(
+                (evidence / "selection").read_text(encoding="utf-8"),
+                f"start\trefs/tags/build-1\t{base}\n",
+            )
+
     def test_commit_messages_are_normalized_to_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = self.init_repo(Path(directory))
@@ -338,9 +398,70 @@ class EvidenceCollectorTests(unittest.TestCase):
             changes = (commit_dir / "changes.z").read_bytes().split(b"\0")
             self.assertTrue(changes[0].startswith(b"R"))
             self.assertEqual(changes[1:3], [old_path.encode(), new_path.encode()])
+            rendered = self.render_patch(evidence, head, 1)
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
             patch = (commit_dir / "patch-000001").read_bytes()
             self.assertIn(f"rename from {old_path}".encode(), patch)
             self.assertIn(f"rename to {new_path}".encode(), patch)
+
+    def test_collection_defers_patches_until_one_is_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            (repo / "a.txt").write_text("selected-marker\n", encoding="utf-8")
+            (repo / "b.txt").write_text("deferred-marker\n", encoding="utf-8")
+            self.git(repo, "add", "--", "a.txt", "b.txt")
+            self.git(repo, "commit", "-q", "-m", "two paths")
+            head = self.git(repo, "rev-parse", "HEAD")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+            commit_dir = evidence / "commits" / head
+            self.assertEqual(list(commit_dir.glob("patch-*")), [])
+
+            rendered = self.render_patch(evidence, head, 1)
+
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            self.assertEqual(
+                [path.name for path in commit_dir.glob("patch-*")],
+                ["patch-000001"],
+            )
+            self.assertIn(b"selected-marker", (commit_dir / "patch-000001").read_bytes())
+
+    def test_isolated_diffs_disable_system_attributes_and_pin_rename_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = self.init_repo(root)
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            self.commit_file(repo, "next.txt", "next\n", "next")
+            bin_path = root / "bin"
+            bin_path.mkdir()
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            wrapper = bin_path / "git"
+            wrapper.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ $* == *'--git-dir='* && $* == *' diff '* ]]; then\n"
+                "  [[ ${GIT_ATTR_NOSYSTEM:-} == 1 ]] || exit 86\n"
+                "  [[ $* == *' -l0 '* ]] || exit 87\n"
+                "fi\n"
+                "exec \"$REAL_GIT\" \"$@\"\n"
+            )
+            wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["REAL_GIT"] = real_git
+
+            result = subprocess.run(
+                ["bash", str(SCRIPT), "--repo", str(repo), "--start", base],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            evidence = Path(result.stdout.strip())
+            self.addCleanup(shutil.rmtree, evidence, True)
 
     def test_submodule_changes_ignore_hiding_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -371,7 +492,9 @@ class EvidenceCollectorTests(unittest.TestCase):
             info_attributes.write_text("*.txt binary\n", encoding="utf-8")
 
             evidence = self.successful_evidence(self.collect(repo, "--start", base))
-            patch = next((evidence / "commits" / head).glob("patch-*")).read_bytes()
+            rendered = self.render_patch(evidence, head, 1)
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            patch = Path(rendered.stdout.strip()).read_bytes()
 
             self.assertIn(b"after-marker", patch)
             self.assertNotIn(b"Binary files", patch)
