@@ -11,8 +11,8 @@ Turn verified requests into reviewable units and coordinate closeout.
 
 ## When to Use
 
-Use explicitly for multi-item or unfinished requests; route work through
-Companion Handoffs.
+Use explicitly for fresh single-item, multi-item, or unfinished requests; route
+work through Companion Handoffs.
 
 ## Definitions
 
@@ -77,11 +77,13 @@ Companion Handoffs.
    `commit-message`. Require the commit tree to match before binding results to
    its OID. A mismatch invalidates the unit plan; re-inventory before validating
    the exact commit in a clean checkout.
-6. **Complete lifecycles.** Hand off through the table. An observed commit moves
-   `implementation` to `initial-publication` (or terminal when local commit is
-   the target); an observed PR moves it to `open-pr-closeout`; the requested PR
-   result moves it to `tracker-closeout` or terminal; verified tracker action
-   moves it to terminal. For `tracker-closeout`,
+6. **Complete lifecycles.** Hand off through the table. Route every
+   `open-pr-closeout`, including fix publication, through `pr-closeout-loop`;
+   it invokes thread review as needed and owns commit/push gates. An observed
+   commit moves `implementation` to `initial-publication` (or terminal when a
+   local commit is the target); an observed PR moves it to `open-pr-closeout`;
+   the requested PR result moves it to `tracker-closeout` or terminal; verified
+   tracker action moves it to terminal. For `tracker-closeout`,
    freeze item/revision, exact action, and authority; re-fetch immediately before
    mutation and verify afterward. Drift blocks. Accept only gated results.
 7. **Refresh and continue.** After each terminal unit, fetch the target branch
@@ -96,8 +98,7 @@ Companion Handoffs.
 | `simplify` | Resolved scope; the recorded unattended selection policy when unattended | Findings applied per selection, or presented for selection |
 | `commit-message` | Staged snapshot; an explicit `message+commit` request plus authorization covering the commit | Message and rationale, then the commit SHA |
 | `pr-generator` | Exact base; tests changed, run, and unavailable; create-or-update intent; authorization covering the push and PR action | Draft, then PR URL or Blocked Report |
-| `pr-comment-review` | PR identity; approval scope for fixes and replies | Dispositions, replies posted, or Blocked Report |
-| `pr-closeout-loop` | PR identity; requested terminal state; target branch; authorization verbatim; TDD exemption; wait policy | Requested state, merge commit, or Blocked Report |
+| `pr-closeout-loop` | PR identity; requested terminal state; target branch; authorization verbatim for fixes/commits/pushes/replies/merge; TDD exemption; wait policy | Requested state, published fixes, replies, merge commit, or Blocked Report |
 | `integration-branch-orchestrator` | Sources; integration/protected refs; topology and closeout authority; merge owner; expected checkpoint | Promotion checkpoint or Blocked Report |
 
 ## State Ledger
@@ -107,7 +108,7 @@ Keep a temp ledger using the shared convention:
 ```text
 request_identity: <source and per-unit inventory revisions>
 plan_identity: <recorded tuple>
-unit: <id and disposition>
+unit: <id, disposition, lifecycle, pending tracker action or none>
 repo_base_head: <repo, base ref/OID, unit head OID>
 authorization: <exact current scope>
 validation: <changed; run=result@OID; unavailable>

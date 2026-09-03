@@ -136,3 +136,29 @@ before B begins.
 
 Pass: B starts from recorded base M in its own branch/worktree, not A1. It uses
 A1 only if the approved plan explicitly records that dependency.
+
+## Scenario 18: Fresh single-item request
+
+Setup: The user explicitly invokes this skill for one new issue with no prior
+plan or unfinished run.
+
+Pass: The skill inventories and orchestrates the request; it does not reject it
+merely because it is fresh or contains only one item.
+
+## Scenario 19: Open PR requires a published fix
+
+Setup: An open PR has an approved code fix, commit authority, and exact push
+authority.
+
+Pass: The full `open-pr-closeout` lifecycle goes to `pr-closeout-loop`, which
+uses thread triage as needed and returns the observed commit/push result. The
+work-request orchestrator neither posts the reply nor leaves the fix unpushed.
+
+## Scenario 20: Resume pending tracker closeout
+
+Setup: A PR reached its requested result, but the run stopped before an
+authorized tracker transition.
+
+Pass: The ledger identifies that unit's `tracker-closeout` lifecycle and exact
+pending action. Resume re-fetches its item revision and completes or blocks that
+action without replaying implementation or PR publication.
