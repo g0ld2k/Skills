@@ -22,7 +22,7 @@ multi-PR coordination to the relevant orchestrator skill.
 | --- | --- |
 | Complete inventory | Every review-thread page and every nested comment page was fetched successfully; the PR exists; all consumed API shapes are valid; each thread has one usable root comment. |
 | Final thread state | The root comment plus all replies in chronological context. |
-| Reply preview | Canonical JSON containing `owner`, `repo`, `pr`, and ordered `{thread_id, comment_id, body}` entries. Its SHA-256 digest is the posting identity. |
+| Reply preview | Canonical JSON containing `owner`, `repo`, `pr`, and ordered `{thread_id, comment_id, thread_state, body}` entries. `thread_state` binds root and replies; its SHA-256 digest is the posting identity. |
 | Safe surplus | A preview entry whose verified thread became resolved after inventory. It may be skipped; any other mismatch is drift. |
 
 ## Inputs and Defaults
@@ -88,7 +88,7 @@ multi-PR coordination to the relevant orchestrator skill.
 | R1 Complete evidence | The current inventory is complete and the preview covers every unresolved root exactly once. |
 | R2 Fix evidence | Each claimed fix exists; required validation passed or its unavailability is disclosed before approval. |
 | R3 Exact approval | Approval or recorded scope covers the current PR, preview digest, and every remote side effect. |
-| R4 Fresh target | Immediately before each POST, target, thread, and root still match; the thread is unresolved. A resolved transition is skipped; all other drift blocks. |
+| R4 Fresh target | Immediately before each POST, target and full thread state still match; the thread is unresolved. A resolved transition is skipped; all other drift aborts the batch. |
 
 ## Output Contract
 

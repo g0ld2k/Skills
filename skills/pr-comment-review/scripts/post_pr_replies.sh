@@ -57,12 +57,15 @@ sha256_file() {
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-review-post.XXXXXX")"
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
+requested_file="$work_dir/requested.json"
 canonical_file="$work_dir/preview.json"
 unresolved_file="$work_dir/unresolved.json"
 iterator_file="$work_dir/replies.ndjson"
 payload_file="$work_dir/payload.json"
+approved_state_file="$work_dir/approved-state.json"
+current_state_file="$work_dir/current-state.json"
 
-# Snapshot the target and reply bytes once; every gate and POST uses this copy.
+# Snapshot the target and reply bytes once.
 jq -ce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
   def positive_integer: type == "number" and . > 0 and floor == .;
   if type == "array" and all(.[];
@@ -73,15 +76,27 @@ jq -ce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
   then {owner: $owner, repo: $repo, pr: $pr,
         replies: [.[] | {thread_id, comment_id, body}]}
   else error("invalid replies file") end
-' "$replies_file" > "$canonical_file" \
+' "$replies_file" > "$requested_file" \
   || { echo "Failing replies file (each entry requires thread_id, positive-integer comment_id, and nonempty string body)" >&2; exit 2; }
 
 if [[ "$dry_run" == false ]]; then
-  actual_digest="sha256:$(sha256_file "$canonical_file")"
+  actual_digest="sha256:$(sha256_file "$preview_file")"
   [[ "$actual_digest" == "$approved_digest" ]] \
-    || { echo "Failing approval preview (digest does not cover current target and replies)" >&2; exit 2; }
-  cmp -s "$canonical_file" "$preview_file" \
+    || { echo "Failing approval preview (digest does not cover the supplied artifact)" >&2; exit 2; }
+  jq -e --slurpfile requested "$requested_file" '
+    type == "object"
+    and (.owner == $requested[0].owner)
+    and (.repo == $requested[0].repo)
+    and (.pr == $requested[0].pr)
+    and ([.replies[] | {thread_id, comment_id, body}] == $requested[0].replies)
+    and all(.replies[];
+      (.thread_state == null)
+      or ((.thread_state | type == "object")
+          and (.thread_state.root | type == "object")
+          and (.thread_state.replies | type == "array")))
+  ' "$preview_file" >/dev/null \
     || { echo "Failing approval preview (artifact differs from current target or replies)" >&2; exit 2; }
+  cp "$preview_file" "$canonical_file"
 fi
 
 refresh_inventory() {
@@ -92,11 +107,27 @@ refresh_inventory() {
     | [$unresolved[0][] | {thread_id, comment_id}] as $required
     | ($provided | length) == ($provided | unique_by(.thread_id) | length)
       and (($required - $provided) | length == 0)
-  ' "$canonical_file" >/dev/null \
+  ' "$requested_file" >/dev/null \
     || { echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2; return 2; }
 }
 
 refresh_inventory || exit 2
+
+if [[ "$dry_run" == true ]]; then
+  jq -ce --slurpfile unresolved "$unresolved_file" '
+    . as $requested
+    | {owner, repo, pr,
+       replies: [$requested.replies[] as $reply
+         | [$unresolved[0][]
+             | select(.thread_id == $reply.thread_id and .comment_id == $reply.comment_id)] as $matches
+         | if ($matches | length) > 1 then error("duplicate inventory target")
+           elif ($matches | length) == 0 then $reply + {thread_state: null}
+           else $reply + {thread_state: ($matches[0] | {
+             root: {author, path, line, body, created_at}, replies: (.replies // [])
+           })} end]}
+  ' "$requested_file" > "$canonical_file" \
+    || { echo "Failing replies file (could not bind preview to thread content)" >&2; exit 2; }
+fi
 
 jq -c '.replies[]' "$canonical_file" > "$iterator_file" \
   || { echo "Failing replies file (could not enumerate replies)" >&2; exit 2; }
@@ -117,7 +148,32 @@ thread_state() {
   [[ "$(jq -r '.data.node.isResolved' "$response_file")" == false ]] || return 10
 }
 
-posted=0; would_post=0; skipped=0; failed=0
+verify_thread_state() {
+  local reply="$1" thread_id="$2" comment_id="$3" match_count rc
+  match_count="$(jq --arg tid "$thread_id" --argjson cid "$comment_id" \
+    '[.[] | select(.thread_id == $tid and .comment_id == $cid)] | length' "$unresolved_file")" \
+    || return 20
+  if [[ "$match_count" == 1 ]]; then
+    jq -ce --arg tid "$thread_id" --argjson cid "$comment_id" '
+      [.[] | select(.thread_id == $tid and .comment_id == $cid)][0]
+      | {root: {author, path, line, body, created_at}, replies: (.replies // [])}
+    ' "$unresolved_file" > "$current_state_file" || return 20
+    jq -ce '.thread_state | select(. != null)' <<<"$reply" > "$approved_state_file" \
+      || return 20
+    cmp -s "$approved_state_file" "$current_state_file" || return 20
+  elif [[ "$match_count" != 0 ]]; then
+    return 20
+  fi
+
+  rc=0
+  thread_state "$thread_id" "$comment_id" || rc=$?
+  if [[ "$match_count" == 0 && $rc -eq 0 ]]; then
+    return 20
+  fi
+  return "$rc"
+}
+
+posted=0; would_post=0; skipped=0; failed=0; aborted=false
 while IFS= read -r reply; do
   thread_id="$(jq -r '.thread_id' <<<"$reply")"
   comment_id="$(jq -r '.comment_id' <<<"$reply")"
@@ -125,7 +181,7 @@ while IFS= read -r reply; do
     refresh_inventory || exit 2
   fi
   rc=0
-  thread_state "$thread_id" "$comment_id" || rc=$?
+  verify_thread_state "$reply" "$thread_id" "$comment_id" || rc=$?
   if [[ $rc -eq 10 ]]; then
     echo "Skipping comment $comment_id (thread $thread_id already resolved)"
     skipped=$((skipped + 1))
@@ -133,7 +189,8 @@ while IFS= read -r reply; do
   elif [[ $rc -ne 0 ]]; then
     echo "Failing comment $comment_id (fresh thread check failed)" >&2
     failed=$((failed + 1))
-    continue
+    aborted=true
+    break
   fi
 
   if [[ "$dry_run" == true ]]; then
@@ -142,14 +199,18 @@ while IFS= read -r reply; do
     continue
   fi
 
-  jq -c '{body}' <<<"$reply" > "$payload_file" \
-    || { echo "Failing comment $comment_id (could not build payload)" >&2; failed=$((failed + 1)); continue; }
+  if ! jq -c '{body}' <<<"$reply" > "$payload_file"; then
+    echo "Failing comment $comment_id (could not build payload)" >&2
+    failed=$((failed + 1)); aborted=true; break
+  fi
   if gh api -X POST "repos/$owner/$repo/pulls/$pr_number/comments/$comment_id/replies" --input "$payload_file" >/dev/null; then
     echo "Posted reply to comment $comment_id"
     posted=$((posted + 1))
   else
     echo "Failed posting reply to comment $comment_id" >&2
     failed=$((failed + 1))
+    aborted=true
+    break
   fi
 done < "$iterator_file"
 
@@ -166,4 +227,4 @@ if [[ "$dry_run" == true && $failed -eq 0 ]]; then
 fi
 
 echo "Summary: posted=$posted would_post=$would_post skipped=$skipped failed=$failed dry_run=$dry_run"
-[[ $failed -eq 0 ]] || exit 2
+[[ "$aborted" == false && $failed -eq 0 ]] || exit 2

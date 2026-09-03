@@ -31,9 +31,10 @@ bash "$skill_dir/scripts/post_pr_replies.sh" \
 ```
 
 The helper re-fetches the complete inventory, verifies exact unresolved-root
-coverage, checks each target, and writes canonical preview JSON. Present the
-artifact and printed `sha256:...` digest for approval. Approval must name that
-digest and cover posting all represented replies.
+coverage, checks each target, and writes canonical preview JSON that embeds the
+root and all replies for each active thread. Present the artifact and printed
+`sha256:...` digest for approval. Approval must name that digest and cover
+posting all represented replies.
 
 After approval, do not edit the replies, target, preview, or digest. Post with:
 
@@ -45,12 +46,12 @@ bash "$skill_dir/scripts/post_pr_replies.sh" \
   --approved-digest <sha256:...>
 ```
 
-The helper reconstructs the canonical preview from current inputs and compares
-both its bytes and digest before any POST. It then refreshes the unresolved
-inventory and checks each target immediately before mutation. A newly resolved
-thread is a reported skip. A changed target, root mapping, added unresolved
-thread, lookup failure, or malformed response blocks; rebuild the inventory and
-obtain fresh approval.
+The helper verifies the artifact digest and its target/reply bytes, then
+refreshes the complete inventory before each mutation. Root edits, new replies,
+changed mappings, or added unresolved threads invalidate the approved thread
+state. A newly resolved thread is a reported skip. Any other drift, lookup
+failure, or malformed response aborts the remaining batch; rebuild the preview
+and obtain fresh approval.
 
 Reply bodies are sent as JSON input files, never command-line fields.
 
@@ -58,8 +59,8 @@ Reply bodies are sent as JSON input files, never command-line fields.
 
 Fetch every outer thread page and nested comment page. Reject API errors,
 missing targets, malformed nodes, and incomplete cursors. Construct the same
-canonical preview shape and present its exact text for approval; without a
-helper to compute a digest, approval binds to those displayed bytes. After
-exact approval, reconstruct the preview and compare it byte for byte, then
-verify repository, PR, thread, root comment, and unresolved state immediately
-before each reply mutation.
+canonical preview, including full thread state, and present its exact text for
+approval; without a digest helper, approval binds to those bytes. After exact
+approval, compare target, reply, root, and reply-history state byte for byte,
+then verify repository, PR, root, and unresolved state immediately before each
+reply. Abort all later replies on any uncertain check.

@@ -92,3 +92,18 @@ later reply is posted under the stale preview.
 Setup: neither `shasum` nor `sha256sum` is available.
 Pass: dry-run exits nonzero before inventory or posting and never prints an
 empty successful digest.
+
+## Scenario 14: Thread content changes after approval
+
+Setup: After preview approval, a reviewer edits the root body or adds a reply
+without changing the thread and root IDs.
+
+Pass: The next complete refresh differs from the approved `thread_state`; no
+reply is posted until a new preview and approval bind the updated conversation.
+
+## Scenario 15: Fresh-state lookup fails mid-batch
+
+Setup: A batch has several replies and the point lookup for one target fails.
+
+Pass: That uncertainty aborts the batch. No later target is checked or posted;
+the failure is never accumulated while mutation continues.

@@ -423,6 +423,99 @@ class PostPRRepliesTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertEqual(post_log.read_text().splitlines(), ["POST"])
 
+    def test_preview_digest_changes_when_thread_content_changes(self) -> None:
+        replies = [
+            {"thread_id": "PRRT_one", "comment_id": 101, "body": "Addressed."}
+        ]
+        original = [{
+            "thread_id": "PRRT_one",
+            "comment_id": 101,
+            "author": "reviewer",
+            "path": "skill.md",
+            "line": 10,
+            "body": "Original request",
+            "created_at": "2026-09-01T00:00:00Z",
+            "replies": [],
+        }]
+        edited = [{**original[0], "body": "Edited request"}]
+
+        first = self.run_dry_run(original, replies)
+        second = self.run_dry_run(edited, replies)
+
+        first_digest = re.search(r"sha256:[0-9a-f]{64}", first.stdout)
+        second_digest = re.search(r"sha256:[0-9a-f]{64}", second.stdout)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIsNotNone(first_digest)
+        self.assertIsNotNone(second_digest)
+        self.assertNotEqual(first_digest.group(0), second_digest.group(0))
+
+    def test_post_aborts_batch_after_fresh_state_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pr-comment-state-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "printf '%s\\n' '[{\"thread_id\":\"PRRT_one\",\"comment_id\":101},"
+                "{\"thread_id\":\"PRRT_two\",\"comment_id\":202}]' > \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            state_count = temp_path / "state-count"
+            state_count.write_text("0")
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    if [[ "$*" == *" -X POST "* ]]; then echo POST >> "$POST_LOG"; exit 0; fi
+                    count="$(<"$STATE_COUNT")"
+                    echo $((count + 1)) > "$STATE_COUNT"
+                    [[ "$count" != 2 ]] || exit 71
+                    comment_id=101
+                    [[ "$*" != *"id=PRRT_two"* ]] || comment_id=202
+                    cat <<JSON
+                    {"data":{"node":{"isResolved":false,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":$comment_id,"replyTo":null}]}}}}
+                    JSON
+                    """
+                )
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies = temp_path / "replies.json"
+            preview = temp_path / "preview.json"
+            replies.write_text(json.dumps([
+                {"thread_id": "PRRT_one", "comment_id": 101, "body": "One"},
+                {"thread_id": "PRRT_two", "comment_id": 202, "body": "Two"},
+            ]))
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["STATE_COUNT"] = str(state_count)
+            environment["POST_LOG"] = str(post_log)
+            base = ["bash", str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k", "--repo", "Skills", "--pr", "7", "--replies-file", str(replies), "--preview-file", str(preview)]
+            dry_run = subprocess.run([*base, "--dry-run"], capture_output=True, text=True, env=environment)
+            digest = re.search(r"sha256:[0-9a-f]{64}", dry_run.stdout)
+            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            self.assertIsNotNone(digest)
+
+            result = subprocess.run([*base, "--approved-digest", digest.group(0)], capture_output=True, text=True, env=environment)
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("failed=1", result.stdout)
+            self.assertFalse(post_log.exists())
+
     def test_dry_run_fails_without_a_sha256_tool(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pr-comment-hash-") as temp:
             temp_path = Path(temp)
