@@ -190,6 +190,47 @@ class FrontmatterParserTests(unittest.TestCase):
 
         self.assertTrue(errors)
 
+    def test_yaml_anchor_cannot_hide_an_explicit_only_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: integration-branch-orchestrator\n"
+                "description: &summary Use when coordinating PRs.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            _, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNotNone(error)
+
+    def test_unquoted_numeric_description_is_not_coerced_to_string(self) -> None:
+        errors = self.parse_and_validate_description(
+            "integration-branch-orchestrator",
+            "42",
+        )
+
+        self.assertTrue(errors)
+
+    def test_every_yaml_line_separator_breaks_a_one_line_summary(self) -> None:
+        for escape in (r"\r", r"\v", r"\f", r"\N", r"\L", r"\P"):
+            with self.subTest(escape=escape):
+                errors = self.parse_and_validate_description(
+                    "integration-branch-orchestrator",
+                    f'"Human summary.{escape}Second line."',
+                )
+                self.assertTrue(errors)
+
+    def test_trailing_yaml_line_separator_breaks_a_one_line_summary(self) -> None:
+        errors = self.parse_and_validate_description(
+            "integration-branch-orchestrator",
+            r'"Human summary.\r"',
+        )
+
+        self.assertTrue(errors)
+
     def test_unsupported_double_quoted_escape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             skill_file = Path(directory) / "SKILL.md"

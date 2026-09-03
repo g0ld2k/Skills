@@ -129,6 +129,40 @@ def decode_quoted_scalar(value: str) -> str:
     return "".join(result)
 
 
+YAML_INTEGER_RE = re.compile(
+    r"[-+]?(?:0|[1-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+)$"
+)
+YAML_FLOAT_RE = re.compile(
+    r"[-+]?(?:(?:[0-9][0-9_]*)?\.[0-9_]+(?:[eE][-+]?[0-9]+)?|"
+    r"[0-9][0-9_]*[eE][-+]?[0-9]+|\.inf|\.Inf|\.INF|\.nan|\.NaN|\.NAN)$"
+)
+
+
+def decode_yaml_scalar(value: str) -> object:
+    """Decode the supported YAML scalar node without string-coercing types."""
+    if not value:
+        return ""
+    if value[0] in {"'", '"'}:
+        return decode_quoted_scalar(value)
+    if value[0] in {"&", "*", "!"}:
+        raise ValueError("anchors, aliases, and explicit tags are not supported")
+    if value[0] in {"[", "{"}:
+        raise ValueError("flow collections are not supported")
+
+    lowered = value.lower()
+    if lowered in {"null", "~"}:
+        return None
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if YAML_INTEGER_RE.fullmatch(value):
+        return int(value.replace("_", ""), 0)
+    if YAML_FLOAT_RE.fullmatch(value):
+        return float(value.replace("_", ""))
+    return value
+
+
 def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -165,14 +199,10 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
         if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
             return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
         try:
-            parsed_value = decode_quoted_scalar(raw_value)
+            parsed_value = decode_yaml_scalar(raw_value)
         except ValueError as exc:
             return {}, f"invalid YAML scalar for {current_key}: {exc}"
-        if not is_quoted and parsed_value == "true":
-            data[current_key] = True
-        elif not is_quoted and parsed_value == "false":
-            data[current_key] = False
-        elif not is_quoted and parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
+        if not is_quoted and parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
             block_lines: list[str] = []
             while index < len(frontmatter_lines):
                 block_line = frontmatter_lines[index]
@@ -184,7 +214,7 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
             data[current_key] = (
                 " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
             )
-        elif parsed_value:
+        elif parsed_value is not None and parsed_value != "":
             data[current_key] = parsed_value
         else:
             data[current_key] = []
@@ -289,7 +319,7 @@ def validate_skill_description(
     if not description:
         return
     if name in EXPLICIT_ONLY_SKILLS:
-        if "\n" in description or description.startswith("Use when"):
+        if description.splitlines() != [description] or description.startswith("Use when"):
             errors.append(
                 f"{skill_file}: explicit-only description must be a one-line human-facing summary"
             )
