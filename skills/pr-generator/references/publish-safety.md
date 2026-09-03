@@ -11,8 +11,12 @@ effective URL must map to the inventoried PR head repository, while the base
 OID comes from the target repository URL.
 
 ```bash
-gh pr list --repo "$target_repo" --head "$approved_head_selector" --state open \
-  --json number,url,title,body,baseRefName,headRefOid,headRepositoryOwner
+# Existing update: query its approved number, then verify head repo/ref.
+gh pr view "$pr_number" --repo "$target_repo" \
+  --json number,url,title,body,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner
+# Approved absence: list by the unqualified branch, then verify every candidate's head repo.
+gh pr list --repo "$target_repo" --head "$approved_head_branch" --state open \
+  --json number,url,title,body,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner
 git ls-remote "$target_url" "refs/heads/$base_branch"
 git ls-remote "$push_url" "refs/heads/$push_branch"
 ```
@@ -20,9 +24,9 @@ git ls-remote "$push_url" "refs/heads/$push_branch"
 An empty `gh pr list` result is the documented no-open-PR state; a command
 error is a lookup failure.
 
-Derive `approved_head_selector` from the fingerprint's head repository and
-full head ref, not the local branch name. This includes a configured push ref
-whose branch component differs from the checkout branch.
+Derive the unqualified `approved_head_branch` from the fingerprint's full head
+ref, not the local branch. Never pass `owner:branch` to `gh pr list`; verify the
+returned head repository separately and reject zero or multiple exact matches.
 
 For create, re-derive the approved selector from the effective push URL: a bare
 branch for the target repository; `user:branch` only for a verified user-owned
@@ -43,9 +47,15 @@ a valid observed state only when the fingerprint recorded that absence.
    branch name:
 
    ```bash
-   git push "$push_remote" \
+   git push \
+     --force-with-lease="refs/heads/$push_branch:$approved_before_oid" \
+     "$push_remote" \
      "$approved_local_oid:refs/heads/$push_branch"
    ```
+
+   For recorded absence, the lease's expected value is empty. This is a
+   compare-and-swap guard, not rewrite authority: the approved update must
+   still be a verified fast-forward from a present before-OID.
 
 3. Fetch the exact branch, PR, and base again. G4 accepts only the planned
    branch/head transition from the recorded before OID (or absence) to

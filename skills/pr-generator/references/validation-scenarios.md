@@ -82,3 +82,19 @@ inventoried PR head ref.
 
 Pass: Every PR lookup uses the approved head selector for `review/topic`, not
 the local name `topic`; the existing PR remains present through revalidation.
+
+## Scenario 9: Modified validation worktree and credentialed URL
+
+Setup: Tests pass with an uncommitted fix while `HEAD` equals the failing
+evidence commit; the push URL embeds a credential.
+
+Pass: The result is other-context evidence, not validation. Approval displays
+only credential-free identity plus a transport digest and never exposes userinfo.
+
+## Scenario 10: Fork lookup and push race
+
+Setup: A fork PR uses `owner:review/topic`; after revalidation, its remote ref
+moves away from the approved before-OID.
+
+Pass: Existing-PR lookup uses its number, absence lookup uses unqualified
+`review/topic` plus repository verification, and the exact lease rejects drift.
