@@ -7,7 +7,7 @@ license: MIT
 # Commit Message
 
 Draft a Conventional Commit from one staged snapshot and, when asked, commit
-only that authorized draft.
+that authorized draft.
 
 ## When to Use
 
@@ -46,10 +46,11 @@ several. Staging, amend, and push are also separate.
 git rev-parse --is-inside-work-tree                 # must print true
 test -e "$(git rev-parse --git-path MERGE_HEAD)"    # exists = merge in progress: block
 git diff --cached --quiet; echo $?                  # 0 nothing staged; 1 continue; else Git error
-draft_parent="$(git rev-parse --verify HEAD)"       # unborn HEAD: see commit-safety.md
+draft_parent="$(git rev-parse --verify HEAD)"       # unborn: see commit-safety.md
+evidence_base="$draft_parent"
 staged_tree="$(git write-tree)"
 git --no-pager diff --no-color --no-ext-diff --no-textconv \
-  --patch-with-stat --summary "$draft_parent" "$staged_tree"
+  --patch-with-stat --summary "$evidence_base" "$staged_tree"
 ```
 
 Read the diff once from those two OIDs, never from later live-index reads, so
@@ -59,8 +60,8 @@ only when parent, tree, and diff are recorded; any other Git status blocks.
 ### 2. Draft
 
 Choose a Conventional Commit type (`feat`, `fix`, `refactor`, `perf`, `docs`,
-`test`, `build`, `ci`,
-`chore`, `style`, or `revert`). Add a scope only when staged paths or content
+`test`, `build`, `ci`, `chore`, `style` (formatting/whitespace only), or
+`revert`). Add a scope only when staged paths or content
 consistently name one component. Use `!` and a `BREAKING CHANGE:` footer only
 for an evidenced incompatible change.
 
