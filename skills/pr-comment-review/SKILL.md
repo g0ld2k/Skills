@@ -77,9 +77,9 @@ multi-PR coordination to the relevant orchestrator skill.
    thread, then follow the mandatory
    [reply-safety.md](references/reply-safety.md) procedure. Dry-run to create
    the canonical preview and digest; obtain approval for that exact digest.
-5. **Post and report.** Revalidate immediately before every POST. Skip only a
-   newly resolved safe surplus. Any other drift discards the preview and
-   returns to inventory, drafting, and approval.
+5. **Post and report.** Immediately before every POST, revalidate all
+   unprocessed targets. Skip only a newly resolved safe surplus. Any other drift
+   discards the preview and returns to inventory, drafting, and approval.
 
 ## Reply Gates
 
@@ -88,7 +88,7 @@ multi-PR coordination to the relevant orchestrator skill.
 | R1 Complete evidence | The current inventory is complete and the preview covers every unresolved root exactly once. |
 | R2 Fix evidence | Each claimed fix exists; required validation passed or its unavailability is disclosed before approval. |
 | R3 Exact approval | Approval or recorded scope covers the current PR, preview digest, and every remote side effect. |
-| R4 Fresh target | Immediately before each POST, target and full thread state still match; the thread is unresolved. A resolved transition is skipped; all other drift aborts the batch. |
+| R4 Fresh targets | Before each POST, every unprocessed target and full thread state still matches. A resolved transition is skipped; all other drift aborts the batch. |
 
 ## Output Contract
 

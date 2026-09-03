@@ -59,8 +59,8 @@ cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 requested_file="$work_dir/requested.json"
 canonical_file="$work_dir/preview.json"
+approved_artifact_file="$work_dir/approved-preview.json"
 unresolved_file="$work_dir/unresolved.json"
-iterator_file="$work_dir/replies.ndjson"
 payload_file="$work_dir/payload.json"
 approved_state_file="$work_dir/approved-state.json"
 current_state_file="$work_dir/current-state.json"
@@ -80,23 +80,25 @@ jq -sce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
   || { echo "Failing replies file (each entry requires thread_id, positive-integer comment_id, and nonempty string body)" >&2; exit 2; }
 
 if [[ "$dry_run" == false ]]; then
-  cp "$preview_file" "$canonical_file" \
+  cp "$preview_file" "$approved_artifact_file" \
     || { echo "Failing approval preview (could not snapshot artifact)" >&2; exit 2; }
-  actual_digest="sha256:$(sha256_file "$canonical_file")"
+  actual_digest="sha256:$(sha256_file "$approved_artifact_file")"
   [[ "$actual_digest" == "$approved_digest" ]] \
     || { echo "Failing approval preview (digest does not cover the supplied artifact)" >&2; exit 2; }
-  jq -e --slurpfile requested "$requested_file" '
-    type == "object"
-    and (.owner == $requested[0].owner)
-    and (.repo == $requested[0].repo)
-    and (.pr == $requested[0].pr)
-    and ([.replies[] | {thread_id, comment_id, body}] == $requested[0].replies)
-    and all(.replies[];
-      (.thread_state == null)
-      or ((.thread_state | type == "object")
-          and (.thread_state.root | type == "object")
-          and (.thread_state.replies | type == "array")))
-  ' "$canonical_file" >/dev/null \
+  jq -sce --slurpfile requested "$requested_file" '
+    if length == 1 and (.[0] |
+      type == "object"
+      and (.owner == $requested[0].owner)
+      and (.repo == $requested[0].repo)
+      and (.pr == $requested[0].pr)
+      and ([.replies[] | {thread_id, comment_id, body}] == $requested[0].replies)
+      and all(.replies[];
+        (.thread_state == null)
+        or ((.thread_state | type == "object")
+            and (.thread_state.root | type == "object")
+            and (.thread_state.replies | type == "array"))))
+    then .[0] else error("invalid approval preview") end
+  ' "$approved_artifact_file" > "$canonical_file" \
     || { echo "Failing approval preview (artifact differs from current target or replies)" >&2; exit 2; }
 fi
 
@@ -130,7 +132,7 @@ if [[ "$dry_run" == true ]]; then
     || { echo "Failing replies file (could not bind preview to thread content)" >&2; exit 2; }
 fi
 
-jq -c '.replies[]' "$canonical_file" > "$iterator_file" \
+reply_count="$(jq -r '.replies | length' "$canonical_file")" \
   || { echo "Failing replies file (could not enumerate replies)" >&2; exit 2; }
 
 thread_state() {
@@ -174,8 +176,30 @@ verify_thread_state() {
   return "$rc"
 }
 
+remaining_current_rc=0
+remaining_failed_comment_id=""
+verify_remaining_states() {
+  local start="$1" index candidate thread_id comment_id rc
+  remaining_current_rc=0
+  remaining_failed_comment_id=""
+  for ((index = start; index < reply_count; index++)); do
+    candidate="$(jq -c --argjson index "$index" '.replies[$index]' "$canonical_file")" \
+      || return 20
+    thread_id="$(jq -r '.thread_id' <<<"$candidate")"
+    comment_id="$(jq -r '.comment_id' <<<"$candidate")"
+    rc=0
+    verify_thread_state "$candidate" "$thread_id" "$comment_id" || rc=$?
+    if ((index == start)); then remaining_current_rc=$rc; fi
+    if [[ $rc -ne 0 && $rc -ne 10 ]]; then
+      remaining_failed_comment_id="$comment_id"
+      return 20
+    fi
+  done
+}
+
 posted=0; would_post=0; skipped=0; failed=0; aborted=false
-while IFS= read -r reply; do
+for ((reply_index = 0; reply_index < reply_count; reply_index++)); do
+  reply="$(jq -c --argjson index "$reply_index" '.replies[$index]' "$canonical_file")"
   thread_id="$(jq -r '.thread_id' <<<"$reply")"
   comment_id="$(jq -r '.comment_id' <<<"$reply")"
   if [[ "$dry_run" == false ]]; then
@@ -184,9 +208,17 @@ while IFS= read -r reply; do
       aborted=true
       break
     fi
+    if ! verify_remaining_states "$reply_index"; then
+      echo "Failing comment ${remaining_failed_comment_id:-$comment_id} (fresh thread check failed)" >&2
+      failed=$((failed + 1))
+      aborted=true
+      break
+    fi
+    rc=$remaining_current_rc
+  else
+    rc=0
+    verify_thread_state "$reply" "$thread_id" "$comment_id" || rc=$?
   fi
-  rc=0
-  verify_thread_state "$reply" "$thread_id" "$comment_id" || rc=$?
   if [[ $rc -eq 10 ]]; then
     echo "Skipping comment $comment_id (thread $thread_id already resolved)"
     skipped=$((skipped + 1))
@@ -217,7 +249,7 @@ while IFS= read -r reply; do
     aborted=true
     break
   fi
-done < "$iterator_file"
+done
 
 if [[ "$dry_run" == true && $failed -eq 0 ]]; then
   if [[ -n "$preview_file" ]]; then

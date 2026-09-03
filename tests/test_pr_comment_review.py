@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -434,6 +435,168 @@ class PostPRRepliesTests(unittest.TestCase):
             self.assertIsNotNone(digest)
 
             result = subprocess.run([*base, "--approved-digest", digest.group(0)], capture_output=True, text=True, env=environment)
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(post_log.read_text().splitlines(), ["POST"])
+            self.assertIn("Summary: posted=1", result.stdout)
+            self.assertIn("failed=1", result.stdout)
+
+    def test_post_rejects_multiple_preview_documents(self) -> None:
+        """One approved artifact cannot smuggle a second posting batch."""
+        with tempfile.TemporaryDirectory(prefix="pr-comment-preview-stream-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "cp \"$FETCH_STATE\" \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ $* == *' -X POST '* ]]; then echo POST >> \"$POST_LOG\"; exit 0; fi\n"
+                "printf '%s\\n' '{\"data\":{\"node\":{\"isResolved\":false,\"pullRequest\":{\"number\":7,\"repository\":{\"owner\":{\"login\":\"g0ld2k\"},\"name\":\"Skills\"}},\"comments\":{\"nodes\":[{\"databaseId\":101,\"replyTo\":null}]}}}}'\n"
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            inventory = [{
+                "thread_id": "PRRT_one", "comment_id": 101,
+                "author": "reviewer", "path": "skill.md", "line": 1,
+                "body": "Request", "created_at": "2026-09-01T00:00:00Z",
+                "replies": [],
+            }]
+            fetch_state = temp_path / "fetch-state.json"
+            fetch_state.write_text(json.dumps(inventory))
+            replies = temp_path / "replies.json"
+            replies.write_text(json.dumps([
+                {"thread_id": "PRRT_one", "comment_id": 101, "body": "Reply"}
+            ]))
+            preview = temp_path / "preview.json"
+            preview_object = {
+                "owner": "g0ld2k", "repo": "Skills", "pr": 7,
+                "replies": [{
+                    "thread_id": "PRRT_one", "comment_id": 101, "body": "Reply",
+                    "thread_state": {
+                        "root": {
+                            "author": "reviewer", "path": "skill.md", "line": 1,
+                            "body": "Request", "created_at": "2026-09-01T00:00:00Z",
+                        },
+                        "replies": [],
+                    },
+                }],
+            }
+            document = json.dumps(preview_object, separators=(",", ":"))
+            preview.write_text(f"{document}\n{document}\n")
+            digest = "sha256:" + hashlib.sha256(preview.read_bytes()).hexdigest()
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FETCH_STATE"] = str(fetch_state)
+            environment["POST_LOG"] = str(post_log)
+
+            result = subprocess.run(
+                ["bash", str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k",
+                 "--repo", "Skills", "--pr", "7", "--replies-file", str(replies),
+                 "--preview-file", str(preview), "--approved-digest", digest],
+                capture_output=True, text=True, env=environment,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("approval preview", result.stderr)
+            self.assertFalse(post_log.exists())
+
+    def test_post_checks_all_remaining_states_before_each_mutation(self) -> None:
+        """Future-target drift must stop the next mutation, not a later one."""
+        with tempfile.TemporaryDirectory(prefix="pr-comment-future-drift-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            original = [
+                {"thread_id": f"PRRT_{i}", "comment_id": i,
+                 "author": "reviewer", "path": "skill.md", "line": i,
+                 "body": "Original", "created_at": "2026-09-01T00:00:00Z",
+                 "replies": []}
+                for i in (101, 202, 303)
+            ]
+            changed = [*original[:2], {**original[2], "body": "Changed"}]
+            fetch_state = temp_path / "fetch-state.json"
+            changed_state = temp_path / "changed-state.json"
+            fetch_state.write_text(json.dumps(original))
+            changed_state.write_text(json.dumps(changed))
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "cp \"$FETCH_STATE\" \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(textwrap.dedent(
+                """\
+                #!/usr/bin/env bash
+                set -euo pipefail
+                if [[ "$*" == *" -X POST "* ]]; then
+                  echo POST >> "$POST_LOG"
+                  if [[ ! -e "$MUTATED" ]]; then
+                    : > "$MUTATED"
+                    cp "$CHANGED_STATE" "$FETCH_STATE"
+                  fi
+                  exit 0
+                fi
+                comment_id=101
+                [[ "$*" != *"id=PRRT_202"* ]] || comment_id=202
+                [[ "$*" != *"id=PRRT_303"* ]] || comment_id=303
+                printf '{"data":{"node":{"isResolved":false,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":%s,"replyTo":null}]}}}}\n' "$comment_id"
+                """
+            ))
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies = temp_path / "replies.json"
+            preview = temp_path / "preview.json"
+            replies.write_text(json.dumps([
+                {"thread_id": f"PRRT_{i}", "comment_id": i, "body": f"Reply {i}"}
+                for i in (101, 202, 303)
+            ]))
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FETCH_STATE"] = str(fetch_state)
+            environment["CHANGED_STATE"] = str(changed_state)
+            environment["MUTATED"] = str(temp_path / "mutated")
+            environment["POST_LOG"] = str(post_log)
+            base = ["bash", str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k",
+                    "--repo", "Skills", "--pr", "7", "--replies-file", str(replies),
+                    "--preview-file", str(preview)]
+            dry_run = subprocess.run(
+                [*base, "--dry-run"], capture_output=True, text=True, env=environment
+            )
+            digest = re.search(r"sha256:[0-9a-f]{64}", dry_run.stdout)
+            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            self.assertIsNotNone(digest)
+
+            result = subprocess.run(
+                [*base, "--approved-digest", digest.group(0)],
+                capture_output=True, text=True, env=environment,
+            )
 
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertEqual(post_log.read_text().splitlines(), ["POST"])

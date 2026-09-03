@@ -130,3 +130,20 @@ second mutation.
 
 Pass: No later reply posts; the command exits nonzero after reporting a summary
 that distinguishes the one prior post from the failed current item.
+
+## Scenario 19: Multiple approved-preview documents
+
+Setup: The approved preview artifact contains two individually valid top-level
+JSON objects and its digest covers both.
+
+Pass: Posting rejects the artifact before inventory or POST; exactly one
+top-level preview object is required.
+
+## Scenario 20: Future target drifts mid-batch
+
+Setup: Three targets are approved. After the first POST, the third thread's
+content changes while the second remains unchanged.
+
+Pass: Before the second POST, fresh inventory and state checks cover both
+remaining targets. The command aborts with `posted=1 failed=1`; neither the
+second nor third reply posts under the stale preview.

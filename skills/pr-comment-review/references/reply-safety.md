@@ -46,13 +46,13 @@ bash "$skill_dir/scripts/post_pr_replies.sh" \
   --approved-digest <sha256:...>
 ```
 
-The helper first snapshots the supplied preview into its private work directory,
-then hashes, validates, and reads only that snapshot. It refreshes the complete
-inventory before each mutation. Root edits, new replies, changed mappings, or
-added unresolved threads invalidate the approved thread state. A newly resolved
-thread is a reported skip. Any other drift, lookup failure, or malformed
-response aborts the remaining batch and reports prior mutations; rebuild the
-preview and obtain fresh approval.
+The helper snapshots the supplied preview, requires exactly one top-level JSON
+object, then hashes and reads only that snapshot. Before each mutation it
+refreshes the complete inventory and validates every unprocessed target's full
+state. Root edits, new replies, changed mappings, or added unresolved threads
+invalidate approval. A newly resolved thread is a reported skip. Any other
+drift, lookup failure, or malformed response aborts the remaining batch and
+reports prior mutations; rebuild the preview and obtain fresh approval.
 
 Reply bodies are sent as JSON input files, never command-line fields.
 
