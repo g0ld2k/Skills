@@ -77,4 +77,9 @@ After the request, fetch terminal PR state and the merge commit. Report success
 only when the expected PR is merged by the approved method into the approved
 target. A closed-but-unmerged PR, unexpected head/base transition, or ambiguous
 result is a blocker. Confirmed merge-queue enrollment is progress, not success:
-return to monitoring until terminal state or wait exhaustion.
+return to monitoring until terminal state or wait exhaustion. Queue enrollment
+must be separately authorized for a base that can advance. Without that scope,
+require an available cancellation/dequeue operation and invoke it immediately
+when the frozen base changes; if cancellation cannot be guaranteed, do not
+enroll automatically. After cancellation, discard G1–G3 and rebuild them on
+the new base before any re-enrollment.

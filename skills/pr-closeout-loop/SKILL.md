@@ -6,9 +6,8 @@ license: MIT
 
 # PR Closeout Loop
 
-Drive one existing PR to its requested terminal state or a precise blocker.
-Each mutation is grounded in a complete live snapshot, scoped authorization,
-and evidence bound to the exact state it validated.
+Drive one PR to its requested terminal state or a precise blocker, with every
+mutation bound to live evidence and scoped authorization.
 
 ## When to Use
 
@@ -21,10 +20,10 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
 | Term | Definition |
 | --- | --- |
 | Closeout surface | Exact tuple of PR identity and open state, head repository/ref/OID, base ref/OID, and PR-body SHA-256. Approval covers one tuple; any field change makes it stale. |
-| Complete feedback inventory | Every page of unresolved threads with all replies, PR conversation comments, and effective review states was fetched without lookup, authorization, shape, or pagination error. |
-| Progress | A change in terminal state, closeout surface, feedback inventory, check conclusion, approval event, or mergeability. |
+| Complete feedback inventory | All unresolved threads/replies, conversation comments, and effective reviews fetched without lookup, shape, authorization, or pagination error. |
+| Progress | Changed terminal/surface/feedback/check/approval/mergeability state. |
 | Non-trivial change | Logic, behavior, tests, CI, package, workflow, public-contract, or meaningful process/documentation work. |
-| Mutation plan | Exact action, target, before-state, intended after-state, evidence, and authorization frozen before a commit, push, reply, resolution, or merge. |
+| Mutation plan | Frozen action, target, transition, evidence, and authorization. |
 
 ## Inputs and Defaults
 
@@ -35,6 +34,7 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
 | Authorization | User or recorded caller scope | Read-only triage; every mutation blocks |
 | Approval policy | User/repository policy | Codex handoff: named reviewer; PR-body reaction changes from eyes to thumbs-up |
 | Merge target/method | Live PR and user/repository policy | Current base; normal merge commit |
+| Queue base policy | User/repository policy | Block unless moving-base authority or cancellation is available |
 | Thread resolution policy | User/repository policy | Acknowledge; resolve only with atomic digest enforcement |
 | Implementation policy | User, caller, or repository instructions | Test-first for behavior changes; an exemption must be explicit |
 | Wait policy | User or caller | Three no-progress polls, ten minutes apart |
@@ -93,8 +93,9 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    fix branch. At the wait limit, emit a Blocked Report.
 7. **Merge or block.** Freeze the repository, method, head, and base surface;
    re-fetch and evaluate G1–G7 together. Merge only through an operation that
-   atomically enforces that surface; otherwise block. Confirmed queue enrollment
-   is `Progress` and returns to monitoring until terminal state or timeout.
+   atomically enforces that surface; otherwise block. Queue enrollment requires
+   moving-base authority or a cancellation path. While queued, base drift
+   cancels/dequeues before fresh G1–G3; keep polling until terminal or timeout.
 
 ## State Ledger
 

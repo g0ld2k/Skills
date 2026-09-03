@@ -6,9 +6,8 @@ Setup: one open PR has a complete feedback inventory, fresh approval for its
 exact closeout surface, green current checks and local suite, no unrelated
 worktree changes, merge authorization, and a mergeable current head.
 Prompt: "Close out and merge this PR."
-Pass: G1–G7 are re-fetched together; the merge is conditioned on the recorded
-head OID (or blocks if the client cannot enforce that); terminal state and
-merge commit are verified and reported.
+Pass: G1–G7 are re-fetched together; the merge atomically binds both recorded
+head and base OIDs or blocks. Terminal state and merge commit are verified.
 
 ## Scenario 2: Base advanced after local suite
 
@@ -117,3 +116,12 @@ PR remains open.
 
 Pass: Enrollment resets the no-progress counter and returns to monitoring;
 success is reported only after the PR reaches merged terminal state.
+
+## Scenario 16: Base drift while queued
+
+Setup: Queue enrollment was authorized only for frozen base B. Another queued
+PR lands first, advancing the base to C.
+
+Pass: The loop cancels/dequeues before C can merge, discards G1–G3, and
+rebuilds them for C. If timely cancellation is unavailable, it never enrolls
+without explicit moving-base authorization.
