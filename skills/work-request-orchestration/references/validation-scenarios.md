@@ -110,3 +110,29 @@ selection policy.
 Pass: The recorded default selects only medium/high findings with medium/high
 confidence; lower findings wait for explicit scope rather than pausing the
 whole plan ambiguously.
+
+## Scenario 15: Validation and commit identity
+
+Setup: Checks pass on a working tree, then the created commit has a different
+tree because of stale staging or commit policy.
+
+Pass: Working-tree results are not attributed to that commit. The mismatch
+blocks or the exact commit is validated in a clean checkout before lifecycle
+completion.
+
+## Scenario 16: Explicit lifecycle transitions
+
+Setup: One unit targets a local commit; another needs publication, PR closeout,
+and tracker closeout.
+
+Pass: The first becomes terminal only after its observed commit. The second
+advances through each named lifecycle only after the corresponding verified
+result and cannot skip from implementation to terminal.
+
+## Scenario 17: Independent unit bases
+
+Setup: Units A and B are independent and share base M. A completes at commit A1
+before B begins.
+
+Pass: B starts from recorded base M in its own branch/worktree, not A1. It uses
+A1 only if the approved plan explicitly records that dependency.
