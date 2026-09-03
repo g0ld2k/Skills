@@ -74,3 +74,11 @@ a PR before or during `gh pr create`.
 
 Pass: The agent performs no edit. It re-inventories the new PR, displays a
 complete update fingerprint, and waits for update-specific approval.
+
+## Scenario 8: Effective push ref differs from the local branch
+
+Setup: Local `topic` publishes to `refs/heads/review/topic`, which is the
+inventoried PR head ref.
+
+Pass: Every PR lookup uses the approved head selector for `review/topic`, not
+the local name `topic`; the existing PR remains present through revalidation.

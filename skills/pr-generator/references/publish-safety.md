@@ -11,7 +11,7 @@ effective URL must map to the inventoried PR head repository, while the base
 OID comes from the target repository URL.
 
 ```bash
-gh pr list --repo "$target_repo" --head "$branch" --state open \
+gh pr list --repo "$target_repo" --head "$approved_head_selector" --state open \
   --json number,url,title,body,baseRefName,headRefOid,headRepositoryOwner
 git ls-remote "$target_url" "refs/heads/$base_branch"
 git ls-remote "$push_url" "refs/heads/$push_branch"
@@ -19,6 +19,10 @@ git ls-remote "$push_url" "refs/heads/$push_branch"
 
 An empty `gh pr list` result is the documented no-open-PR state; a command
 error is a lookup failure.
+
+Derive `approved_head_selector` from the fingerprint's head repository and
+full head ref, not the local branch name. This includes a configured push ref
+whose branch component differs from the checkout branch.
 
 For create, re-derive the approved selector from the effective push URL: a bare
 branch for the target repository; `user:branch` only for a verified user-owned
