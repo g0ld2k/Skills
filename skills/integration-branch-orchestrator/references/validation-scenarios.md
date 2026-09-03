@@ -144,3 +144,19 @@ then the run resumes.
 Pass: The ledger reconstructs I, E, and the exact permitted action. It accepts
 that waiver for checkpoint preparation only, never for a merge slot or another
 OID.
+
+## Scenario 19: Workflow-blocked PR leaves the active queue
+
+Setup: One PR is blocked on an unresolvable review conflict while all other
+candidates are terminal.
+
+Pass: The blocked PR remains visible as a source blocker but is excluded from
+the active queue; slot polling terminates instead of redispatching it forever.
+
+## Scenario 20: Protected ref moves before checkpoint
+
+Setup: Integration validation passes at I, then the protected ref advances so I
+no longer descends from its live OID.
+
+Pass: Final checkpoint preparation re-fetches both refs, rejects the invalid
+topology, and cannot present I as ready for promotion.

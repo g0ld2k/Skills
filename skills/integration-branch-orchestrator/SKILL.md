@@ -21,7 +21,7 @@ and cross-request/repository work to `work-request-orchestration`.
 | Run | Source/PR set, refs, authorization, and reachable scope |
 | Topology snapshot | All ref OIDs and source PR heads/bases |
 | Valid topology | Integration descends current protected OID; changes are run-scoped |
-| Active candidate | In-scope nonterminal PR |
+| Active candidate | Ready/waiting in-scope PR targeting integration; blocked/terminal excluded |
 | Base-sensitive evidence | Approval/checks/suite/mergeability/diff bound to integration OID |
 | Merge slot | Exclusive permission at an integration OID |
 | Merge owner | Slot-granting user, coordinator, or queue |
@@ -61,7 +61,7 @@ and cross-request/repository work to `work-request-orchestration`.
 
 1. **Observe the run.** Resolve sources, authorization, repository policy, and
    the topology snapshot without changing a checkout. Require valid topology
-   topology before any satisfied exit. If the requested checkpoint exists at
+   before any satisfied exit. If the requested checkpoint exists at
    the current integration OID with fresh validation, no active candidate, and
    every source is included, intentionally completed, or explicitly waived,
    report `already satisfied`. Otherwise expose each source blocker and exit
@@ -100,8 +100,9 @@ and cross-request/repository work to `work-request-orchestration`.
       and promotion even when no active candidate remains.
    Keep slot discipline until the run ends; a shrinking queue does not restore
    blanket merge authorization.
-5. **Prepare the checkpoint.** Re-fetch integration OID and every source;
-   require each source included, intentionally completed, or explicitly waived.
+5. **Prepare the checkpoint.** Re-fetch protected/integration OIDs and every
+   source; require valid topology and each source included, intentionally
+   completed, or explicitly waived.
    Require passing validation for that OID, or an exact OID/action waiver
    covering checkpoint preparation. Summarize the run against it. If promotion
    is requested, bind human approval to the checkpoint digest and promotion PR
