@@ -7,26 +7,23 @@ disable-model-invocation: true
 
 # Work Request Orchestration
 
-Turn requests into reviewable units, then coordinate implementation and PR
+Turn requests into reviewable units and coordinate implementation through
 closeout. Repository and tracker state are source truth.
 
 ## When to Use
 
-Use this explicit-only skill for an issue, milestone, epic, external plan, or
-unfinished multi-step request. Route initial PR metadata to `pr-generator`,
-review feedback to `pr-comment-review`, an open PR's CI/review/merge lifecycle
-to `pr-closeout-loop`, and integration-branch topology to
-`integration-branch-orchestrator`.
+Use explicitly for issues, milestones, epics, external plans, or unfinished
+multi-step requests. Route concrete work through the Companion Handoffs.
 
 ## Definitions
 
 | Term | Checkable definition |
 | --- | --- |
-| Complete inventory | Every requested item and pagination page was read successfully; lookup errors are blockers, never empty results. |
+| Complete inventory | Every requested item/page was read; lookup errors block and never mean empty. |
 | Unit | One independently reviewable behavior or dependency slice with one source item, base, acceptance evidence, and lifecycle. |
 | Disposition | Implementation truth: exactly `actionable`, `already-satisfied`, `stale/closed`, `duplicate/superseded`, or `blocked`, supported by live evidence. Never substitute `pass`, `green`, or a PR state. |
-| Plan identity | Recorded tuple of the complete inventory revision, unit scopes/order/dependencies, repository and base identities, acceptance evidence, validation plan, and authorized side effects, compared field by field. |
-| Lifecycle | Remaining work, recorded separately as `implementation`, `initial-publication`, `open-pr-closeout`, or `terminal`. An already-satisfied item can still have an open PR to close out. |
+| Plan identity | Per-unit inventory revision, scope/order/dependencies, repository/base, acceptance evidence, validation plan, and authorized effects, compared fieldwise. |
+| Lifecycle | Remaining work: `implementation`, `initial-publication`, `open-pr-closeout`, `tracker-closeout`, or `terminal`. |
 
 ## Inputs and Defaults
 
@@ -44,9 +41,9 @@ to `pr-closeout-loop`, and integration-branch topology to
   or approval.
 - Do not invent state, acceptance criteria, test results, or authorization.
   Preserve unrelated local work.
-- Only `actionable` items may enter implementation or initial publication. An
-  `already-satisfied` item may continue an existing PR's closeout, but never
-  manufacture a commit or PR.
+- Only `actionable` items enter implementation. `already-satisfied` may enter
+  open-PR closeout, tracker closeout, or initial publication only for a live,
+  exact unpublished candidate; never manufacture work.
 - Freeze the plan identity before implementation. Re-inventory and obtain
   renewed authority when source criteria, dependencies, repository/base
   identity, scope, or requested side effects move outside the approved plan.
@@ -62,9 +59,10 @@ to `pr-closeout-loop`, and integration-branch topology to
    Record a complete inventory or emit a Blocked Report. Exit with repository
    identity, inventory revision, and protected unrelated paths.
 2. **Classify and slice.** Write one exact disposition token and a separate
-   lifecycle for every item. Derive the smallest unit and dependency order only
-   for `actionable` items. An already-open PR uses `open-pr-closeout`; it does
-   not create a replacement unit. Exit with the unit table and plan identity.
+   lifecycle for every item. Derive implementation units only for `actionable`.
+   Existing work uses the matching publication, PR, or tracker lifecycle; an
+   open PR never creates a replacement unit. Record each unit's relevant
+   inventory revision in its plan identity.
 3. **Confirm the plan.** Present material assumptions and exact side effects not
    already authorized. Freeze current authority with the plan identity. Changed
    evidence invalidates only affected units, but no affected mutation proceeds
@@ -75,17 +73,18 @@ to `pr-closeout-loop`, and integration-branch topology to
    `superpowers:test-driven-development` for behavior changes unless explicitly
    exempted, and `superpowers:systematic-debugging` for failing checks. Make the
    smallest scoped change. Exit with a diff and targeted evidence.
-5. **Validate and commit.** Run targeted checks and the repository baseline when
-   the change is shared, packaged, CI-facing, or broad. Use `simplify` before a
-   non-trivial commit and `commit-message` for the commit. Record tests changed,
-   commands actually run and outcomes, and unavailable validation separately.
-6. **Delegate the PR lifecycle.** Hand off per the Companion Handoffs table. For
-   `open-pr-closeout`, the next action is to invoke `pr-closeout-loop`, never to
-   merge directly. Accept only each companion's gated result or Blocked Report.
+5. **Validate and commit.** Review the diff and run `simplify` before final
+   validation for non-trivial work. Run targeted checks and the baseline for
+   shared, packaged, CI-facing, or broad changes; simplify edits stale earlier
+   results. Stage only intended unit paths, then use `commit-message`. Record
+   tests changed, actual commands/outcomes, and unavailable validation.
+6. **Complete lifecycles.** Hand off through the table. For `tracker-closeout`,
+   freeze item/revision, exact action, and authority; re-fetch immediately before
+   mutation and verify afterward. Drift blocks. Accept only gated results.
 7. **Refresh and continue.** After each terminal unit, fetch the target branch
-   and rebuild the complete inventory. Reclassify drift or newly discovered work
-   instead of silently extending the plan. Finish only when every inventoried
-   item is terminal.
+   and rebuild the complete inventory. Refresh affected per-unit revisions;
+   retain identities whose fields are unchanged. Reclassify drift or new work
+   instead of extending the plan. Finish only when every item is terminal.
 
 ## Companion Handoffs
 
@@ -95,14 +94,15 @@ to `pr-closeout-loop`, and integration-branch topology to
 | `commit-message` | Staged snapshot; an explicit `message+commit` request plus authorization covering the commit | Message and rationale, then the commit SHA |
 | `pr-generator` | Exact base; tests changed, run, and unavailable; create-or-update intent; authorization covering the push and PR action | Draft, then PR URL or Blocked Report |
 | `pr-comment-review` | PR identity; approval scope for fixes and replies | Dispositions, replies posted, or Blocked Report |
-| `pr-closeout-loop` | PR identity; target branch; authorization verbatim; TDD exemption state; wait policy | Merge commit, or Blocked Report naming the gate |
+| `pr-closeout-loop` | PR identity; requested terminal state; target branch; authorization verbatim; TDD exemption; wait policy | Requested state, merge commit, or Blocked Report |
+| `integration-branch-orchestrator` | Sources; integration/protected refs; topology and closeout authority; merge owner; expected checkpoint | Promotion checkpoint or Blocked Report |
 
 ## State Ledger
 
 Keep a temp ledger using the shared convention:
 
 ```text
-request_identity: <source and inventory revision>
+request_identity: <source and per-unit inventory revisions>
 plan_identity: <recorded tuple>
 unit: <id and disposition>
 repo_base_head: <repo, base ref/OID, unit head OID>
