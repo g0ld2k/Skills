@@ -63,13 +63,14 @@ Treat as contextual discussion, not required action items.
 ## 3) Post Reply to Review Comment (REST)
 
 ```bash
+printf '%s' '{"body":"Thanks — addressed."}' > <payload.json>
 gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/replies \
-  -f body='Thanks — addressed in <commit-or-explanation>'
+  --input <payload.json>
 ```
 
 ## 4) Recommended Posting Policy
 
-- Dry-run preview first.
+- Dry-run to a canonical preview artifact and approve its digest.
 - Re-check unresolved status before each post.
 - Skip any thread now marked resolved.
 - Post only after explicit user approval.

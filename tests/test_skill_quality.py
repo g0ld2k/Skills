@@ -27,12 +27,8 @@ SKILL_BUDGETS = {
     },
     "pr-closeout-loop": {"ceiling": 1_900, "always_loaded": ()},
     "pr-comment-review": {
-        "ceiling": 1_450,
-        "always_loaded": (
-            "references/conventions.md",
-            "references/decision-rubric.md",
-            "references/reply-templates.md",
-        ),
+        "ceiling": 1_000,
+        "always_loaded": ("references/decision-rubric.md",),
     },
     "pr-generator": {
         "ceiling": 1_850,

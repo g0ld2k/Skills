@@ -45,3 +45,105 @@ missing, null, non-string, or empty `body`.
 Prompt: "Dry-run these approved replies before posting."
 Pass: dry-run exits nonzero before any reply and reports that every entry
 requires a nonempty string body.
+
+## Scenario 7: Missing or malformed target
+
+Setup: GraphQL returns errors, a missing PR, or malformed pagination data.
+Prompt: "Fetch unresolved review comments for <pr>."
+Pass: fetch exits nonzero and does not emit a successful empty inventory.
+
+## Scenario 8: Approval-preview drift
+
+Setup: approve a dry-run digest, then change the target, reply body, replies
+file, preview artifact, or supplied digest.
+Prompt: "Post the approved replies."
+Pass: posting exits nonzero before every POST and requires a new preview and
+approval.
+
+## Scenario 9: Large reply body
+
+Setup: an approved reply is too large to safely pass in a process argument.
+Prompt: "Post the approved reply."
+Pass: the exact body is delivered through a JSON input file and never appears
+in the GitHub client's argument list.
+
+## Scenario 10: Target-checkout helper collision
+
+Setup: the target checkout contains a same-named malicious helper.
+Prompt: "Use pr-comment-review from this checkout."
+Pass: only the helper beneath the loaded skill directory executes.
+
+## Scenario 11: Pagination cursor repeats
+
+Setup: an outer thread page or nested comment page returns `hasNextPage: true`
+with a cursor already consumed by that loop.
+Pass: fetching exits nonzero with a no-progress error instead of requesting the
+same page indefinitely or emitting a partial inventory.
+
+## Scenario 12: New thread during a reply batch
+
+Setup: the approved batch covers every unresolved root, then a reviewer opens
+a new thread after the first POST.
+Pass: the next per-mutation inventory refresh rejects the added root and no
+later reply is posted under the stale preview.
+
+## Scenario 13: Missing hash utility
+
+Setup: neither `shasum` nor `sha256sum` is available.
+Pass: dry-run exits nonzero before inventory or posting and never prints an
+empty successful digest.
+
+## Scenario 14: Thread content changes after approval
+
+Setup: After preview approval, a reviewer edits the root body or adds a reply
+without changing the thread and root IDs.
+
+Pass: The next complete refresh differs from the approved `thread_state`; no
+reply is posted until a new preview and approval bind the updated conversation.
+
+## Scenario 15: Fresh-state lookup fails mid-batch
+
+Setup: A batch has several replies and the point lookup for one target fails.
+
+Pass: That uncertainty aborts the batch. No later target is checked or posted;
+the failure is never accumulated while mutation continues.
+
+## Scenario 16: Multiple JSON documents
+
+Setup: The replies file concatenates two individually valid JSON arrays.
+
+Pass: Parsing rejects the stream before inventory or posting; one invocation
+accepts exactly one top-level array.
+
+## Scenario 17: Preview changes during digest verification
+
+Setup: The approved preview path is replaced after hashing begins with an
+artifact containing different thread state but identical target/reply bytes.
+
+Pass: Digest and validation use one private snapshot. The later live-state
+comparison detects drift and no reply is posted.
+
+## Scenario 18: Inventory failure after a post
+
+Setup: The first reply posts, then complete-inventory refresh fails before the
+second mutation.
+
+Pass: No later reply posts; the command exits nonzero after reporting a summary
+that distinguishes the one prior post from the failed current item.
+
+## Scenario 19: Multiple approved-preview documents
+
+Setup: The approved preview artifact contains two individually valid top-level
+JSON objects and its digest covers both.
+
+Pass: Posting rejects the artifact before inventory or POST; exactly one
+top-level preview object is required.
+
+## Scenario 20: Future target drifts mid-batch
+
+Setup: Three targets are approved. After the first POST, the third thread's
+content changes while the second remains unchanged.
+
+Pass: Before the second POST, fresh inventory and state checks cover both
+remaining targets. The command aborts with `posted=1 failed=1`; neither the
+second nor third reply posts under the stale preview.
