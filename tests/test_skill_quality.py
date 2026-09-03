@@ -214,6 +214,39 @@ class FrontmatterParserTests(unittest.TestCase):
 
         self.assertTrue(errors)
 
+    def test_leading_zero_numeric_description_is_not_coerced_to_string(self) -> None:
+        errors = self.parse_and_validate_description(
+            "integration-branch-orchestrator",
+            "01",
+        )
+
+        self.assertTrue(errors)
+
+    def test_clipped_block_summary_preserves_its_trailing_line_break(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: integration-branch-orchestrator\n"
+                "description: |\n"
+                "  Human summary.\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            frontmatter, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(error)
+        self.assertEqual(frontmatter["description"], "Human summary.\n")
+        errors: list[str] = []
+        self.validator.validate_skill_description(
+            "integration-branch-orchestrator",
+            frontmatter["description"],
+            Path("skills/integration-branch-orchestrator/SKILL.md"),
+            errors,
+        )
+        self.assertTrue(errors)
+
     def test_every_yaml_line_separator_breaks_a_one_line_summary(self) -> None:
         for escape in (r"\r", r"\v", r"\f", r"\N", r"\L", r"\P"):
             with self.subTest(escape=escape):

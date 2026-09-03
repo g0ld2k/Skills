@@ -130,7 +130,7 @@ def decode_quoted_scalar(value: str) -> str:
 
 
 YAML_INTEGER_RE = re.compile(
-    r"[-+]?(?:0|[1-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+)$"
+    r"[-+]?(?:[0-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+)$"
 )
 YAML_FLOAT_RE = re.compile(
     r"[-+]?(?:(?:[0-9][0-9_]*)?\.[0-9_]+(?:[eE][-+]?[0-9]+)?|"
@@ -157,10 +157,42 @@ def decode_yaml_scalar(value: str) -> object:
     if lowered == "false":
         return False
     if YAML_INTEGER_RE.fullmatch(value):
-        return int(value.replace("_", ""), 0)
+        digits = value.replace("_", "")
+        unsigned = digits.lstrip("-+")
+        base = 8 if unsigned.startswith("0o") else 16 if unsigned.startswith("0x") else 10
+        return int(digits, base)
     if YAML_FLOAT_RE.fullmatch(value):
         return float(value.replace("_", ""))
     return value
+
+
+def decode_block_scalar(header: str, source_lines: list[str]) -> str:
+    """Decode the folding and chomping needed by top-level frontmatter."""
+    nonempty = [line for line in source_lines if line.strip()]
+    indent = min((len(line) - len(line.lstrip(" ")) for line in nonempty), default=0)
+    lines = [line[indent:] if line.strip() else "" for line in source_lines]
+    if header.startswith("|"):
+        value = "\n".join(lines)
+    else:
+        folded: list[str] = []
+        for line in lines:
+            if not folded or not line or not folded[-1]:
+                folded.append(line)
+            else:
+                folded[-1] += " " + line
+        value = "\n".join(folded)
+
+    value = value.rstrip("\n")
+    if header.endswith("-"):
+        return value
+    if header.endswith("+"):
+        trailing_blanks = 0
+        for line in reversed(lines):
+            if line:
+                break
+            trailing_blanks += 1
+        return value + "\n" * max(1, trailing_blanks + 1)
+    return value + "\n"
 
 
 def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
@@ -208,12 +240,9 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
                 block_line = frontmatter_lines[index]
                 if block_line.strip() and not block_line.startswith((" ", "\t")):
                     break
-                if block_line.strip():
-                    block_lines.append(block_line.strip())
+                block_lines.append(block_line)
                 index += 1
-            data[current_key] = (
-                " ".join(block_lines) if parsed_value == ">" else "\n".join(block_lines)
-            )
+            data[current_key] = decode_block_scalar(parsed_value, block_lines)
         elif parsed_value is not None and parsed_value != "":
             data[current_key] = parsed_value
         else:
