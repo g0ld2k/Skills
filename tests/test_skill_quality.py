@@ -222,6 +222,41 @@ class FrontmatterParserTests(unittest.TestCase):
 
         self.assertTrue(errors)
 
+    def test_inline_comment_cannot_hide_a_numeric_description(self) -> None:
+        errors = self.parse_and_validate_description(
+            "integration-branch-orchestrator",
+            "42 # human-looking summary",
+        )
+
+        self.assertTrue(errors)
+
+    def test_folded_scalar_preserves_more_indented_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: integration-branch-orchestrator\n"
+                "description: >-\n"
+                "  Human\n"
+                "    code\n"
+                "  Summary\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            frontmatter, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(error)
+        self.assertEqual(frontmatter["description"], "Human\n  code\nSummary")
+        errors: list[str] = []
+        self.validator.validate_skill_description(
+            "integration-branch-orchestrator",
+            frontmatter["description"],
+            Path("skills/integration-branch-orchestrator/SKILL.md"),
+            errors,
+        )
+        self.assertTrue(errors)
+
     def test_clipped_block_summary_preserves_its_trailing_line_break(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             skill_file = Path(directory) / "SKILL.md"

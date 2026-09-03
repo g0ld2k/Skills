@@ -166,21 +166,56 @@ def decode_yaml_scalar(value: str) -> object:
     return value
 
 
+def strip_yaml_inline_comment(value: str) -> str:
+    """Remove a YAML comment while preserving hashes inside quoted scalars."""
+    quote: str | None = None
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote == "'":
+            if character == "'":
+                if index + 1 < len(value) and value[index + 1] == "'":
+                    index += 2
+                    continue
+                quote = None
+        elif quote == '"':
+            if character == "\\":
+                index += 2
+                continue
+            if character == '"':
+                quote = None
+        elif character in {"'", '"'}:
+            quote = character
+        elif character == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+        index += 1
+    return value
+
+
 def decode_block_scalar(header: str, source_lines: list[str]) -> str:
     """Decode the folding and chomping needed by top-level frontmatter."""
     nonempty = [line for line in source_lines if line.strip()]
     indent = min((len(line) - len(line.lstrip(" ")) for line in nonempty), default=0)
     lines = [line[indent:] if line.strip() else "" for line in source_lines]
+    more_indented = [
+        bool(line.strip()) and len(line) - len(line.lstrip(" ")) > indent
+        for line in source_lines
+    ]
     if header.startswith("|"):
         value = "\n".join(lines)
     else:
-        folded: list[str] = []
-        for line in lines:
-            if not folded or not line or not folded[-1]:
-                folded.append(line)
+        folded = [lines[0]] if lines else []
+        for index in range(1, len(lines)):
+            previous = lines[index - 1]
+            current = lines[index]
+            if previous and not current:
+                separator = ""
+            elif not previous or more_indented[index - 1] or more_indented[index]:
+                separator = "\n"
             else:
-                folded[-1] += " " + line
-        value = "\n".join(folded)
+                separator = " "
+            folded.extend((separator, current))
+        value = "".join(folded)
 
     value = value.rstrip("\n")
     if header.endswith("-"):
@@ -226,7 +261,7 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
         if not separator:
             continue
         current_key = key.strip()
-        raw_value = value.strip()
+        raw_value = strip_yaml_inline_comment(value.strip())
         is_quoted = bool(raw_value) and raw_value[0] in {"'", '"'}
         if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
             return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
