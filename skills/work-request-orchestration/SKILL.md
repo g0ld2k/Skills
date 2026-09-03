@@ -7,23 +7,24 @@ disable-model-invocation: true
 
 # Work Request Orchestration
 
-Turn requests into reviewable units and coordinate implementation through
-closeout. Repository and tracker state are source truth.
+Turn requests into reviewable units and coordinate them through closeout from
+repository and tracker truth.
 
 ## When to Use
 
-Use explicitly for issues, milestones, epics, external plans, or unfinished
-multi-step requests. Route concrete work through the Companion Handoffs.
+Use explicitly for multi-item or unfinished requests. Route concrete work
+through Companion Handoffs.
 
 ## Definitions
 
 | Term | Checkable definition |
 | --- | --- |
-| Complete inventory | Every requested item/page was read; lookup errors block and never mean empty. |
-| Unit | One independently reviewable behavior or dependency slice with one source item, base, acceptance evidence, and lifecycle. |
+| Complete inventory | Every requested item/page read; lookup errors never mean empty. |
+| Unit | Independently reviewable behavior/dependency slice with source, base, evidence, and lifecycle. |
 | Disposition | Implementation truth: exactly `actionable`, `already-satisfied`, `stale/closed`, `duplicate/superseded`, or `blocked`, supported by live evidence. Never substitute `pass`, `green`, or a PR state. |
 | Plan identity | Per-unit inventory revision, scope/order/dependencies, repository/base, acceptance evidence, validation plan, and authorized effects, compared fieldwise. |
 | Lifecycle | Remaining work: `implementation`, `initial-publication`, `open-pr-closeout`, `tracker-closeout`, or `terminal`. |
+| Non-trivial work | Logic, behavior, tests, CI, package, workflow, public-contract, or meaningful process/documentation changes. |
 
 ## Inputs and Defaults
 
@@ -34,6 +35,7 @@ multi-step requests. Route concrete work through the Companion Handoffs.
 | Work items | Live tracker/repo plus user text | Re-inventory all referenced items; external plans are context only. |
 | Lifecycle authority | Current conversation | Read-only inventory is allowed; commit, push, PR, reply, issue disposition, and merge each require matching authority. |
 | Slice strategy | Live dependency graph | One unit per issue/behavior; stack only when a later unit cannot be reviewed or tested independently. |
+| Simplify selection | User or caller policy | Attended; unattended selects medium/high severity with medium/high confidence |
 
 ## Guardrails
 
@@ -41,9 +43,9 @@ multi-step requests. Route concrete work through the Companion Handoffs.
   or approval.
 - Do not invent state, acceptance criteria, test results, or authorization.
   Preserve unrelated local work.
-- Only `actionable` items enter implementation. `already-satisfied` may enter
-  open-PR closeout, tracker closeout, or initial publication only for a live,
-  exact unpublished candidate; never manufacture work.
+- Only `actionable` enters implementation. `already-satisfied` may enter any
+  later lifecycle; initial publication additionally requires a live, exact
+  unpublished candidate. Never manufacture work.
 - Freeze the plan identity before implementation. Re-inventory and obtain
   renewed authority when source criteria, dependencies, repository/base
   identity, scope, or requested side effects move outside the approved plan.

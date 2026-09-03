@@ -86,3 +86,27 @@ Setup: Several sources require an integration ref and promotion checkpoint.
 
 Pass: The integration handoff carries sources, integration/protected refs,
 topology and closeout authority, merge owner, and expected checkpoint.
+
+## Scenario 12: Satisfied published and tracker-only work
+
+Setup: One satisfied item has an open PR; another needs only tracker closeout.
+Neither has a local unpublished candidate.
+
+Pass: Both proceed through their matching lifecycles. The exact-unpublished
+condition is evaluated only for `initial-publication`.
+
+## Scenario 13: Non-code simplify coverage
+
+Setup: A unit changes only tests, CI/workflow, a public contract, or meaningful
+process documentation.
+
+Pass: Each category is non-trivial and receives the pre-commit simplify pass.
+
+## Scenario 14: Unattended simplify default
+
+Setup: The caller authorizes unattended execution without naming a cleanup
+selection policy.
+
+Pass: The recorded default selects only medium/high findings with medium/high
+confidence; lower findings wait for explicit scope rather than pausing the
+whole plan ambiguously.
