@@ -11,8 +11,8 @@ Drive one PR to its terminal state or a precise, evidence-bound blocker.
 ## When to Use
 
 This is the executor for a concrete PR. Route initial PR metadata to
-`pr-generator`, review-only work to `pr-comment-review`, and topology,
-integration-branch, or multi-PR decisions to the orchestrator skills.
+`pr-generator`, unresolved-thread-only work to `pr-comment-review`, and
+topology, integration-branch, or multi-PR decisions to the orchestrators.
 
 ## Definitions
 
@@ -81,8 +81,9 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    implementation policy. Run `simplify` before final validation of non-trivial
    changes. Test the live merge ref or an equivalent locally constructed merge
    candidate; after any simplify edit, rerun affected checks and the suite. If
-   changes exist, stage intended files, use `commit-message`, and execute the
-   frozen exact-OID conditional push plan. After a push, return to step 2.
+   changes exist, stage intended files and invoke `commit-message` in
+   `message+commit` mode under recorded commit authorization. Freeze its
+   returned OID in the conditional push plan. After a push, return to step 2.
 5. **Reply.** Delegate approved reply-preview binding and fresh per-thread
    checks to `pr-comment-review`. Freeze and freshly verify acknowledgements for
    conversation or review-level feedback through `closeout-safety.md`. Keep
@@ -94,9 +95,10 @@ integration-branch, or multi-PR decisions to the orchestrator skills.
    Only `Progress` resets the counter; at its limit, report blocked.
 7. **Merge or block.** Freeze the repository, method, head, and base surface;
    re-fetch and evaluate G1–G7 together. Merge only through an operation that
-   atomically enforces that surface; otherwise block. Queue enrollment requires
-   moving-base authority or a cancellation path. While queued, base drift
-   cancels/dequeues before fresh G1–G3; keep polling until terminal or timeout.
+   atomically enforces the full surface, including body digest; otherwise block.
+   Queue enrollment requires moving-base authority or a cancellation path. Base
+   drift cancels/dequeues before fresh G1–G3; keep polling until terminal or
+   timeout.
 
 ## State Ledger
 

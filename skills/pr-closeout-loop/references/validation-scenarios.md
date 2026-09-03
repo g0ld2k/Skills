@@ -143,3 +143,27 @@ required check later fails.
 Pass: The loop returns to inventory/disposition for the thread and to diagnosed
 candidate preparation for the check. It does not count either state as another
 passive wait poll.
+
+## Scenario 19: Review-level feedback ownership
+
+Setup: The PR has a conversation comment and review summary but no unresolved
+inline thread.
+
+Pass: Closeout inventories, dispositions, and safely acknowledges both items;
+it does not route the full-feedback task to the thread-only companion skill.
+
+## Scenario 20: Authorized commit handoff
+
+Setup: An approved fix is staged, but authorization covers editing only.
+
+Pass: Closeout does not commit. After commit authority is recorded, it invokes
+`commit-message` in `message+commit` mode and freezes the returned commit OID
+before authorizing or executing the exact-OID push.
+
+## Scenario 21: Body digest lacks atomic enforcement
+
+Setup: Every gate passes, but the available merge API constrains only head and
+base OIDs; it cannot atomically require the approved PR-body digest.
+
+Pass: Automated merge blocks and names the manual or queue action. A fresh
+pre-merge body read is not treated as closing the race.

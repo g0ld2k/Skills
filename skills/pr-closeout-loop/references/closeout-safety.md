@@ -63,15 +63,14 @@ the prior G4 result after any mutation.
 
 ## Merge
 
-Freeze the PR URL/target repository, closeout and feedback digests, gate
-evidence, target ref/base OID, explicit method, authorization, and head OID.
-Re-fetch every input and evaluate G1–G7 together immediately before requesting
-merge. The operation must bind the recorded repository and method and
-atomically reject either head or base-surface drift. GitHub CLI
-`--match-head-commit` and the REST `sha` parameter constrain only head; when no
-available operation also enforces base ref/OID, block automated merge and name
-the exact manual or queue action required. A separate refresh cannot close the
-race.
+Freeze the PR URL/target repository, complete closeout surface, feedback digest,
+gate evidence, explicit method, and authorization. Re-fetch every input and
+evaluate G1–G7 together immediately before requesting merge. The operation
+must bind the repository/method and atomically enforce the full surface,
+including body digest, head OID, and base ref/OID. GitHub CLI
+`--match-head-commit` and REST `sha` constrain only head; a separate refresh
+cannot close gaps. If no operation enforces every field, block automated merge
+and name the exact manual or queue action required.
 
 After the request, fetch terminal PR state and the merge commit. Report success
 only when the expected PR is merged by the approved method into the approved
