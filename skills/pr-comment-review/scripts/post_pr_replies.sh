@@ -66,21 +66,23 @@ approved_state_file="$work_dir/approved-state.json"
 current_state_file="$work_dir/current-state.json"
 
 # Snapshot the target and reply bytes once.
-jq -ce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
+jq -sce --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
   def positive_integer: type == "number" and . > 0 and floor == .;
-  if type == "array" and all(.[];
+  if length == 1 and (.[0] | type == "array") and (.[0] | all(.[];
       type == "object"
       and (.thread_id | type == "string" and length > 0)
       and (.comment_id | positive_integer)
-      and (.body | type == "string" and length > 0))
+      and (.body | type == "string" and length > 0)))
   then {owner: $owner, repo: $repo, pr: $pr,
-        replies: [.[] | {thread_id, comment_id, body}]}
+        replies: [.[0][] | {thread_id, comment_id, body}]}
   else error("invalid replies file") end
 ' "$replies_file" > "$requested_file" \
   || { echo "Failing replies file (each entry requires thread_id, positive-integer comment_id, and nonempty string body)" >&2; exit 2; }
 
 if [[ "$dry_run" == false ]]; then
-  actual_digest="sha256:$(sha256_file "$preview_file")"
+  cp "$preview_file" "$canonical_file" \
+    || { echo "Failing approval preview (could not snapshot artifact)" >&2; exit 2; }
+  actual_digest="sha256:$(sha256_file "$canonical_file")"
   [[ "$actual_digest" == "$approved_digest" ]] \
     || { echo "Failing approval preview (digest does not cover the supplied artifact)" >&2; exit 2; }
   jq -e --slurpfile requested "$requested_file" '
@@ -94,9 +96,8 @@ if [[ "$dry_run" == false ]]; then
       or ((.thread_state | type == "object")
           and (.thread_state.root | type == "object")
           and (.thread_state.replies | type == "array")))
-  ' "$preview_file" >/dev/null \
+  ' "$canonical_file" >/dev/null \
     || { echo "Failing approval preview (artifact differs from current target or replies)" >&2; exit 2; }
-  cp "$preview_file" "$canonical_file"
 fi
 
 refresh_inventory() {
@@ -178,7 +179,11 @@ while IFS= read -r reply; do
   thread_id="$(jq -r '.thread_id' <<<"$reply")"
   comment_id="$(jq -r '.comment_id' <<<"$reply")"
   if [[ "$dry_run" == false ]]; then
-    refresh_inventory || exit 2
+    if ! refresh_inventory; then
+      failed=$((failed + 1))
+      aborted=true
+      break
+    fi
   fi
   rc=0
   verify_thread_state "$reply" "$thread_id" "$comment_id" || rc=$?

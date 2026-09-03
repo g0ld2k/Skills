@@ -23,7 +23,7 @@ class PostPRRepliesTests(unittest.TestCase):
     def run_dry_run(
         self,
         unresolved: list[dict[str, object]],
-        replies: list[dict[str, object]],
+        replies: list[dict[str, object]] | str,
     ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory(prefix="pr-comment-review-test-") as temp:
             temp_path = Path(temp)
@@ -73,7 +73,9 @@ class PostPRRepliesTests(unittest.TestCase):
             fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
 
             replies_path = temp_path / "replies.json"
-            replies_path.write_text(json.dumps(replies))
+            replies_path.write_text(
+                replies if isinstance(replies, str) else json.dumps(replies)
+            )
 
             environment = os.environ.copy()
             environment["PATH"] = f"{bin_path}:{environment['PATH']}"
@@ -147,6 +149,19 @@ class PostPRRepliesTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertIn("nonempty string body", result.stderr)
                 self.assertNotIn("would reply", result.stdout)
+
+    def test_dry_run_rejects_concatenated_json_arrays(self) -> None:
+        """One replies file is one JSON document, never a stream of batches."""
+        unresolved = [{"thread_id": "PRRT_one", "comment_id": 101}]
+        document = json.dumps(
+            [{"thread_id": "PRRT_one", "comment_id": 101, "body": "First"}]
+        )
+
+        result = self.run_dry_run(unresolved, f"{document}\n{document}\n")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid replies file", result.stderr)
+        self.assertNotIn("would reply", result.stdout)
 
     def test_dry_run_skips_surplus_reply_for_newly_resolved_thread(self) -> None:
         """Exact equality would block the existing resolved-thread race path."""
@@ -422,6 +437,8 @@ class PostPRRepliesTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertEqual(post_log.read_text().splitlines(), ["POST"])
+            self.assertIn("Summary: posted=1", result.stdout)
+            self.assertIn("failed=1", result.stdout)
 
     def test_preview_digest_changes_when_thread_content_changes(self) -> None:
         replies = [
@@ -449,6 +466,97 @@ class PostPRRepliesTests(unittest.TestCase):
         self.assertIsNotNone(first_digest)
         self.assertIsNotNone(second_digest)
         self.assertNotEqual(first_digest.group(0), second_digest.group(0))
+
+    def test_post_snapshots_preview_before_hashing(self) -> None:
+        """Approval validation must use one immutable read of the preview."""
+        with tempfile.TemporaryDirectory(prefix="pr-comment-preview-race-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch_state = temp_path / "fetch-state.json"
+            original_state = [{
+                "thread_id": "PRRT_one",
+                "comment_id": 101,
+                "author": "reviewer",
+                "path": "skill.md",
+                "line": 10,
+                "body": "Original",
+                "created_at": "2026-09-01T00:00:00Z",
+                "replies": [],
+            }]
+            fetch_state.write_text(json.dumps(original_state))
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                "#!/usr/bin/env bash\n"
+                "while [[ $# -gt 0 ]]; do "
+                "if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi; "
+                "done\n"
+                "cp \"$FETCH_STATE\" \"$output\"\n"
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ $* == *' -X POST '* ]]; then echo POST >> \"$POST_LOG\"; exit 0; fi\n"
+                "printf '%s\\n' '{\"data\":{\"node\":{\"isResolved\":false,\"pullRequest\":{\"number\":7,\"repository\":{\"owner\":{\"login\":\"g0ld2k\"},\"name\":\"Skills\"}},\"comments\":{\"nodes\":[{\"databaseId\":101,\"replyTo\":null}]}}}}'\n"
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies = temp_path / "replies.json"
+            preview = temp_path / "preview.json"
+            replies.write_text(json.dumps([
+                {"thread_id": "PRRT_one", "comment_id": 101, "body": "Reply"}
+            ]))
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FETCH_STATE"] = str(fetch_state)
+            environment["POST_LOG"] = str(post_log)
+            base = ["bash", str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k", "--repo", "Skills", "--pr", "7", "--replies-file", str(replies), "--preview-file", str(preview)]
+            dry_run = subprocess.run(
+                [*base, "--dry-run"], capture_output=True, text=True, env=environment
+            )
+            digest = re.search(r"sha256:[0-9a-f]{64}", dry_run.stdout)
+            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            self.assertIsNotNone(digest)
+
+            tampered = json.loads(preview.read_text())
+            tampered["replies"][0]["thread_state"]["root"]["body"] = "Changed"
+            tampered_preview = temp_path / "tampered-preview.json"
+            tampered_preview.write_text(json.dumps(tampered, separators=(",", ":")))
+            changed_state = [{**original_state[0], "body": "Changed"}]
+            fetch_state.write_text(json.dumps(changed_state))
+
+            fake_shasum = bin_path / "shasum"
+            fake_shasum.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "target=\"${@: -1}\"\n"
+                "digest=$(/usr/bin/shasum -a 256 \"$target\" | awk '{print $1}')\n"
+                "cp \"$TAMPERED_PREVIEW\" \"$PREVIEW_TO_MUTATE\"\n"
+                "printf '%s  %s\\n' \"$digest\" \"$target\"\n"
+            )
+            fake_shasum.chmod(fake_shasum.stat().st_mode | stat.S_IXUSR)
+            environment["TAMPERED_PREVIEW"] = str(tampered_preview)
+            environment["PREVIEW_TO_MUTATE"] = str(preview)
+
+            result = subprocess.run(
+                [*base, "--approved-digest", digest.group(0)],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("fresh thread check failed", result.stderr)
+            self.assertFalse(post_log.exists())
 
     def test_post_aborts_batch_after_fresh_state_failure(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pr-comment-state-") as temp:

@@ -107,3 +107,26 @@ Setup: A batch has several replies and the point lookup for one target fails.
 
 Pass: That uncertainty aborts the batch. No later target is checked or posted;
 the failure is never accumulated while mutation continues.
+
+## Scenario 16: Multiple JSON documents
+
+Setup: The replies file concatenates two individually valid JSON arrays.
+
+Pass: Parsing rejects the stream before inventory or posting; one invocation
+accepts exactly one top-level array.
+
+## Scenario 17: Preview changes during digest verification
+
+Setup: The approved preview path is replaced after hashing begins with an
+artifact containing different thread state but identical target/reply bytes.
+
+Pass: Digest and validation use one private snapshot. The later live-state
+comparison detects drift and no reply is posted.
+
+## Scenario 18: Inventory failure after a post
+
+Setup: The first reply posts, then complete-inventory refresh fails before the
+second mutation.
+
+Pass: No later reply posts; the command exits nonzero after reporting a summary
+that distinguishes the one prior post from the failed current item.
