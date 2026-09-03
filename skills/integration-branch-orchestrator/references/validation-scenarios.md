@@ -104,3 +104,43 @@ a waiver names another OID or permits merging but not checkpoint preparation.
 
 Pass: Source refresh blocks the first checkpoint. Neither mismatched waiver can
 substitute for passing validation at the exact checkpoint OID and action.
+
+## Scenario 14: Satisfied checkpoint with topology drift
+
+Setup: A recorded validated checkpoint matches the integration OID, but the
+protected ref advanced and integration no longer descends from it.
+
+Pass: Current topology fails before `already satisfied`; the run reports the
+ancestry blocker.
+
+## Scenario 15: Mixed blocked and eligible sources
+
+Setup: One source is topology-blocked while another has a verified active PR
+targeting integration.
+
+Pass: Only the verified, nonblocked integration-targeted PR is delegated; the
+blocked source remains visible and receives no closeout scope.
+
+## Scenario 16: Every active candidate is waiting
+
+Setup: All active candidates await CI or review and none is ready.
+
+Pass: No slot is granted. The run polls or redispatches them under the wait
+policy until a candidate becomes ready or blocked.
+
+## Scenario 17: Promotion head changes after approval
+
+Setup: Human approval covers checkpoint C and promotion head H; closeout pushes
+H2 while addressing feedback.
+
+Pass: H2 cannot inherit promotion authority. The run prepares a checkpoint for
+H2 and obtains fresh human approval before protected-branch merge.
+
+## Scenario 18: Resuming an exact validation waiver
+
+Setup: Failed evidence E at OID I is waived only for checkpoint preparation,
+then the run resumes.
+
+Pass: The ledger reconstructs I, E, and the exact permitted action. It accepts
+that waiver for checkpoint preparation only, never for a merge slot or another
+OID.
