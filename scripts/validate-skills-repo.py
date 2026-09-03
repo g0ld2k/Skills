@@ -51,6 +51,84 @@ def strip_quotes(value: str) -> str:
     return value
 
 
+DOUBLE_QUOTED_ESCAPES = {
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "t": "\t",
+    "n": "\n",
+    "v": "\v",
+    "f": "\f",
+    "r": "\r",
+    "e": "\x1b",
+    " ": " ",
+    '"': '"',
+    "/": "/",
+    "\\": "\\",
+    "N": "\x85",
+    "_": "\xa0",
+    "L": "\u2028",
+    "P": "\u2029",
+}
+HEX_ESCAPE_WIDTHS = {"x": 2, "u": 4, "U": 8}
+
+
+def decode_quoted_scalar(value: str) -> str:
+    """Decode the YAML single- or double-quoted scalar forms used here."""
+    if not value or value[0] not in {"'", '"'}:
+        return value
+    quote = value[0]
+    if len(value) < 2 or value[-1] != quote:
+        raise ValueError("unterminated quoted scalar")
+
+    inner = value[1:-1]
+    if quote == "'":
+        result: list[str] = []
+        index = 0
+        while index < len(inner):
+            if inner[index] != "'":
+                result.append(inner[index])
+                index += 1
+                continue
+            if index + 1 == len(inner) or inner[index + 1] != "'":
+                raise ValueError("unescaped apostrophe in single-quoted scalar")
+            result.append("'")
+            index += 2
+        return "".join(result)
+
+    result: list[str] = []
+    index = 0
+    while index < len(inner):
+        character = inner[index]
+        if character != "\\":
+            if character == '"':
+                raise ValueError("unescaped quote in double-quoted scalar")
+            result.append(character)
+            index += 1
+            continue
+
+        index += 1
+        if index == len(inner):
+            raise ValueError("trailing backslash in double-quoted scalar")
+        escape = inner[index]
+        if escape in DOUBLE_QUOTED_ESCAPES:
+            result.append(DOUBLE_QUOTED_ESCAPES[escape])
+            index += 1
+            continue
+        width = HEX_ESCAPE_WIDTHS.get(escape)
+        if width is None:
+            raise ValueError(f"unsupported double-quoted escape: \\{escape}")
+        digits = inner[index + 1 : index + 1 + width]
+        if len(digits) != width or not all(char in "0123456789abcdefABCDEF" for char in digits):
+            raise ValueError(f"invalid double-quoted escape: \\{escape}{digits}")
+        codepoint = int(digits, 16)
+        if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+            raise ValueError(f"invalid Unicode scalar: U+{codepoint:04X}")
+        result.append(chr(codepoint))
+        index += width + 1
+    return "".join(result)
+
+
 def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -83,14 +161,18 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
             continue
         current_key = key.strip()
         raw_value = value.strip()
+        is_quoted = bool(raw_value) and raw_value[0] in {"'", '"'}
         if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
             return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
-        parsed_value = strip_quotes(raw_value)
-        if parsed_value == "true":
+        try:
+            parsed_value = decode_quoted_scalar(raw_value)
+        except ValueError as exc:
+            return {}, f"invalid YAML scalar for {current_key}: {exc}"
+        if not is_quoted and parsed_value == "true":
             data[current_key] = True
-        elif parsed_value == "false":
+        elif not is_quoted and parsed_value == "false":
             data[current_key] = False
-        elif parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
+        elif not is_quoted and parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
             block_lines: list[str] = []
             while index < len(frontmatter_lines):
                 block_line = frontmatter_lines[index]

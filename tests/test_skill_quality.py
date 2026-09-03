@@ -151,6 +151,76 @@ class FrontmatterParserTests(unittest.TestCase):
 
         self.assertIsNotNone(error)
 
+    def parse_and_validate_description(self, name: str, scalar: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                f"name: {name}\n"
+                f"description: {scalar}\n"
+                "license: MIT\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            frontmatter, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(error)
+        errors: list[str] = []
+        self.validator.validate_skill_description(
+            name,
+            frontmatter.get("description"),
+            Path("skills") / name / "SKILL.md",
+            errors,
+        )
+        return errors
+
+    def test_double_quoted_newline_escape_is_validated_as_multiline(self) -> None:
+        errors = self.parse_and_validate_description(
+            "work-request-orchestration",
+            r'"Human summary.\nSecond line."',
+        )
+
+        self.assertTrue(errors)
+
+    def test_double_quoted_hex_escape_is_validated_after_decoding(self) -> None:
+        errors = self.parse_and_validate_description(
+            "integration-branch-orchestrator",
+            r'"Use\x20when coordinating PRs."',
+        )
+
+        self.assertTrue(errors)
+
+    def test_unsupported_double_quoted_escape_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: sample-skill\n"
+                r'description: "Use\qwhen drafting."' "\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            _, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNotNone(error)
+
+    def test_quoted_boolean_remains_a_string(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            skill_file = Path(directory) / "SKILL.md"
+            skill_file.write_text(
+                "---\n"
+                "name: sample-skill\n"
+                'description: "true"\n'
+                "---\n",
+                encoding="utf-8",
+            )
+
+            frontmatter, error = self.validator.parse_frontmatter(skill_file)
+
+        self.assertIsNone(error)
+        self.assertEqual(frontmatter["description"], "true")
+
 
 class SkillWordBudgetTests(unittest.TestCase):
     def test_declared_mandatory_references_count_toward_the_budget(self) -> None:
