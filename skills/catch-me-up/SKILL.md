@@ -6,10 +6,10 @@ license: MIT
 
 # Catch Me Up
 
-Build a mental model of unfamiliar code or technology. Explain before suggesting changes.
+Build a mental model of unfamiliar code or technology.
 
-This is read-only comprehension: make no edits, review findings, commits, or
-remote mutations unless the user requests follow-up work.
+This run is read-only: make no edits, findings, commits, or remote mutations.
+Only a separate post-brief request may hand off state-changing work.
 
 ## Guardrails
 
@@ -20,7 +20,8 @@ remote mutations unless the user requests follow-up work.
 - If evidence is missing, say what was checked and what remains unknown.
 - Keep the first pass scoped to the user's question. Do not map the whole repository unless asked.
 - Use `History` only from available evidence such as `git log`, `git blame`, PRs, issues, changelogs, comments, or user-provided context.
-- If the target is a pull request, use this skill only for lightweight comprehension of the diff and touched code. A full PR comprehension or review workflow belongs in a separate PR-focused skill.
+- For a PR, limit this skill to lightweight comprehension; use a separate
+  PR-focused workflow for full review.
 
 ## Workflow
 
@@ -79,8 +80,9 @@ Use this structure unless the user asks for a different format:
 4. **Confidence And Gaps:** what is solid, what is inferred, and what remains unknown.
 5. **Next Probes:** 2-5 concrete follow-up checks or questions.
 
-When PR review would help, offer a follow-up that explicitly invokes
-`pr-comment-review`; do not perform it during the catch-up.
+When existing unresolved threads need triage, offer a separate follow-up that
+invokes `pr-comment-review`. Route initial review to an available code-review
+workflow. Do not perform either during catch-up.
 
 Default table:
 

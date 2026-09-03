@@ -14,7 +14,7 @@ from types import ModuleType
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_BUDGETS = {
     "catch-me-up": {
-        "ceiling": 1_530,
+        "ceiling": 1_525,
         "always_loaded": ("references/exploration-modes.md",),
     },
     "commit-message": {

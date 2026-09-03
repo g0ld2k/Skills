@@ -35,10 +35,23 @@ up."
 Pass: The skill activates for each direct explanation request, selects the
 matching mode, and keeps its evidence search within that mode's depth guardrail.
 
-## Scenario 5: Explicit review follow-up
+## Scenario 5: Explicit unresolved-thread follow-up
 
-Setup: A catch-up brief finds a PR area that would benefit from formal feedback,
-but the user requested comprehension only.
+Setup: A PR has existing unresolved review threads, but the user initially
+requests comprehension only.
 
-Pass: The brief offers a distinct follow-up prompt that explicitly invokes
-`pr-comment-review`; it does not triage, post, or mutate during catch-up.
+Prompt: First, "Catch me up on this PR." After the brief, "Now triage and answer
+the existing review threads."
+
+Pass: The first run remains read-only. The separate follow-up explicitly routes
+to `pr-comment-review`; it does not use that skill for an initial formal review.
+
+## Scenario 6: Combined comprehension and mutation request
+
+Setup: The initial prompt asks to understand unfamiliar code, then fix and
+commit it in the same request.
+
+Prompt: "Catch me up, then fix and commit it."
+
+Pass: The catch-up run produces only the brief. Mutation requires a separate
+post-brief request and the appropriate state-changing handoff.
