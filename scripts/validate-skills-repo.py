@@ -21,6 +21,7 @@ EXPLICIT_ONLY_SKILLS = {
     "work-request-orchestration",
 }
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+BLOCK_SCALAR_HEADER_RE = re.compile(r"^[|>](?:[+-][1-9]?|[1-9][+-]?)?$")
 LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
@@ -195,7 +196,10 @@ def strip_yaml_inline_comment(value: str) -> str:
 def decode_block_scalar(header: str, source_lines: list[str]) -> str:
     """Decode the folding and chomping needed by top-level frontmatter."""
     nonempty = [line for line in source_lines if line.strip()]
-    indent = min((len(line) - len(line.lstrip(" ")) for line in nonempty), default=0)
+    indicated_indent = next((int(char) for char in header if char.isdigit()), None)
+    indent = indicated_indent or min(
+        (len(line) - len(line.lstrip(" ")) for line in nonempty), default=0
+    )
     lines = [line[indent:] if line.strip() else "" for line in source_lines]
     more_indented = [
         bool(line.strip()) and len(line) - len(line.lstrip(" ")) > indent
@@ -218,9 +222,9 @@ def decode_block_scalar(header: str, source_lines: list[str]) -> str:
         value = "".join(folded)
 
     value = value.rstrip("\n")
-    if header.endswith("-"):
+    if "-" in header:
         return value
-    if header.endswith("+"):
+    if "+" in header:
         trailing_blanks = 0
         for line in reversed(lines):
             if line:
@@ -263,13 +267,18 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
         current_key = key.strip()
         raw_value = strip_yaml_inline_comment(value.strip())
         is_quoted = bool(raw_value) and raw_value[0] in {"'", '"'}
+        block_header = (
+            raw_value
+            if not is_quoted and BLOCK_SCALAR_HEADER_RE.fullmatch(raw_value)
+            else None
+        )
         if raw_value and raw_value[0] not in {"'", '"'} and ": " in raw_value:
             return {}, f"invalid YAML scalar for {current_key}: quote values containing ': '"
         try:
             parsed_value = decode_yaml_scalar(raw_value)
         except ValueError as exc:
             return {}, f"invalid YAML scalar for {current_key}: {exc}"
-        if not is_quoted and parsed_value in {">", ">-", ">+", "|", "|-", "|+"}:
+        if block_header is not None:
             block_lines: list[str] = []
             while index < len(frontmatter_lines):
                 block_line = frontmatter_lines[index]
@@ -277,7 +286,7 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, object], str | None]:
                     break
                 block_lines.append(block_line)
                 index += 1
-            data[current_key] = decode_block_scalar(parsed_value, block_lines)
+            data[current_key] = decode_block_scalar(block_header, block_lines)
         elif parsed_value is not None and parsed_value != "":
             data[current_key] = parsed_value
         else:
@@ -383,7 +392,11 @@ def validate_skill_description(
     if not description:
         return
     if name in EXPLICIT_ONLY_SKILLS:
-        if description.splitlines() != [description] or description.startswith("Use when"):
+        if (
+            not description.strip()
+            or description.splitlines() != [description]
+            or description.startswith("Use when")
+        ):
             errors.append(
                 f"{skill_file}: explicit-only description must be a one-line human-facing summary"
             )

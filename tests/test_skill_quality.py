@@ -126,6 +126,11 @@ class DescriptionPolicyTests(unittest.TestCase):
             )
         )
 
+    def test_explicit_only_summary_rejects_whitespace_only_text(self) -> None:
+        self.assertTrue(
+            self.validate("integration-branch-orchestrator", "   ")
+        )
+
     def test_description_must_be_a_string(self) -> None:
         self.assertTrue(self.validate("pr-generator", True))
 
@@ -256,6 +261,23 @@ class FrontmatterParserTests(unittest.TestCase):
             errors,
         )
         self.assertTrue(errors)
+
+    def test_block_scalar_indentation_indicators_are_decoded(self) -> None:
+        for header in (">-2", ">2-", "|+2", "|2+"):
+            with self.subTest(header=header):
+                errors = self.parse_and_validate_description(
+                    "integration-branch-orchestrator",
+                    f"{header}\n  Use when coordinating PRs.",
+                )
+                self.assertTrue(errors)
+
+        self.assertEqual(
+            self.parse_and_validate_description(
+                "integration-branch-orchestrator",
+                ">-2\n  Human-facing summary.",
+            ),
+            [],
+        )
 
     def test_clipped_block_summary_preserves_its_trailing_line_break(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
