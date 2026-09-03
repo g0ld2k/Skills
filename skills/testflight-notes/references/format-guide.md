@@ -2,49 +2,40 @@
 
 ## Constraints
 
-- Plain text only — no markdown, no bullet symbols like `*` or `-`, no headers with `#`
-- Total length: keep under 4000 characters (TestFlight limit)
-- Tester audience: people validating features, not engineers
+- Plain text only: no Markdown bullets or `#` headings.
+- Treat 4000 characters as the repository-local default, not a claimed
+  TestFlight platform limit. Draft to 3800 characters unless the caller
+  supplies another budget.
+- Write for people validating behavior, not engineers.
 
-## Section Labels
+## Labels
 
-Use exactly these uppercase labels, one per logical change:
+Use one uppercase label per logical change:
 
-- `NEW:` — A new feature or capability that didn't exist before
-- `IMPROVED:` — An enhancement or polish to something existing
-- `FIX:` — A bug fix that users would notice
+- `NEW:` — a capability that did not exist before
+- `IMPROVED:` — existing behavior is better or clearer
+- `FIX:` — previously incorrect behavior now works as expected
 
-## Platform Labels
-
-When a change is macOS-only, append `(macOS)` after the label:
-```
-NEW (macOS): Global keyboard shortcut to open the quick panel from anywhere.
-```
-
-When a change is iOS-only, append `(iOS)` after the label:
-```
-FIX (iOS): Scroll position no longer resets when editing a person.
-```
-
-Omit the platform label when the change applies to both platforms.
+Append `(iOS)` or `(macOS)` only when evidence proves that scope. Omit the
+suffix when scope is shared or uncertain.
 
 ## Entry Format
 
-Each entry is one or two sentences. Lead with what changed, not how it was implemented.
+Use one or two sentences and lead with the observable outcome:
 
-Good:
-```
-NEW: Timezones Tab — Your locations are now grouped by timezone. Buckets are expandable and can be manually reordered.
-```
-
-Bad (too technical):
-```
-NEW: Added derived TimeZoneBucket model and ManagementTimezonesTabView with CollectionSorting-backed ordering.
+```text
+NEW: Timezones are now grouped into expandable buckets, making long lists easier to scan.
 ```
 
-## Full Output Structure
+Do not expose implementation names:
 
+```text
+NEW: Added TimeZoneBucket and ManagementTimezonesTabView.
 ```
+
+## Full Output
+
+```text
 What's new in this build:
 
 NEW: <entry>
@@ -54,11 +45,21 @@ NEW (macOS): <entry>
 IMPROVED: <entry>
 
 FIX: <entry>
-
-FIX (macOS): <entry>
 ```
 
-- Group by label type: all NEWs first, then IMPROVEDs, then FIXes
-- Within each group, list macOS-specific items after cross-platform ones
-- Omit empty groups entirely
-- No trailing blank line
+Group all `NEW` entries first, then `IMPROVED`, then `FIX`. Within a group,
+place cross-platform entries before platform-specific entries. Omit empty
+groups and the trailing blank line.
+
+When the selected history succeeds but contains no supported tester-visible
+change, use the truthful empty form:
+
+```text
+What's new in this build:
+
+No tester-visible changes were identified in the selected history.
+```
+
+If over budget, remove secondary details, merge closely related improvements,
+then omit the lowest-impact improvements. Preserve high-impact fixes whenever
+possible; never shorten a claim until it becomes broader than its evidence.
