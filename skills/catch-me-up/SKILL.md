@@ -8,7 +8,7 @@ license: MIT
 
 Build a mental model of unfamiliar code or technology.
 
-This run is read-only: make no edits, findings, commits, or remote mutations.
+This run is read-only: make no edits, review findings, commits, or remote mutations.
 Only a separate post-brief request may hand off state-changing work.
 
 ## Guardrails

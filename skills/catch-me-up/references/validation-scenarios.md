@@ -32,6 +32,10 @@ Setup: Run separate fresh requests asking for the architecture, one syntax/API
 explanation, testing coverage, and path-specific history. None says "catch me
 up."
 
+Prompts: "Explain this service's architecture." "What does this annotation do
+here?" "How is this parser tested, and what coverage is missing?" "What does
+the history of `src/parser.ts` explain?"
+
 Pass: The skill activates for each direct explanation request, selects the
 matching mode, and keeps its evidence search within that mode's depth guardrail.
 
