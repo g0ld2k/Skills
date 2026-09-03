@@ -82,5 +82,22 @@ signing blocks.
 Setup: Approval records detached HEAD at P. Before installation, HEAD becomes
 symbolic to a branch that also points at P.
 
-Pass: Revalidation rejects the state change. Even if it occurs after the final
-check, `update-ref --no-deref HEAD ... P` cannot advance the referenced branch.
+Pass: Automated detached-HEAD installation blocks; drafting remains available.
+No late symbolic transition can redirect a ref update.
+
+## Scenario 10: Diff configuration and attributes
+
+Setup: `diff.relative=true`, `diff.ignoreSubmodules=all`, and a staged
+`.gitattributes` change disagree with the working-tree attributes.
+
+Pass: The staged check includes submodules and all paths. Evidence is the
+recorded parent-to-tree diff with attributes sourced from that staged tree.
+
+## Scenario 11: Operation and HEAD races
+
+Setup: Another Git process tries to begin a sequencer operation or change
+symbolic HEAD after final revalidation but before ref installation.
+
+Pass: An exclusively held index lock covers operation revalidation through the
+ref transaction; its symbolic-HEAD assertion and branch update are atomic. A
+pre-existing lock blocks without being removed.

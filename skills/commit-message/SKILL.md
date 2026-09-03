@@ -44,18 +44,20 @@ several. Staging, amend, and push are also separate.
 
 ```bash
 git rev-parse --is-inside-work-tree                 # must print true
-git diff --cached --quiet; echo $?                  # 0 nothing staged; 1 continue; else Git error
+git diff --cached --quiet --no-relative --ignore-submodules=none; echo $?
 draft_parent="$(git rev-parse --verify HEAD)"       # unborn: see commit-safety.md
 evidence_base="$draft_parent"
 staged_tree="$(git write-tree)"
-git --no-pager diff --no-color --no-ext-diff --no-textconv \
+GIT_ATTR_SOURCE="$staged_tree" git --no-pager diff --no-relative --no-color \
+  --no-ext-diff --no-textconv --ignore-submodules=none \
   --patch-with-stat --summary "$evidence_base" "$staged_tree"
 ```
 
-Check every operation marker in `references/commit-safety.md`; any active merge
-or sequencer blocks. Read the diff once from those OIDs, never later live-index
-reads, so ABA index changes cannot mix snapshots. Complete only when parent,
-tree, and diff are recorded; any other Git status blocks.
+Resolve `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer`,
+`rebase-merge`, and `rebase-apply` with `git rev-parse --git-path`; any existing
+marker blocks. The diff comes only from recorded OIDs, with attributes from its
+tree, so live index/config changes cannot alter it. Complete when parent, tree,
+and diff are recorded; any other Git status blocks.
 
 ### 2. Draft
 
@@ -79,10 +81,9 @@ tree.
 
 ### 4. Revalidate and commit
 
-Immediately before plumbing-based commit creation, follow
-`references/commit-safety.md`.
-Parent, tree, operation, or HEAD-state drift returns to Step 1 and renews
-authorization. Report metadata only after success.
+For `message+commit`, follow `references/commit-safety.md` immediately before
+commit creation. Drift returns to Step 1 and renews authorization. Report
+metadata only after success.
 
 ## Output Contract
 
