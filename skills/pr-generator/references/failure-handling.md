@@ -30,7 +30,9 @@ Action:
 ### PR already exists
 
 Action:
-- Switch to update mode (`gh pr edit`) instead of `gh pr create`.
+- Re-inventory the new PR and all fingerprint inputs.
+- Display an update fingerprint and obtain update-specific approval before any
+  edit; create authority does not cover the concurrent PR.
 
 ### Validation/test command failed
 

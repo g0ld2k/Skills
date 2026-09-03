@@ -3,32 +3,30 @@
 Read this reference only after Step 4 approves the publish fingerprint and
 before the first remote mutation.
 
-## Resolve the publish identity
+## Verify the inventoried identity
 
-For an existing PR, use its actual head repository and ref. A push plan needs
-a configured remote whose effective push URL maps to that repository; resolve
-it with `git remote get-url --push <remote>`. Query the exact branch with
-`git ls-remote`. Its OID must match the inventoried PR head OID before approval.
+The approved fingerprint already contains separate target/base and head/push
+identities. Re-derive them from the same sources before mutation. A push remote's
+effective URL must map to the inventoried PR head repository, while the base
+OID comes from the target repository URL.
 
 ```bash
-gh pr list --head "$branch" --state open \
-  --json number,url,title,baseRefName,headRefOid,headRepositoryOwner
-git ls-remote "$push_remote" "refs/heads/$branch" "refs/heads/$base_branch"
+gh pr list --repo "$target_repo" --head "$branch" --state open \
+  --json number,url,title,body,baseRefName,headRefOid,headRepositoryOwner
+git ls-remote "$target_url" "refs/heads/$base_branch"
+git ls-remote "$push_url" "refs/heads/$push_branch"
 ```
 
 An empty `gh pr list` result is the documented no-open-PR state; a command
 error is a lookup failure.
 
-For a new PR, derive the head repository from the effective push URL, not the
-remote name or fetch URL. Use a bare branch selector when that destination is
-the target repository. For a cross-repository head, the owner-qualified form
-`user:branch` is valid only after verifying a user-owned fork. An
-organization-owned cross-repository head requires an API/MCP capability that
-supports it explicitly; otherwise block.
+For create, re-derive the approved selector from the effective push URL: a bare
+branch for the target repository; `user:branch` only for a verified user-owned
+fork. An organization-owned cross-repository head needs an API/MCP operation
+that supports it explicitly or blocks.
 
-Resolve the base branch on its target remote and verify its live OID. A lookup
-error is a blocker, while an absent candidate head for a new PR is a valid
-observed state.
+A lookup error blocks. An absent candidate head for an approved create remains
+a valid observed state only when the fingerprint recorded that absence.
 
 ## Revalidate and mutate
 
@@ -56,8 +54,9 @@ observed state.
    absence and base to remain current, then create with the approved selector.
 
    ```bash
-   gh pr edit "$pr_number" --title "$title" --body-file "$pr_body_file"
-   gh pr create --base "$base_branch" --head "$head_selector" \
+   gh pr edit "$pr_number" --repo "$target_repo" \
+     --title "$title" --body-file "$pr_body_file"
+   gh pr create --repo "$target_repo" --base "$base_branch" --head "$head_selector" \
      --title "$title" --body-file "$pr_body_file"
    ```
 

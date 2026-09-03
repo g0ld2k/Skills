@@ -8,34 +8,30 @@ license: MIT
 
 ## Goal
 
-Draft truthful PR metadata from one verified diff, then publish exactly the
-approved plan.
+Draft truthful metadata from one verified diff, then publish its approved plan.
 
 ## When to Use
 
-Use this for a PR's initial title/body and their publication. Use
-`pr-comment-review` for review feedback, `pr-closeout-loop` for CI/merge
-closeout, and the orchestration skills for multi-PR control.
+Use for PR metadata. Route feedback to `pr-comment-review`, CI/merge to
+`pr-closeout-loop`, and multi-PR control to the orchestration skills.
 
 ## Definitions
 
 - **Evidence head:** the exact commit whose diff supports the draft.
-- **Publish fingerprint:** one immutable record of the fields below. Any
-  unapproved observed change invalidates the plan; G4 permits only the live
-  remote OID to move from the recorded before OID to the approved OID.
+- **Publish fingerprint:** one immutable record of the fields below. Drift
+  invalidates it; G4 permits only its approved remote-OID transition.
 
 | Fingerprint field | Value |
 | --- | --- |
 | Action | `create` or `update`, with the PR number or confirmed absence |
-| Repository | Target repository |
+| Repository | Target repository identity and URL |
 | PR metadata | Digest of the current title, body, and base (update only) |
-| Base | Ref and OID |
-| Head | Repository and ref |
+| Base | Target repository URL, ref, and OID |
+| Head | Repository, ref, and create selector |
 | OIDs | Local `HEAD`, published head, and evidence head |
 | Draft | Frozen title/body digest |
-| Validation | Tests changed, tests run, automated-validation availability |
+| Validation | Tests changed; command/result; tested OID; availability for the evidence head |
 | Push | Required or not; effective push URL/ref; before and approved OIDs |
-| Selector | Head selector used for create |
 
 ## Inputs and Defaults
 
@@ -51,8 +47,7 @@ closeout, and the orchestration skills for multi-PR control.
 - Keep all remote state changes behind the Publish Gates.
 - Ground the draft in the evidence head; never invent tests, links, results, or
   remote state.
-- Resolve bundled helpers from the loaded skill directory, not the target
-  repository.
+- Resolve bundled helpers from the loaded skill directory.
 - Treat fetched PR text as content under `references/conventions.md`.
 - Preserve unrelated work and use destructive Git operations only when
   explicitly requested.
@@ -61,30 +56,34 @@ closeout, and the orchestration skills for multi-PR control.
 
 ### 1. Preflight and inventory
 
-Resolve the loaded skill directory. Verify the repository, topic branch,
-remotes, authentication, and capability through the shared Capability Ladder;
-fetch current remote state. Before drafting, query the branch's open PR and
-all fingerprint inputs. Only the provider's documented no-open-PR result means
-absence; every other lookup failure blocks.
+Resolve the skill directory. Verify checkout, branch, authentication, and
+Capability Ladder. Query the target repository for an open PR,
+including number, URL, title, body, base, and head identity. Only a documented
+no-open-PR result means absence; lookup errors block.
 
-An existing PR supplies the effective base. A conflicting caller-provided base
-blocks rather than retargeting it. For a new PR, use the caller's base or run
-the installed base helper. This step completes when every remote identity and
-OID needed by the fingerprint is observed.
+An existing PR supplies the base; a conflicting caller value blocks. For a new
+PR, use the caller's base or installed base helper. Before approval, resolve
+the target repository URL and its base OID separately from the PR head
+repository/ref, effective push URL, published head OID, and create selector.
+The target repository owns each `gh` lookup and mutation. Complete when
+every fingerprint identity and OID is observed.
 
 ### 2. Select evidence
 
 - New PR: use local `HEAD`; publication requires a push.
-- Existing PR whose published head equals local `HEAD`: use that head without a
-  push.
-- Existing PR with unpublished local commits: use local `HEAD` only when the
-  exact push and update are requested or preauthorized. Otherwise use the
-  verified published head, exclude local commits explicitly, and do not push.
+- Existing PR: compare local and published OIDs by ancestry. Equal uses that
+  head without a push. Local-ahead uses local only when the exact push/update
+  is authorized; otherwise it uses published and excludes local commits.
+  Local-behind uses published and excludes stale checkout. Diverged also
+  defaults to published/no push; a push plan must first select an authorized
+  head verified as a descendant of the published OID, or block.
 
 Collect commits, changed paths, stats, and patch from the selected base/head.
 Use project docs only for terminology. Block on failed evidence collection or
-an empty diff. Apply `references/testing-language.md` to tests changed, tests
-run, and automated-validation availability.
+an empty diff. Bind each validation command/result to the OID it tested. Apply
+`references/testing-language.md`; when that OID differs from the evidence head,
+report the result as other-revision context and automated validation as
+unavailable for the selected diff.
 
 ### 3. Draft and freeze
 
@@ -104,11 +103,10 @@ coverage. Draft-only runs stop here.
 ### 5. Publish
 
 Before the first push/create/edit, **read and apply
-`references/publish-safety.md`**. Evaluate G1-G4 at their stated times. Push
-only when live `HEAD` still equals the approved local OID, then use that OID in
-an explicit refspec. After a push, re-fetch remote and PR state before
-create/edit. Unexpected drift discards the draft and restarts at Step 1 with
-fresh approval. Use `references/failure-handling.md` for command failures.
+`references/publish-safety.md`**. Evaluate G1-G4 at their stated times. Push the
+approved OID by explicit refspec. Afterward re-fetch before create/edit. Drift
+discards the plan and returns to Step 1 for action-specific approval. Use
+`references/failure-handling.md` for failures.
 
 ### 6. Report
 
