@@ -76,9 +76,11 @@ trap cleanup_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-safe_git=(git -C "$repo" --no-pager --no-replace-objects -c color.ui=false -c log.showSignature=false)
+safe_git=(git -C "$repo" --no-pager --no-replace-objects -c color.ui=false \
+  -c log.showSignature=false -c i18n.logOutputEncoding=UTF-8)
 repo_root="$("${safe_git[@]}" rev-parse --show-toplevel)"
-safe_git=(git -C "$repo_root" --no-pager --no-replace-objects -c color.ui=false -c log.showSignature=false)
+safe_git=(git -C "$repo_root" --no-pager --no-replace-objects -c color.ui=false \
+  -c log.showSignature=false -c i18n.logOutputEncoding=UTF-8)
 
 head_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options 'HEAD^{commit}')"
 printf '%s\n' "$head_oid" >"$evidence_dir/head_oid"
@@ -122,23 +124,43 @@ elif [[ -n "$cutoff_epoch" ]]; then
   selector=("--since-as-filter=@$cutoff_epoch" "$head_oid")
   printf 'cutoff\t%s\n' "$cutoff_epoch" >"$evidence_dir/selection"
 else
+  tag_refs_file="$evidence_dir/tag-refs"
   tags_file="$evidence_dir/tags"
-  "${safe_git[@]}" for-each-ref --format='%(refname)' refs/tags >"$tags_file"
+  "${safe_git[@]}" for-each-ref --format='%(refname)' refs/tags >"$tag_refs_file"
+  : >"$tags_file"
   reachable_tag=false
   while IFS= read -r tag_ref; do
     [[ -n "$tag_ref" ]] || continue
+    tag_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "$tag_ref")"
+    tag_type="$("${safe_git[@]}" cat-file -t "$tag_oid")"
+    if [[ "$tag_type" == tag ]]; then
+      peeled_type="$("${safe_git[@]}" cat-file -t "${tag_ref}^{}")"
+      [[ "$peeled_type" == commit ]] || continue
+    elif [[ "$tag_type" != commit ]]; then
+      continue
+    fi
     tag_commit="$("${safe_git[@]}" rev-parse --verify --end-of-options "${tag_ref}^{commit}")"
     if "${safe_git[@]}" merge-base --is-ancestor "$tag_commit" "$head_oid"; then
       reachable_tag=true
+      printf '%s\t%s\t%s\n' "$tag_ref" "$tag_oid" "$tag_commit" >>"$tags_file"
     else
       status=$?
       ((status == 1)) || exit "$status"
     fi
-  done <"$tags_file"
+  done <"$tag_refs_file"
   if [[ "$reachable_tag" == true ]]; then
     latest_tag="$("${safe_git[@]}" describe --tags --abbrev=0 "$head_oid")"
     resolved_start="refs/tags/$latest_tag"
-    start_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "${resolved_start}^{commit}")"
+    selection_record="$(awk -F '\t' -v ref="$resolved_start" '$1 == ref {print $2 "\t" $3}' "$tags_file")"
+    [[ -n "$selection_record" && "$(printf '%s\n' "$selection_record" | wc -l | tr -d ' ')" == 1 ]] \
+      || { printf 'ERROR: selected tag was not in the frozen candidate set\n' >&2; exit 1; }
+    IFS=$'\t' read -r selected_tag_oid start_oid <<<"$selection_record"
+    current_tag_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "$resolved_start")"
+    current_start_oid="$("${safe_git[@]}" rev-parse --verify --end-of-options "${resolved_start}^{commit}")"
+    [[ "$current_tag_oid" == "$selected_tag_oid" && "$current_start_oid" == "$start_oid" ]] \
+      || { printf 'ERROR: selected tag changed during inventory\n' >&2; exit 1; }
+    "${safe_git[@]}" merge-base --is-ancestor "$start_oid" "$head_oid" \
+      || { printf 'ERROR: selected tag is not an ancestor of frozen HEAD\n' >&2; exit 1; }
     selector=("$start_oid..$head_oid")
     printf 'start\t%s\t%s\n' "$resolved_start" "$start_oid" >"$evidence_dir/selection"
   else

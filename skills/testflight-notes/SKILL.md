@@ -6,15 +6,15 @@ license: MIT
 
 # TestFlight Notes
 
-Draft tester-facing TestFlight or beta-build notes from one pinned, complete
-Git view. Never publish, mutate the repository, or produce public release
+Draft tester-facing TestFlight or beta-build notes from pinned Git evidence.
+Never publish, mutate the repository, or produce public release
 notes, changelogs, or version bumps.
 
 ## Definitions
 
 | Term | Definition |
 | --- | --- |
-| Pinned head | Full `head_oid` resolved once from `HEAD`. |
+| Pinned endpoints | `head_oid` plus saved tag ref/object/commit OIDs or cutoff. |
 | Selected history | Commit OIDs enumerated once through `head_oid`. |
 | Evidence ledger | Each candidate mapped to OIDs, paths, tester impact, and platform evidence. |
 | Tester-visible | Observable behavior or experience, excluding CI, tests, tooling, formatting, and behavior-neutral refactors. |
@@ -23,7 +23,7 @@ notes, changelogs, or version bumps.
 
 | Input | Source | Default |
 | --- | --- | --- |
-| History start | One timeframe or ref/tag | Latest reachable tag; otherwise 14 days ending at `head_oid`. |
+| History start | One timeframe or ref/tag | Latest reachable commit tag; otherwise 14 days ending at `head_oid`. |
 | Length ceiling | User or repository convention | 4000 characters; draft to 3800. |
 | Platform scope | Message, paths, or patch | No suffix when uncertain. |
 

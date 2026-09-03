@@ -79,3 +79,12 @@ external attributes mark text as binary, while config hides submodule changes.
 **Pass:** Status records retain both rename paths in one patch, the gitlink is
 present, and patches use only attributes from the pinned head. Message framing
 ends at its final NUL with no extra record.
+
+## Scenario 8: Non-commit tags, tag drift, and message encoding
+
+**Setup:** Valid tags point to a blob and tree, a reachable commit tag moves
+after candidate scan, and one commit declares a legacy message encoding.
+
+**Pass:** Non-commit tags are ignored without hiding corrupt objects. The moved
+tag fails its saved raw/peeled OID checks; a stable tag uses saved OIDs. Commit
+messages are emitted as UTF-8 regardless of their stored encoding.

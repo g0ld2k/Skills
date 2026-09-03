@@ -214,6 +214,86 @@ class EvidenceCollectorTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(list(temp_root.glob("testflight-evidence.*")), [])
 
+    def test_default_selection_ignores_valid_noncommit_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            self.commit_file(repo, "base.txt", "base\n", "base")
+            blob = self.git(repo, "rev-parse", "HEAD:base.txt")
+            tree = self.git(repo, "rev-parse", "HEAD^{tree}")
+            self.git(repo, "tag", "blob-build", blob)
+            self.git(repo, "tag", "tree-build", tree)
+            self.commit_file(repo, "next.txt", "next\n", "next")
+
+            evidence = self.successful_evidence(self.collect(repo))
+
+            self.assertTrue(
+                (evidence / "selection").read_text(encoding="utf-8").startswith("cutoff\t")
+            )
+
+    def test_default_selection_rejects_tag_move_after_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = self.init_repo(root)
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            self.git(repo, "tag", "build-1", base)
+            head = self.commit_file(repo, "next.txt", "next\n", "next")
+            temp_root = root / "tmp"
+            temp_root.mkdir()
+            bin_path = root / "bin"
+            bin_path.mkdir()
+            marker = root / "moved"
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            wrapper = bin_path / "git"
+            wrapper.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ $* == *' describe --tags --abbrev=0 '* && ! -e $RACE_MARKER ]]; then\n"
+                "  : > \"$RACE_MARKER\"\n"
+                "  \"$REAL_GIT\" -C \"$RACE_REPO\" tag -f build-1 \"$RACE_NEW_OID\" >/dev/null\n"
+                "fi\n"
+                "exec \"$REAL_GIT\" \"$@\"\n"
+            )
+            wrapper.chmod(wrapper.stat().st_mode | 0o100)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["TMPDIR"] = str(temp_root)
+            environment["REAL_GIT"] = real_git
+            environment["RACE_MARKER"] = str(marker)
+            environment["RACE_REPO"] = str(repo)
+            environment["RACE_NEW_OID"] = head
+
+            result = subprocess.run(
+                ["bash", str(SCRIPT), "--repo", str(repo)],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tag changed", result.stderr)
+            self.assertEqual(list(temp_root.glob("testflight-evidence.*")), [])
+
+    def test_commit_messages_are_normalized_to_utf8(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.init_repo(Path(directory))
+            base = self.commit_file(repo, "base.txt", "base\n", "base")
+            (repo / "legacy.txt").write_text("legacy\n", encoding="utf-8")
+            self.git(repo, "add", "--", "legacy.txt")
+            self.git(repo, "config", "i18n.commitEncoding", "ISO-8859-1")
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-q", "-F", "-"],
+                input=b"caf\xe9\n",
+                check=True,
+            )
+            head = self.git(repo, "rev-parse", "HEAD")
+
+            evidence = self.successful_evidence(self.collect(repo, "--start", base))
+            message = (evidence / "commits" / head / "message.z").read_bytes()
+
+            self.assertIn("café".encode("utf-8"), message)
+            self.assertNotIn(b"caf\xe9", message)
+
     def test_root_diff_does_not_write_the_empty_tree_object(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = self.init_repo(Path(directory))
