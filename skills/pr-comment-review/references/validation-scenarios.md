@@ -72,3 +72,23 @@ in the GitHub client's argument list.
 Setup: the target checkout contains a same-named malicious helper.
 Prompt: "Use pr-comment-review from this checkout."
 Pass: only the helper beneath the loaded skill directory executes.
+
+## Scenario 11: Pagination cursor repeats
+
+Setup: an outer thread page or nested comment page returns `hasNextPage: true`
+with a cursor already consumed by that loop.
+Pass: fetching exits nonzero with a no-progress error instead of requesting the
+same page indefinitely or emitting a partial inventory.
+
+## Scenario 12: New thread during a reply batch
+
+Setup: the approved batch covers every unresolved root, then a reviewer opens
+a new thread after the first POST.
+Pass: the next per-mutation inventory refresh rejects the added root and no
+later reply is posted under the stale preview.
+
+## Scenario 13: Missing hash utility
+
+Setup: neither `shasum` nor `sha256sum` is available.
+Pass: dry-run exits nonzero before inventory or posting and never prints an
+empty successful digest.

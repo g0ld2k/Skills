@@ -46,7 +46,10 @@ merge_file="$work_dir/merge.json"
 iterator_file="$work_dir/unresolved.ndjson"
 enriched_file="$work_dir/enriched.ndjson"
 extra_file="$work_dir/extra.json"
+outer_cursors="$work_dir/outer-cursors"
+comment_cursors="$work_dir/comment-cursors"
 printf '[]' > "$threads_file"
+: > "$outer_cursors"
 
 valid_page='def page:
   type == "object"
@@ -102,6 +105,14 @@ merge_arrays() {
   mv "$merge_file" "$1"
 }
 
+record_cursor() {
+  local cursor_value="$1" seen_file="$2"
+  if grep -Fqx -- "$cursor_value" "$seen_file"; then
+    die "pagination cursor did not advance"
+  fi
+  printf '%s\n' "$cursor_value" >> "$seen_file"
+}
+
 cursor="null"; has_next="true"
 while [[ "$has_next" == "true" ]]; do
   gh api graphql -f query="$outer_query" -F owner="$owner" -F repo="$repo" \
@@ -112,6 +123,7 @@ while [[ "$has_next" == "true" ]]; do
   merge_arrays "$threads_file" "$nodes_file"
   has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' "$page_file")"
   cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // "null"' "$page_file")"
+  [[ "$has_next" != "true" ]] || record_cursor "$cursor" "$outer_cursors"
 done
 
 jq -c '.[] | select(.isResolved == false)' "$threads_file" > "$iterator_file" \
@@ -123,6 +135,8 @@ while IFS= read -r thread; do
   has_next="$(jq -r '.comments.pageInfo.hasNextPage' <<<"$thread")"
   cursor="$(jq -r '.comments.pageInfo.endCursor // "null"' <<<"$thread")"
   printf '[]' > "$extra_file"
+  : > "$comment_cursors"
+  [[ "$has_next" != "true" ]] || record_cursor "$cursor" "$comment_cursors"
   while [[ "$has_next" == "true" ]]; do
     gh api graphql -f query="$comments_query" -F id="$thread_id" -F cursor="$cursor" > "$page_file" \
       || die "could not complete review thread $thread_id"
@@ -131,6 +145,7 @@ while IFS= read -r thread; do
     merge_arrays "$extra_file" "$nodes_file"
     has_next="$(jq -r '.data.node.comments.pageInfo.hasNextPage' "$page_file")"
     cursor="$(jq -r '.data.node.comments.pageInfo.endCursor // "null"' "$page_file")"
+    [[ "$has_next" != "true" ]] || record_cursor "$cursor" "$comment_cursors"
   done
   jq -c --slurpfile extra "$extra_file" '.comments.nodes += $extra[0]' <<<"$thread" >> "$enriched_file" \
     || die "could not assemble review thread $thread_id"

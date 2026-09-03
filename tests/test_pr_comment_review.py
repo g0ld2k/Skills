@@ -350,6 +350,114 @@ class PostPRRepliesTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(post_log.read_text().strip(), "POST")
 
+    def test_post_rechecks_complete_inventory_before_each_mutation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pr-comment-drift-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+
+            fetch_count = temp_path / "fetch-count"
+            fetch_count.write_text("0")
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    while [[ $# -gt 0 ]]; do
+                      if [[ $1 == --output ]]; then output=$2; shift 2; else shift; fi
+                    done
+                    count="$(<"$FETCH_COUNT")"
+                    if ((count < 3)); then
+                      body='[{"thread_id":"PRRT_one","comment_id":101},{"thread_id":"PRRT_two","comment_id":202}]'
+                    else
+                      body='[{"thread_id":"PRRT_one","comment_id":101},{"thread_id":"PRRT_two","comment_id":202},{"thread_id":"PRRT_new","comment_id":303}]'
+                    fi
+                    printf '%s\n' "$body" > "$output"
+                    echo $((count + 1)) > "$FETCH_COUNT"
+                    """
+                )
+            )
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+
+            post_log = temp_path / "posts.log"
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    if [[ "$*" == *" -X POST "* ]]; then echo POST >> "$POST_LOG"; exit 0; fi
+                    comment_id=101
+                    [[ "$*" != *"id=PRRT_two"* ]] || comment_id=202
+                    cat <<JSON
+                    {"data":{"node":{"isResolved":false,"pullRequest":{"number":7,"repository":{"owner":{"login":"g0ld2k"},"name":"Skills"}},"comments":{"nodes":[{"databaseId":$comment_id,"replyTo":null}]}}}}
+                    JSON
+                    """
+                )
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+
+            replies = temp_path / "replies.json"
+            preview = temp_path / "preview.json"
+            replies.write_text(json.dumps([
+                {"thread_id": "PRRT_one", "comment_id": 101, "body": "One"},
+                {"thread_id": "PRRT_two", "comment_id": 202, "body": "Two"},
+            ]))
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_path}:{environment['PATH']}"
+            environment["FETCH_COUNT"] = str(fetch_count)
+            environment["POST_LOG"] = str(post_log)
+            base = ["bash", str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k", "--repo", "Skills", "--pr", "7", "--replies-file", str(replies), "--preview-file", str(preview)]
+            dry_run = subprocess.run([*base, "--dry-run"], capture_output=True, text=True, env=environment)
+            digest = re.search(r"sha256:[0-9a-f]{64}", dry_run.stdout)
+            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            self.assertIsNotNone(digest)
+
+            result = subprocess.run([*base, "--approved-digest", digest.group(0)], capture_output=True, text=True, env=environment)
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(post_log.read_text().splitlines(), ["POST"])
+
+    def test_dry_run_fails_without_a_sha256_tool(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pr-comment-hash-") as temp:
+            temp_path = Path(temp)
+            scripts_path = temp_path / "scripts"
+            bin_path = temp_path / "bin"
+            scripts_path.mkdir()
+            bin_path.mkdir()
+            for name in ("post_pr_replies.sh", "common.sh"):
+                shutil.copy2(SKILL_SCRIPTS / name, scripts_path)
+            for command in ("bash", "dirname", "jq", "awk", "mktemp", "rm", "cp"):
+                target = shutil.which(command)
+                self.assertIsNotNone(target)
+                (bin_path / command).symlink_to(target)
+            fake_gh = bin_path / "gh"
+            fake_gh.write_text("#!/usr/bin/env bash\nexit 98\n")
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
+            fetch = scripts_path / "fetch_unresolved_review_comments.sh"
+            fetch.write_text("#!/usr/bin/env bash\nexit 99\n")
+            fetch.chmod(fetch.stat().st_mode | stat.S_IXUSR)
+            replies = temp_path / "replies.json"
+            replies.write_text(json.dumps([{"thread_id": "PRRT_one", "comment_id": 101, "body": "One"}]))
+            environment = os.environ.copy()
+            environment["PATH"] = str(bin_path)
+
+            result = subprocess.run(
+                [str(bin_path / "bash"), str(scripts_path / "post_pr_replies.sh"), "--owner", "g0ld2k", "--repo", "Skills", "--pr", "7", "--replies-file", str(replies), "--dry-run"],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("DRY RUN DIGEST: sha256:\n", result.stdout)
+            self.assertIn("SHA-256 utility is required", result.stderr)
+
 
 class FetchReviewThreadsTests(unittest.TestCase):
     def run_fetch(self, responses: list[dict[str, object]]) -> subprocess.CompletedProcess[str]:
@@ -463,6 +571,34 @@ class FetchReviewThreadsTests(unittest.TestCase):
                 result = self.run_fetch([response])
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotEqual(result.stdout.strip(), "[]")
+
+    def test_fetch_rejects_repeated_outer_cursor(self) -> None:
+        result = self.run_fetch(
+            [self.page(101, "PRRT_one", True), self.page(202, "PRRT_two", True)]
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cursor did not advance", result.stderr)
+
+    def test_fetch_rejects_repeated_nested_cursor(self) -> None:
+        outer = self.page(101, "PRRT_one", False)
+        comments = outer["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]
+        comments["pageInfo"] = {"hasNextPage": True, "endCursor": "COMMENT_NEXT"}
+        nested = {
+            "data": {
+                "node": {
+                    "comments": {
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": True, "endCursor": "COMMENT_NEXT"},
+                    }
+                }
+            }
+        }
+
+        result = self.run_fetch([outer, nested])
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cursor did not advance", result.stderr)
 
 
 if __name__ == "__main__":

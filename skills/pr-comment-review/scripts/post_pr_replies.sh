@@ -38,13 +38,19 @@ require_cmd gh
 require_cmd jq
 require_cmd awk
 
+if command -v shasum >/dev/null 2>&1; then
+  sha256_tool="shasum"
+elif command -v sha256sum >/dev/null 2>&1; then
+  sha256_tool="sha256sum"
+else
+  die "a SHA-256 utility is required"
+fi
+
 sha256_file() {
-  if command -v shasum >/dev/null 2>&1; then
+  if [[ "$sha256_tool" == "shasum" ]]; then
     shasum -a 256 "$1" | awk '{print $1}'
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
   else
-    die "a SHA-256 utility is required"
+    sha256sum "$1" | awk '{print $1}'
   fi
 }
 
@@ -78,16 +84,19 @@ if [[ "$dry_run" == false ]]; then
     || { echo "Failing approval preview (artifact differs from current target or replies)" >&2; exit 2; }
 fi
 
-bash "$script_dir/fetch_unresolved_review_comments.sh" "$owner" "$repo" "$pr_number" --output "$unresolved_file" \
-  || { echo "Failing replies file (could not fetch complete current inventory)" >&2; exit 2; }
+refresh_inventory() {
+  bash "$script_dir/fetch_unresolved_review_comments.sh" "$owner" "$repo" "$pr_number" --output "$unresolved_file" \
+    || { echo "Failing replies file (could not fetch complete current inventory)" >&2; return 2; }
+  jq -e --slurpfile unresolved "$unresolved_file" '
+    [.replies[] | {thread_id, comment_id}] as $provided
+    | [$unresolved[0][] | {thread_id, comment_id}] as $required
+    | ($provided | length) == ($provided | unique_by(.thread_id) | length)
+      and (($required - $provided) | length == 0)
+  ' "$canonical_file" >/dev/null \
+    || { echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2; return 2; }
+}
 
-jq -e --slurpfile unresolved "$unresolved_file" '
-  [.replies[] | {thread_id, comment_id}] as $provided
-  | [$unresolved[0][] | {thread_id, comment_id}] as $required
-  | ($provided | length) == ($provided | unique_by(.thread_id) | length)
-    and (($required - $provided) | length == 0)
-' "$canonical_file" >/dev/null \
-  || { echo "Failing replies file (reply inventory does not match current unresolved top-level review comments)" >&2; exit 2; }
+refresh_inventory || exit 2
 
 jq -c '.replies[]' "$canonical_file" > "$iterator_file" \
   || { echo "Failing replies file (could not enumerate replies)" >&2; exit 2; }
@@ -112,6 +121,9 @@ posted=0; would_post=0; skipped=0; failed=0
 while IFS= read -r reply; do
   thread_id="$(jq -r '.thread_id' <<<"$reply")"
   comment_id="$(jq -r '.comment_id' <<<"$reply")"
+  if [[ "$dry_run" == false ]]; then
+    refresh_inventory || exit 2
+  fi
   rc=0
   thread_state "$thread_id" "$comment_id" || rc=$?
   if [[ $rc -eq 10 ]]; then
