@@ -16,8 +16,10 @@ Action:
 
 Action:
 - Show git error.
-- Suggest `git pull --rebase` (if appropriate) or resolve branch permissions.
-- Re-run `git push -u origin <branch>` after conflict resolution.
+- Re-inventory the remote ref and rebuild the publish fingerprint.
+- Resolve the history or permission problem, obtain fresh approval when the
+  fingerprint changed, then retry the approved-OID refspec from
+  `publish-safety.md`.
 
 ### Base branch not found
 
@@ -28,7 +30,9 @@ Action:
 ### PR already exists
 
 Action:
-- Switch to update mode (`gh pr edit`) instead of `gh pr create`.
+- Re-inventory the new PR and all fingerprint inputs.
+- Display an update fingerprint and obtain update-specific approval before any
+  edit; create authority does not cover the concurrent PR.
 
 ### Validation/test command failed
 
