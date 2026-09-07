@@ -56,6 +56,16 @@ Provide the PR title/body, base/head, create vs update decision (or explicitly
 unverified status), tests changed, and exact tests run/results or
 `Not run in this session`. After publication, include the confirmed PR URL.
 If publication is blocked, include the completed draft and specific blocker.
+For this unnumbered workflow, replace the shared numbered Blocked Report with:
+
+```text
+BLOCKED: <operation> — <specific missing condition or failure>
+Completed: <work actually completed>
+Would unblock: <required capability, authorization, or correction>
+```
+
+Name the operation (for example, branch push, PR lookup, create, or update);
+do not invent gate IDs or completed step numbers.
 
 ## Validation
 

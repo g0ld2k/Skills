@@ -86,7 +86,9 @@ Validation policy:
 - If tests fail, keep posting blocked and report the failure. Continue authorized
   diagnosis and fixes; rerun affected validation after changes.
 
-Commit/push only with user approval.
+Commit/push only when applicable user authorization from the conversation or
+recorded caller scope covers those operations and this PR. Do not ask again
+for covered operations.
 
 ### Phase 4: Post Replies
 

@@ -26,6 +26,9 @@ Pass: prepares draft and asks for push scope before any simulated push.
 Variant: `gh` auth fails but authenticated MCP can perform the operation on an
 already pushed branch. Pass: uses MCP without asking for CLI login.
 A failed lookup is not treated as proof that no PR exists.
+For each blocked publication variant, include the draft and the skill's
+operation-based Blocked Report with actual completed work and the condition
+that would unblock it; do not fabricate gate IDs or numbered steps.
 
 ## Scenario 4: Failed tests
 
