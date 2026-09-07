@@ -149,17 +149,6 @@ For mechanical-only work, define a measurable guard first: test inventory,
 - Stop and report if tool limits, auth, permissions, unavailable logs, or
   conflicting feedback make progress unsafe.
 
-## Red Flags
-
-Stop and re-check the workflow when you think:
-
-- "The plan already says what to do, so I do not need current source truth."
-- "These issues are close enough to combine."
-- "The tests can come after the fix."
-- "This unrelated dirty file is probably mine."
-- "The user said merge, so I can check gates myself instead of deferring to
-  `pr-closeout-loop`."
-
 ## Output Contract
 
 For planning output, include:

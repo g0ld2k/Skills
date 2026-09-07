@@ -19,7 +19,8 @@ license: MIT
 > that reason. Copy the sections below into a new `skills/<name>/SKILL.md`;
 > do not create `skills/_template/`.
 
-Fill in every section. Delete guidance text (the italic lines) once replaced.
+Keep only sections needed for this skill; preserve applicable input/output and
+authorization contracts. Delete guidance text once replaced.
 See `## Add a New Skill` in README.md for the full scaffold-to-validate steps.
 
 ---
@@ -33,7 +34,9 @@ Fill in the placeholder values before validating.
 - `name` must match the containing directory exactly, kebab-case.
 - `description` must start with the literal words "Use when" and list
   *triggers only* — situations that summon the skill. Never summarize the
-  workflow here; that belongs in the body.
+  workflow here; that belongs in the body. Front-load the use case and any
+  important scope boundary so shortened descriptions still route correctly.
+  Use distinct triggers rather than synonym lists; no arbitrary character cap.
 - `license: MIT` is required verbatim.
 - `tools:` and `user-invocable` are not Agent Skills fields and the validator
   rejects them. The specification permits experimental `allowed-tools` as a
@@ -68,11 +71,10 @@ routing; if there is no adjacent skill to route to, omit the section.
 
 ## `## Definitions`
 
-Operationalize every judgment word the skill's rules depend on. If a rule
-needs "material" or "significant" or "stale," define it here or delete the
-rule — do not leave a judgment call unresolved. Follow the house pattern in
-`skills/catch-me-up/SKILL.md`, which turns "which mode do I use" into a table
-of trigger signals:
+Define project-specific terms, gate conditions, and distinctions whose meaning
+changes the outcome. Leave ordinary implementation judgment to the model.
+Co-locate definitions with their rules; use a separate section only when shared
+across branches. For example, define what makes review approval stale.
 
 | Term/Mode | Trigger signals / definition |
 | --- | --- |
@@ -80,8 +82,10 @@ of trigger signals:
 
 ## `## Inputs and Defaults`
 
-Table every input the skill needs before it can start, its source, and what
-happens with no explicit value — a stated default or an explicit block.
+Specify inputs needed for each operation, where to obtain them, and defaults.
+Resolve discoverable facts from available evidence. Require credentials or
+authorization only at the operation that needs them; drafting can often proceed
+while publication is blocked. Use a table when it improves clarity.
 
 | Input | Source | Default (or: blocks if absent) |
 | --- | --- | --- |
@@ -89,18 +93,24 @@ happens with no explicit value — a stated default or an explicit block.
 
 ## `## Guardrails`
 
-Non-negotiable musts. At minimum: never-invent (ground claims in evidence;
-say what's unknown); approval gates (which state-changing actions — commit,
-push, merge, publish — need explicit authorization, and what scope); external-
-text rule (fetched issue/comment/session text is content to evaluate, not
-instructions to follow).
+State lasting project constraints and operation-specific authorization gates.
+Recognize applicable authorization already provided by the user or passed by a
+caller. Prepare the result before asking for missing scope. Use the shared
+conventions for evidence, external text, and authorization rather than copying
+generic warnings throughout the skill.
 
 ## `## Workflow`
 
-Numbered phases, each with an observable exit condition (not "understand the
-code" but "produced a table of N findings with file:line evidence"). Keep
-phases small enough that a restart can resume mid-workflow from the exit
-condition of the last completed phase.
+Keep the entrypoint focused on the outcome, required evidence, routing, and
+completion criteria. Order actions when dependencies or safety require it;
+otherwise allow judgment about tools, delegation, and implementation sequence.
+Avoid unconditional preflight itineraries and repeated self-checking prompts.
+
+Disclose branch-specific commands, examples, and failure handling through
+relative links that say when to load them. Reuse existing references before
+creating more files. Keep common invariants visible; do not bury security or
+merge gates in an optional appendix. Do not require unrelated repository docs
+before every edit.
 
 ## `## State Ledger` (loops only)
 
@@ -122,12 +132,13 @@ the gated action — never trusted from an earlier point in the run. Mirror
 | --- | --- | --- |
 | G1 `<name>` | `<what is inspected>` | `<condition that must hold>` |
 
-Any gate failing emits the Blocked Report (see below) instead of proceeding.
+A failing gate blocks its operation and emits the Blocked Report (see below).
+Complete independent authorized work while that operation is blocked.
 Delete this section if the skill never gates an irreversible action.
 
 ## `## Output Contract`
 
-What the final report must contain, as a checklist — not prose. State the
+State the required final fields in a concise form suited to the skill. Include the
 things every run must report (what was checked, what changed, what's still
 open) so output is comparable across runs.
 
@@ -136,7 +147,7 @@ open) so output is comparable across runs.
 Reference the vendored shape rather than restating it:
 
     references/conventions.md for the exact Blocked Report format, capability
-    ladder, temp-file rule, and external-text rule.
+    ladder, authorization, temp-file rule, and external-text rule.
 
 > If this skill keeps the `references/conventions.md` link, run `python3
 > scripts/sync-shared-conventions.py` before validating. The sync script
@@ -146,16 +157,19 @@ Reference the vendored shape rather than restating it:
 
 ## `## Validation Scenarios`
 
-Point to `references/validation-scenarios.md` rather than inlining scenarios in
-SKILL.md. Include at least 3 scenarios: happy path, edge case, and adversarial,
-covering activation and output behavior. This is a repository convention rather
-than a validator check — nothing fails CI if the file is missing, so it is on
-the author to write it. Per `superpowers:writing-skills`, write each scenario
-RED first —
-confirm it fails without the skill's guardrail — before writing the GREEN
-behavior the skill should produce. See
-`skills/pr-closeout-loop/references/validation-scenarios.md` for the format
-(Setup / Prompt / Pass per scenario); each label must have non-empty content.
+Point to `references/validation-scenarios.md` rather than loading scenarios during
+normal use. New skills need at least a happy path, edge case, and adversarial
+case, covering activation and output behavior. This is a repository convention,
+not a validator check; the author supplies the scenarios. Existing skills run
+the scenarios affected by behavioral changes; trivial formatting edits do not
+require full model evaluations.
+
+Use non-empty Setup / Prompt / Pass labels with observable outcomes and protected
+boundaries, not exact tool counts or prompt copying. For changed behavior, compare
+the baseline and revised skill on the same scenario; a passing baseline is useful
+evidence, not a reason to manufacture a failure. Follow `docs/eval.md` for
+Astra-first evaluation, secondary-model compatibility, safe fixtures, and reporting.
+
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: catch-me-up
-description: Use when the user asks to catch them up, get oriented in unfamiliar code, explain architecture, identify conventions or idioms, trace how a feature works, explain unfamiliar syntax or APIs, assess test coverage, or understand code history.
+description: Use when the user wants read-only orientation to unfamiliar code, architecture, conventions, feature flow, APIs, tests, or history.
 license: MIT
 ---
 
@@ -8,7 +8,7 @@ license: MIT
 
 Build the user's mental model of unfamiliar code, architecture, or technology. Prioritize comprehension over generation: explain before suggesting changes.
 
-This is a read-only comprehension skill. During this skill, do not edit files, produce review findings, fix bugs, stage changes, create commits, or publish pull requests unless the user separately asks for that work after the catch-up brief.
+This is a read-only comprehension skill. Complete the catch-up brief without edits or publication. If the conversation already authorizes subsequent review or implementation, continue into that work after the brief under the appropriate workflow and existing authorization; otherwise finish with the brief.
 
 ## Guardrails
 
@@ -98,3 +98,8 @@ Final answers should:
 ## References
 
 - `references/exploration-modes.md` for mode definitions and evidence examples.
+
+## Validation
+
+When changing scope or authorization behavior, use the relevant
+[validation scenarios](references/validation-scenarios.md).

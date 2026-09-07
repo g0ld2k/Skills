@@ -12,7 +12,7 @@ Produce a high-quality commit message based on staged changes only.
 
 **Commit gate (single source for this skill):** two modes exist.
 - `message-only` (default): never commit. A recorded approval scope alone does
-  not switch modes; the caller must ask for the commit.
+  not switch modes; the user or caller must ask for the commit.
 - `message+commit`: commit only with explicit user approval (for example:
   "commit it", "looks good, commit") or a caller-provided recorded approval
   scope that explicitly covers committing staged changes with the generated
@@ -20,39 +20,23 @@ Produce a high-quality commit message based on staged changes only.
 
 ## Workflow
 
-### 0) Preflight checks (required)
+### 1) Establish staged evidence
 
-Run these first:
-
-```bash
-# Confirm repo and staged content
-git rev-parse --is-inside-work-tree
-git diff --cached --quiet; echo $?
-
-# List staged files and stats
-git --no-pager diff --cached --name-only
-git --no-pager diff --cached --stat
-```
-
-Rules:
-- If not in a git repo, stop and report the issue.
-- If no staged changes, stop and ask user to stage files before generating a message.
-
-### 1) Collect evidence from staged diff
-
-Use staged content as primary truth:
+Establish that this is a Git repository and inspect the current staged diff.
+An existing repository check can be reused; staged content must reflect the
+message being generated. For example:
 
 ```bash
-# Full staged patch for analysis
 git --no-pager diff --cached
-
-# Optional: staged file summary by status
-git --no-pager diff --cached --name-status
 ```
+
+Use file summaries or statistics only when they help interpret the patch.
+If this is not a repository, report the blocker. If the index is empty,
+report that staged changes are needed; do not stage files as part of this skill.
 
 ### 2) Collect optional project context
 
-If present, consult project docs for terminology only:
+Only when terminology is unresolved, consult relevant portions of project docs:
 - `CONTEXT.md`
 - `PRD.md`
 - `TASKS.md`
@@ -103,20 +87,12 @@ Evidence rules (strict):
 - Do not reference issue IDs/phases unless provided by user/context/branch
 - Do not mention unstaged or untracked changes
 
-### 5) Present message for approval
+### 5) Present the message
 
-Always show the proposed message first:
-
-```
-Here's a suggested commit message:
-
-<show formatted message>
-
-Ready to commit when you confirm.
-```
-
-If the commit gate (see Goal) passes on the preauthorized path, state that the
-commit is preauthorized and continue to step 6 without another prompt.
+Show the proposed message. In message-only mode, return it with the rationale.
+When a commit was requested and the Goal gate passes, state the authorization
+in use and continue without another confirmation. Ask only if the requested
+commit lacks applicable authorization from the conversation or caller.
 
 ### 6) Commit (gate in Goal must pass)
 
@@ -143,7 +119,6 @@ Do not auto-push after commit unless separately requested.
 Return:
 1. Proposed commit message
 2. 1-3 line rationale (type/scope choice)
-3. "Ready to commit when you confirm."
 
 ### B) `message+commit` (commit gate passed)
 1. Commit using `git commit -F`
@@ -155,3 +130,8 @@ git --no-pager log -1 --pretty=format:'%h %s'
 ## References
 
 - references/conventions.md for capability ladder, temp files, external-text, and Blocked Report conventions.
+
+## Validation
+
+When changing scope or authorization behavior, use the relevant
+[validation scenarios](references/validation-scenarios.md).

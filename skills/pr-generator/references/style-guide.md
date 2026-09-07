@@ -48,3 +48,34 @@ Use consistent labels:
 - `Testing`
 - `Performance`
 - `Security`
+
+## Body Template
+
+Body template:
+
+```markdown
+### Goal
+[1-2 sentences: what this PR does and why]
+
+### What Changed
+- **[Category]:** [Key change and impact]
+- **[Category]:** [Key change and impact]
+
+### Testing
+- **Tests Changed:** [Summary]
+- **Tests Run:** [Exact commands + results, or "Not run in this session"]
+
+### Files Changed
+[X files, +Y/-Z lines]
+
+### Risks / Breaking Changes
+- [Known risks, migrations, compatibility notes, or "None identified"]
+
+### How to Validate
+1. [Manual scenario with expected result]
+2. [Manual scenario with expected result]
+3. **Automated:** `[test command(s)]`
+
+### Notes
+[Issue links, phase completion, follow-up tasks]
+```

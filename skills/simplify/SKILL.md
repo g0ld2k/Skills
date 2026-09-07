@@ -27,31 +27,19 @@ git --no-pager diff --staged
 
 If both are empty, stop and report there is no diff to simplify.
 
-## Phase 2: Launch Three Review Agents in Parallel
+## Phase 2: Review Reuse, Quality, and Efficiency
 
-Use the Agent tool to launch all three agents concurrently in a single message. Pass each agent the full diff so it has complete context.
+Cover all three concerns below. Review small or tightly coupled diffs locally.
+Delegate independent portions when their size or complexity makes separate
+review useful and the host supports it; no fixed agent count is required.
 
-Dispatch each agent with this prompt shape:
+Give each delegated reviewer a bounded read-only scope, the relevant diff and
+sufficient surrounding context, and the finding fields and definitions below.
+Reviewers may search for existing utilities and cite their locations. The
+parent combines findings and assigns sequential ids. Use the same finding
+schema whether reviewing locally or delegating.
 
-    You are the [reuse|quality|efficiency] reviewer. Scope findings to the
-    changes in the diff below, but you may search the repository read-only to
-    locate existing utilities or duplicates and cite their file paths. Do not
-    edit files. Return ONLY a JSON array of findings, each with keys:
-    category ("[reuse|quality|efficiency]"), severity ("high"|"medium"|"low"),
-    confidence ("high"|"medium"|"low"), location ("path:line"), summary (one
-    sentence), proposed_fix (one sentence). Do not include an id; the parent
-    assigns ids sequentially during aggregation. Severity and confidence
-    definitions: [paste the Severity definitions and Confidence definitions
-    blocks verbatim]. Review criteria: [paste that agent's numbered list].
-    Diff: [full diff]
-
-1. Reuse pass
-2. Quality pass
-3. Efficiency pass
-
-If sub-agents/parallel tools are available, run passes concurrently. Otherwise run sequentially. The finding format must be identical either way.
-
-### Agent 1: Code Reuse Review
+### Code Reuse Review
 
 For each change:
 
@@ -59,7 +47,7 @@ For each change:
 2. **Flag any new function that duplicates existing functionality.** Suggest the existing function to use instead.
 3. **Flag any inline logic that could use an existing utility** — hand-rolled string manipulation, manual path handling, custom environment checks, ad-hoc type guards, and similar patterns are common candidates.
 
-### Agent 2: Code Quality Review
+### Code Quality Review
 
 Review the same changes for hacky patterns:
 
@@ -70,7 +58,7 @@ Review the same changes for hacky patterns:
 5. **Stringly-typed code**: using raw strings where constants, enums, or typed values already exist in the codebase
 6. **Unnecessary nesting**: wrapper views/elements that add no layout value — check if inner component props already provide the needed behavior
 
-### Agent 3: Efficiency Review
+### Efficiency Review
 
 Review the same changes for efficiency:
 
@@ -116,11 +104,11 @@ Confidence definitions:
 
 ## Phase 3: Present Findings and Get User Selection
 
-Wait for all three agents to complete. Aggregate their findings for presentation. If a finding is a false positive or not worth addressing, note it and move on — do not argue with the finding, just skip it.
+Complete all relevant review work, including any delegated reviews, and aggregate the findings. Skip false positives or findings not worth addressing and record the reason.
 
 Do not edit code in this phase.
 
-If the caller passed a recorded unattended selection policy, use it as the
+If the user or caller supplied a recorded unattended selection policy, use it as the
 selection instead of asking again. The default unattended policy is: select
 valid, in-scope medium/high findings; leave low findings unselected unless the
 policy explicitly includes them. Report the policy and selected finding ids
@@ -129,7 +117,7 @@ before applying fixes.
 1. Present findings as a numbered list with this display format:
    - `[id] [severity] [category] [confidence] path:line - summary`
    - `Fix: proposed_fix`
-2. Ask the user:
+2. If no applicable selection or unattended policy is already recorded, ask the user:
    - `Select items to address (e.g. 1,2,5,8), or reply all/none.`
 3. Parse selection:
    - `all` -> select all findings
