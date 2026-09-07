@@ -71,7 +71,7 @@ or removing that link is all it takes to opt in or out.
 
 1. Use `docs/skill-template.md` as the blueprint, not a literal copy: create
    `skills/<name>/SKILL.md` starting from the template's frontmatter block
-   (filled in), then write each section the template prescribes (its quoted
+   (filled in), then write the applicable sections from the template (its quoted
    `## …` headings become your real headings). No template prose survives into
    the finished skill — delete the `DOCS-ONLY` blocks, the `## Frontmatter`
    rules section, and every guidance line as you replace it.

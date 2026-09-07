@@ -4,6 +4,52 @@
 
 Minimal API surface for fetching unresolved review feedback and posting replies.
 
+## MCP Operations
+
+Load this section when using MCP. Resolve owner/repo/PR and fetch thread-level
+resolved state with all comment pages. Emit the same thread/root-comment fields
+as the CLI helper. For posting, preview replies and apply SKILL.md's complete
+inventory, nonempty body, repository/PR/root-comment identity, and fresh
+unresolved-state checks. A lookup failure is a blocker, not a resolved skip.
+If a capability cannot supply these checks, use the CLI or block that operation.
+The authorization gate in SKILL.md applies equally to MCP and CLI.
+
+## CLI Helpers
+
+Load this section when using the CLI. Resolve script paths relative to this
+skill directory, not the target repository. Helpers require `gh` and `jq`;
+use authenticated MCP if the CLI cannot perform the operation.
+
+```bash
+out_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-review.XXXXXX")"
+bash scripts/fetch_unresolved_review_comments.sh <owner> <repo> <pr_number> --output "$out_dir/unresolved-comments.json"
+bash scripts/build_triage_template.sh --input "$out_dir/unresolved-comments.json"
+```
+
+The fetch helper returns only unresolved threads, including root comments and
+replies. Use issue comments only as contextual discussion:
+
+```bash
+gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
+```
+
+For posting, preview first and execute only with existing posting authorization:
+
+```bash
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --dry-run
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json"
+```
+
+Both calls verify complete current reply inventory, nonempty bodies, target
+identity, and fresh resolved state. Surplus entries for newly resolved threads
+are validated and skipped. Distinguish skips from lookup/input failures and
+report the helper's actual counts. Do not interpret a dry run as a posted reply.
+
+## Raw API Operations
+
+Load the following sections only to implement an equivalent fetch/post operation
+or diagnose helper behavior. Prefer the helpers when they meet the task.
+
 ## 1) Fetch Review Threads with Resolved State (GraphQL)
 
 Use GraphQL because REST review comment endpoints do not include thread-level `isResolved`.
@@ -72,4 +118,5 @@ gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/repl
 - Dry-run preview first.
 - Re-check unresolved status before each post.
 - Skip any thread now marked resolved.
-- Post only after explicit user approval.
+- Post only with explicit user authorization from the conversation or caller;
+  existing authorization does not require another approval turn.

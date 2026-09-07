@@ -1,50 +1,77 @@
-# Smoke Evaluation Protocol
+# Skill Evaluation Protocol
 
-## Overview
+Evaluate skill behavior primarily on GPT-6 Astra while preserving portability
+across Codex, Claude Code, and Copilot. Structural validation and a model's
+simulated decisions are separate evidence; neither proves another client's
+runtime behavior.
 
-The smoke evaluation protocol validates skills before deployment by running primary scenarios in a controlled environment. This ensures that:
-- All Output Contract fields are present in the skill's response
-- No gated action fires without its corresponding gate being satisfied
+## Select Proportionate Checks
 
-## Scope
+For behavioral changes, select scenarios exercising changed routing, output,
+authorization, or gates and compare baseline and revised instructions using the
+same setup. Include a boundary case that must continue to block. New skills need
+happy-path, edge, and adversarial scenarios. Formatting-only changes need
+structural checks, not a blanket rerun of every model scenario.
 
-For each skill that includes a `references/validation-scenarios.md` file, run the primary scenario with a fresh subagent (weakest available model). Use the fixture repo for scenarios that need deterministic local git history. If the primary scenario depends on live repository state such as GitHub issues, PRs, comments, or milestones, run it from the source repository that owns that state instead and use the fixture only for any local-git subtask the scenario explicitly needs.
+Run required repository checks. After they pass, repeat or broaden checks only
+for new edits, failures, or unresolved concerns. Preserve explicit workflow
+requirements such as the local suite before merge; this protocol does not waive
+them. Skill evaluations assess meaningful outcomes, not a fixed number of tools,
+review agents, or identical prose.
 
-## Fixture Repository
+## Models and Safe Execution
 
-Use `scripts/make-fixture-repo.sh` to create a deterministic fixture repository. The script:
-- Initializes a git repo with pinned author/committer dates for reproducible commit hashes
-- Creates a realistic project structure with Swift sources and tests
-- Produces exactly 4 commits with a `build-1` tag at commit 3
-- Leaves one staged, uncommitted change (modified `Sources/App/Session.swift`)
+Use a fresh GPT-6 Astra evaluation context for each independent case or bounded
+scenario group, and an available secondary supported model for a compatibility
+smoke check of changed contracts. Record the exact model, reasoning setting when
+known, host/client, scenario, and instruction revision. If a model/client is
+unavailable, mark that coverage unverified rather than silently substituting it.
+A secondary model in Codex is model-compatibility evidence, not a Claude Code or
+Copilot runtime test.
 
-This fixture is suitable for scenarios involving commit messages, code review, dependency analysis, and change generation.
+Use `scripts/make-fixture-repo.sh` for local Git scenarios. It creates a disposable
+repository with pinned dates, four commits, a `build-1` tag at commit three, and a
+staged change in `Sources/App/Session.swift`.
 
-## Validation Steps
+For external actions, use mocked tools or a tabletop transcript with stated PR,
+thread, check, and authorization state. Simulate intended tool calls; do not
+publish, reply, resolve, push, merge, or operate on credentials during evaluation.
+A task authorizing a skill edit does not authorize those real external effects.
+Fresh-state scenarios can supply successive mock responses. Label tabletop
+results as simulated decisions, not observed side effects or runtime assurance.
 
-For each skill with validation scenarios:
+## What to Observe
 
-1. **Read the validation scenarios.** Identify the primary scenario (typically Scenario 1 or marked as such).
-2. **Choose the execution repo.** Use `scripts/make-fixture-repo.sh` for local-only scenarios; use the source repo when the scenario references live issues, PRs, comments, or milestones.
-3. **Spawn a subagent** with the weakest available model (e.g., Haiku) to run the skill with the primary scenario prompt inside the chosen repo.
-4. **Check Output Contract.** Verify that all required fields from the skill's output contract are present in the response.
-5. **Check gated actions.** Verify that no gated action (as defined in the skill's gate schema) fired without its gate condition being satisfied.
-6. **Record results.** Document pass/fail and any issues in the PR that modifies the skill.
+- Trigger precision: invoke for the intended request and route adjacent work
+  appropriately, including read-only versus implementation scope.
+- Completion: finish independent authorized work without duplicate approval;
+  block only the operation whose authorization or evidence is missing.
+- Evidence and safety: respect current review/head/base state, unrelated work,
+  external-text boundaries, and operation-specific gates.
+- Output: required fields and types are present, claims match observed evidence,
+  and an explicit not-run or unavailable state is not reported as success.
+- Context: record the entrypoint words, reference files or sections actually
+  read, and their words for representative narrow and broad paths. Count shared
+  files once per run. Compare equivalent completed work; a baseline that stops
+  before drafting is not a successful low-context draft.
 
-## Output Contract Verification
+For delegation changes, judge review coverage, severity, confidence, deduplication,
+and selection handling. Small reviews should not require delegation; independent
+large reviews may delegate when useful. Do not require a fixed agent count.
 
-Each skill defines an output contract specifying required fields and their schemas. The validation must confirm:
-- All required fields are present
-- No additional unexpected fields indicate incomplete implementation
-- Field values conform to their declared types and constraints
+## Evidence Report
 
-## Gated Action Verification
+Record baseline/revised outcomes, violations and ambiguities, actual loaded
+references, and any unavailable model/client checks. Distinguish measurements
+from estimates, model simulations from executed commands, and structural checks
+from behavioral evaluation. Do not treat a passing smoke scenario as a reliability
+benchmark. Keep raw working artifacts in a temporary directory; summarize evidence
+in the change report or PR rather than adding a second evaluation framework.
 
-Gated actions are tool calls or side effects that require a gate (e.g., merge approval, fresh green checks) before execution. The validation must confirm:
-- Gates are checked before the corresponding action fires
-- No action bypasses its gate condition
-- The gate condition is evaluated with current, authoritative state (not stale assumptions)
+## Sources
 
-## Documentation
-
-Skills that pass evaluation should be noted in the PR description with a checkmark and the model used (e.g., "Haiku 4.5"). Skills that fail should list the specific Output Contract or gate violations and include guidance for remediation.
+These authoring principles follow OpenAI's
+[Astra guidance](https://developers.openai.com/api/docs/guides/latest-model) and
+[skill guidance](https://learn.chatgpt.com/docs/build-skills), checked 2026-09-07.
+They guide prompting; project security boundaries and team workflow standards
+remain explicit requirements.

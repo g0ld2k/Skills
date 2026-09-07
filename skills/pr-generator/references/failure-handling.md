@@ -9,8 +9,9 @@ When publish/update fails, report exact failure and one concrete next step.
 ### `gh auth status` fails
 
 Action:
-- Ask user to authenticate via `gh auth login`.
-- Retry preflight before any PR action.
+- Use an already authenticated GitHub MCP capability if it can perform the operation.
+- If no publishing capability works, finish the draft and report publication blocked.
+- Request authentication only for the remaining requested operation; retry that operation once available.
 
 ### Push rejected (non-fast-forward or no upstream)
 
@@ -35,7 +36,10 @@ Action:
 Action:
 - Report failing command and relevant test target.
 - Do not claim success.
-- Ask whether to continue with known failures noted in PR body.
+- Complete the draft with the known failures accurately recorded.
+- Continue diagnosis or fixes within existing authorization. Publication must satisfy
+  its authorization and repository policies; this does not waive posting or merge
+  gates in companion workflows. Ask only for a decision those policies require.
 
 ## Error Reporting Format
 
