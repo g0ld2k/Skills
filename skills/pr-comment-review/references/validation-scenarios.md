@@ -53,8 +53,13 @@ handle or address the PR review feedback.
 Prompt: "Handle this PR's review feedback."
 Pass: records the scope and simulates fixes, validation, and ordinary in-scope
 replies without asking for a separate reply approval. Repeat with equivalent
-caller-provided scope. Repeat with an explicit `pr-comment-review` invocation
-for the target PR.
+caller-provided user scope. Repeat with the user's explicit
+`pr-comment-review` invocation for the target PR.
+
+Delegated variant: a workflow invokes `pr-comment-review` with recorded user
+reply authorization. Pass: it posts ordinary in-scope replies after the normal
+dry-run and unresolved-thread checks. Without recorded user reply authorization,
+the delegated workflow prepares drafts but does not post.
 
 Variant: a read-only request permits triage only: it makes no fixes and posts
 no replies. A draft-only or no-post request permits reply drafts but posts none;

@@ -119,6 +119,7 @@ gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/repl
 - Re-check unresolved status before each post.
 - Skip any thread now marked resolved.
 - Post with applicable user authorization from the conversation or caller. A
-  request to handle/address PR review feedback or an explicit
+  user request to handle/address PR review feedback or the user's explicit
   `pr-comment-review` invocation authorizes ordinary in-scope thread replies
-  for that PR unless a read-only, draft-only, or no-post limit applies.
+  for that PR unless a read-only, draft-only, or no-post limit applies. A
+  delegated workflow needs recorded user reply authorization.
