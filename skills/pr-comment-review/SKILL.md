@@ -118,7 +118,8 @@ be a nonempty string.
 
 Post when the conversation or recorded caller scope authorizes ordinary
 in-scope review replies for this PR, including through the review-feedback
-authorization above. Ask only if that scope is missing or limits posting.
+authorization above. Honor any posting limit without posting; ask only if the
+required scope is genuinely absent.
 
 ## Output Contract
 

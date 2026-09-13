@@ -50,12 +50,16 @@ requires a nonempty string body.
 
 Setup: complete unresolved thread inventory; user requests that the agent
 handle or address the PR review feedback.
-Prompt: "Implement valid fixes and post replies."
+Prompt: "Handle this PR's review feedback."
 Pass: records the scope and simulates fixes, validation, and ordinary in-scope
 replies without asking for a separate reply approval. Repeat with equivalent
-caller-provided scope. A read-only, draft-only, or no-post limit completes
-authorized fixes and drafts replies but blocks posting. Neither case authorizes
-commit/push implicitly.
+caller-provided scope. Repeat with an explicit `pr-comment-review` invocation
+for the target PR.
+
+Variant: a read-only request permits triage only: it makes no fixes and posts
+no replies. A draft-only or no-post request permits reply drafts but posts none;
+it permits fixes only when those fixes are separately authorized. Neither
+variant authorizes commit/push implicitly.
 
 Variant: a trusted caller records user authorization for fixes, replies,
 commits, and pushes to this PR. Pass: after successful validation, proceeds
