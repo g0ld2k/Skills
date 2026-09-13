@@ -24,6 +24,18 @@ commit, PR, review/CI, and merge.
 
 ## Required Sub-Skills
 
+For clear documentation, configuration, or mechanical changes with a defined
+scope, use proportionate execution. This exception overrides the
+brainstorming, separate-plan, and test-first requirements below; preserve the
+applicable verification and authorization requirements.
+
+When resuming an existing approved plan or defined work slice, verify the
+current state against that plan and resume its appropriate unfinished phase.
+Do not repeat completed discovery, design, or approval steps. Preserve the
+plan's remaining implementation, testing, review, verification, and
+authorization requirements. New scope or unresolved ambiguity follows the
+normal planning requirements.
+
 - **REQUIRED:** Use `superpowers:using-git-worktrees` before implementation work
   when the current workspace is not already isolated.
 - **REQUIRED:** Use `superpowers:brainstorming` before creating or changing
@@ -73,6 +85,10 @@ commit, PR, review/CI, and merge.
 5. Ask only for blocking ambiguity. If the user gave blanket approval to commit,
    push, create PRs, and merge for this run, do not re-prompt at each routine
    publish step.
+
+For a proportionate-execution change, record the narrow scope and measurable
+guard, then continue at Phase 3. For an approved plan or defined work slice,
+verify current state and resume its relevant unfinished phase.
 
 ### Phase 1: Slice The Work
 
