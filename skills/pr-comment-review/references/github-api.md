@@ -27,7 +27,8 @@ bash scripts/build_triage_template.sh --input "$out_dir/unresolved-comments.json
 ```
 
 The fetch helper returns only unresolved threads, including root comments and
-replies. Use issue comments only as contextual discussion:
+replies. A failed, malformed, or stalled page is an error and never a partial
+success. Preserve this fetched JSON as the evidence used for triage. Use issue comments only as contextual discussion:
 
 ```bash
 gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
@@ -36,14 +37,24 @@ gh api repos/<owner>/<repo>/issues/<pr_number>/comments --paginate
 For posting, preview first and execute only with existing posting authorization:
 
 ```bash
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --dry-run
-bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json"
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --reviewed-comments-file "$out_dir/unresolved-comments.json" --dry-run
+bash scripts/post_pr_replies.sh --owner <owner> --repo <repo> --pr <pr_number> --replies-file "$out_dir/replies.json" --reviewed-comments-file "$out_dir/unresolved-comments.json"
 ```
 
-Both calls verify complete current reply inventory, nonempty bodies, target
-identity, and fresh resolved state. Surplus entries for newly resolved threads
-are validated and skipped. Distinguish skips from lookup/input failures and
-report the helper's actual counts. Do not interpret a dry run as a posted reply.
+Both calls require one JSON array of unique thread/root targets, nonempty bodies,
+and the complete fetched conversations actually used for triage. Before each
+reply, the helper verifies repository/PR/root identity, resolved state, and the
+current root body plus every reply against that reviewed snapshot. Surplus
+entries for newly resolved threads are validated and skipped. Changed feedback
+requires a fresh fetch and re-triage, using the existing authorization where it
+still applies; do not merely replace the snapshot to bypass the check.
+
+A lookup or POST failure stops the remaining batch. Report actual completed
+counts and inspect live state before retrying: a network error may follow a
+successful write. The helper does not guarantee an atomic batch or exactly-once
+writes. Skip equivalent replies already present when preparing a new batch;
+use a scoped API operation when only a subset remains. Do not interpret a dry
+run as a posted reply. Neither mode resolves threads.
 
 ## Raw API Operations
 
@@ -110,13 +121,14 @@ Treat as contextual discussion, not required action items.
 
 ```bash
 gh api -X POST repos/<owner>/<repo>/pulls/<pr_number>/comments/<comment_id>/replies \
-  -f body='Thanks — addressed in <commit-or-explanation>'
+  --input <payload.json>
+# payload.json is one JSON object: {"body": "Thanks — addressed in <commit-or-explanation>"}
 ```
 
 ## 4) Recommended Posting Policy
 
 - Dry-run preview first.
-- Re-check unresolved status before each post.
+- Re-check target identity, complete reviewed conversation, and unresolved status before each post.
 - Skip any thread now marked resolved.
-- Post only with explicit user authorization from the conversation or caller;
+- Post only within the requested scope and its applicable posting authorization;
   existing authorization does not require another approval turn.
