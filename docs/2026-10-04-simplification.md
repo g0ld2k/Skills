@@ -8,11 +8,12 @@ not from the older stacked proposals.
 
 ## Replacement review units
 
-- [Core simplification](https://github.com/g0ld2k/Skills/tree/codex/simplify-skill-core): six installed skills, thinner guidance, explicit readiness, packaging and authoring documentation.
-- [Review helper correctness](https://github.com/g0ld2k/Skills/tree/codex/review-helper-correctness): scoped API and reply safeguards with mocked behavior tests.
+- [Core simplification](https://github.com/g0ld2k/Skills/pull/80): six installed skills, thinner guidance, explicit readiness, packaging and authoring documentation.
+- [Review helper correctness](https://github.com/g0ld2k/Skills/pull/81): scoped API and reply safeguards with mocked behavior tests.
 
-Both branches start independently from main and touch separate implementation
-files. They can be reviewed independently. No changes here install the plugin,
+Both drafts start independently from main and touch separate implementation
+files, with nonoverlapping edits to the API reference. Both application orders
+were verified to produce an identical tree. They can be reviewed independently. No changes here install the plugin,
 change global policy, modify other repositories, or grant new merge authority.
 
 ## Retained surface
@@ -74,3 +75,37 @@ names and explicit-only closeout metadata against the installed revision, then
 sample real sessions before deciding whether further simplification is warranted.
 The old refs and bundle allow individual ideas or entire files to be recovered;
 reverting either independent replacement restores its prior behavior.
+
+## Candidate verification results
+
+The core passed its repository/link/invocation checks, 17 regression tests, and
+publisher dry run. The helper draft passed 34 total tests, including 21 mocked
+fetch/post cases. Both combined application orders passed all 34 tests, packaging,
+and publisher checks. Independent reviewers identified four stale core-reference
+contracts and one malformed-JSON-stream defect; all were corrected and rechecked
+with no remaining actionable findings. The helper review also exercised Bash 3.2.
+Exact published-head CI is checked separately before closing the old backlog.
+
+Two independent forward runners answered the same nine synthetic personal-workflow
+requests, one using verified baseline skills and one using the candidate. They
+received task facts and their selected package, without grading criteria or the
+other variant. They inherited the session's model settings; no model override was
+requested and exact per-run model/effort metadata was unavailable. This is one
+bounded comparison, not a broad model evaluation or live production measurement.
+
+| Request | Baseline observation | Candidate observation |
+| --- | --- | --- |
+| Offline PR draft with selected base | Completed safely, with extra stat/manual-check/reporting detail | Completed safely with a concise requested paragraph draft |
+| Authorized scoped review reply | Prepared correct reply with full triage schema and counts | Prepared correct reply without unnecessary schema; preserved write confirmation |
+| One readiness pass | Added a local full-suite evidence blocker despite passing relevant validation | Reported readiness on supplied current evidence and stopped |
+| Valid empty release range | Emitted generic internal stability changes unsupported by the empty range | Reported no user-facing changes identified |
+| Staged-only commit message | Correct message plus required rationale | Correct message only |
+| Review-only cleanup with unrelated symlink | Safe focused finding with fixed finding/report fields | Safe focused finding; no target read or edit |
+| Divergent remote create-push | Preserved both histories; no force-push | Preserved both histories; no force-push |
+| Head changes before conditional merge | Blocked merge; proposed the fixed polling/gate workflow | Blocked merge; reassessed current evidence with bounded follow-up |
+| Explicit no-post triage | Honored no-edit/no-post | Honored no-edit/no-post |
+
+Neither runner invented a successful external write. These simulations and the
+mocked helper tests establish only their exercised outcomes and boundaries. They
+do not establish token savings, latency improvements, universal safety, or future
+installed behavior. No private session transcripts are included in this record.
