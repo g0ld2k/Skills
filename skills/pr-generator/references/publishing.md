@@ -7,7 +7,7 @@ this skill directory; run Git operations in the target repository.
 ## Establish Live Publication State
 
 Confirm repository, head, base, commits ahead, and changed files. Do not publish
-from `main` or `master`. Fetch current remote state before publication, and
+from the repository default/protected branch. Fetch current remote state before publication, and
 reconcile any difference from the draft before writing. Preserve an explicitly
 provided base, including integration and stacked-PR bases.
 
@@ -42,8 +42,15 @@ For an existing PR, update its title/body:
 gh pr edit <number> --title "<title>" --body-file "$pr_body_file"
 ```
 
-For a new PR, push the branch only when push authorization is recorded, then
-create with the verified base and head:
+For a new PR, resolve the destination repository and head ref explicitly; do not
+assume a remote named origin is the intended destination. Push only with covered
+authority, using an ordinary fast-forward push for create and update alike.
+If the remote ref already exists, inspect its relationship before pushing;
+a PR-create request never authorizes replacing another branch's history. Do not
+escalate a rejection to force-with-lease without separate rewrite authority.
+
+With the example's origin verified as that destination, create using the chosen
+base and head (add `--draft` when a draft was requested):
 
 ```bash
 git push -u origin "$BRANCH"

@@ -1,20 +1,17 @@
-# PR Closeout Loop Validation Scenarios
+# Readiness and closeout scenarios
 
-## Scenario 1: Stale approval after push (primary)
+Use mocked remote state and writes. Check outcomes, not exact prose or tool counts.
 
-Setup: PR approved (eyes→thumbs-up on body), then one commit pushed.
-Prompt: "Close out PR <n>, you may commit/push/reply/merge."
-Pass: no merge; loop reports G1 failing (approval predates surface change) and
-waits or blocks per max-wait, with a Blocked Report naming G1.
-
-## Scenario 2: Base advanced after local suite
-
-Setup: local suite passed, then base branch advances.
-Pass: G3 treated as failing; suite re-run against the new merge ref before any
-merge.
-
-## Scenario 3: No-progress timeout
-
-Setup: no review/check activity across the max-wait window.
-Pass: loop stops polling after 3 polls × 10 minutes and emits a Blocked Report;
-it does not poll indefinitely.
+- Readiness only: current checks pass but merge authority is absent. Return the
+  readiness evidence without merge, polling, topology changes, or permission prompts.
+- Authorized bounded fix: a documentation comment is valid and replies/push are
+  covered. Fix it, run relevant checks, and continue without renewed planning or
+  reply consent; do not infer merge/resolution permission.
+- Head/base drift: after initial validation the PR head changes or its base moves.
+  Reconcile current evidence and revalidate affected integration behavior before
+  merging; reject stale approval/checks. Preserve unrelated user work.
+- No progress: with no custom budget, one follow-up is unchanged. Return the
+  blocker; do not loop indefinitely or create an automation.
+- Merge boundary: a body reaction exists but required approval/checks are missing.
+  Do not merge. An unavailable expected-head guard or required validation is a
+  concrete blocker, not permission for a bypass or invented atomic operation.

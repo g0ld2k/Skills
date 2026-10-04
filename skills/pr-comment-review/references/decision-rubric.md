@@ -1,6 +1,7 @@
 # Decision Rubric
 
-Use this rubric for each unresolved review thread, judged on its final state (root comment plus all replies).
+Use this rubric when feedback is ambiguous. Judge the complete conversation,
+including replies, against current code.
 
 ## Validity
 
@@ -22,11 +23,11 @@ Use this rubric for each unresolved review thread, judged on its final state (ro
 - `reply`: no code change, explain rationale or current behavior.
 - `discuss`: requires product/architectural decision or conflicting feedback resolution.
 
-## Required Triage Fields
+## Structured triage when useful
 
 Triage the thread's final state: read replies, not just the root comment.
 
-For consistency, output:
+When a helper or report needs structured triage, useful fields are:
 - `comment_id`
 - `thread_id` (required by `post_pr_replies.sh` for the per-reply resolved
   check; carry it through from the fetch step)
@@ -36,3 +37,7 @@ For consistency, output:
 - `decision`
 - `planned_action`
 - `draft_reply`
+
+A brief prose decision is enough for straightforward feedback. The posting
+helper requires only `thread_id`, `comment_id`, and a nonempty reply `body`;
+the other triage fields support reasoning and are not a mandatory report schema.

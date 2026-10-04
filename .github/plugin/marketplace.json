@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "g0ld2k-skills",
-      "description": "Reusable agent skills for commit messages, pull requests, review closeout, release notes, and work orchestration.",
+      "description": "Focused personal skills for PR authoring, review feedback, readiness, cleanup, commit messages, and release notes.",
       "version": "0.1.0",
       "source": "."
     }

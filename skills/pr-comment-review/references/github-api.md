@@ -9,8 +9,10 @@ Minimal API surface for fetching unresolved review feedback and posting replies.
 Load this section when using MCP. Resolve owner/repo/PR and fetch thread-level
 resolved state with all comment pages. Emit the same thread/root-comment fields
 as the CLI helper. For posting, preview replies and apply SKILL.md's complete
-inventory, nonempty body, repository/PR/root-comment identity, and fresh
-unresolved-state checks. A lookup failure is a blocker, not a resolved skip.
+requested-scope inventory, nonempty body, repository/PR/root-comment identity,
+complete current conversation, and fresh unresolved-state checks. A single-thread
+request does not authorize replies to other threads; the bundled batch helper's
+whole-PR inventory requirement applies only when using that helper. A lookup failure is a blocker, not a resolved skip.
 If a capability cannot supply these checks, use the CLI or block that operation.
 The authorization gate in SKILL.md applies equally to MCP and CLI.
 

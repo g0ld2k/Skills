@@ -100,7 +100,11 @@ class RepositoryShapeTests(unittest.TestCase):
             if path.is_dir() and (path / "SKILL.md").is_file()
         ]
 
-        self.assertGreater(len(skill_dirs), 0)
+        self.assertEqual(
+            {path.name for path in skill_dirs},
+            {"commit-message", "pr-generator", "pr-comment-review",
+             "pr-closeout-loop", "simplify", "testflight-notes"},
+        )
 
     def test_generated_packaging_layer_is_absent(self) -> None:
         for stale in ("plugins", "packaging", ".claude-plugin"):
@@ -152,7 +156,7 @@ class RepositoryShapeTests(unittest.TestCase):
 class ExplicitOnlyInvocationTests(unittest.TestCase):
     """Both install paths need their own guard; neither client reads the other's."""
 
-    EXPLICIT_ONLY = ("integration-branch-orchestrator", "work-request-orchestration")
+    EXPLICIT_ONLY = ("pr-closeout-loop",)
 
     def test_claude_guard_present_in_frontmatter(self) -> None:
         for name in self.EXPLICIT_ONLY:
@@ -187,7 +191,7 @@ class SharedConventionsTests(unittest.TestCase):
         consumers = shared.consumer_names(ROOT / "skills")
 
         self.assertIn("commit-message", consumers)
-        self.assertNotIn("catch-me-up", consumers)
+        self.assertNotIn("testflight-notes", consumers)
         for name in consumers:
             skill = (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("references/conventions.md", skill)
