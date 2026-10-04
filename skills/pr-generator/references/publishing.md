@@ -33,9 +33,12 @@ API without changing the target.
 Find open PRs in that base repository using the qualified head; read every page:
 
 ```bash
-gh api --method GET "repos/$BASE_REPO/pulls" --paginate \
+gh api --method GET "repos/$BASE_REPO/pulls" --paginate --slurp \
   -f state=open -f head="$HEAD_OWNER:$BRANCH"
 ```
+
+After the command succeeds, flatten its array of page arrays by one level;
+evaluate identity, uniqueness, and absence across all candidates.
 
 Match each candidate's `head.repo.full_name` and `head.ref` to `HEAD_REPO` and
 `BRANCH`, and check `base.ref` against `BASE_BRANCH`. Use `PR_NUMBER` from the
