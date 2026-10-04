@@ -67,7 +67,7 @@ jq -c '.[]' "$scratch/replies.json" > "$scratch/replies.jsonl"
 # Return 10 only for a verified, correctly paired, already-resolved thread.
 thread_ok_to_post() {
   local thread_id="$1" comment_id="$2"
-  gh api graphql -f query='query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{number repository{owner{login} name}} comments(first:100){nodes{'"$review_comment_fields"'} pageInfo{hasNextPage endCursor}}}}}' -F id="$thread_id" > "$scratch/live.json" || return 20
+  gh api graphql -f query='query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{number repository{owner{login} name}} comments(first:100){nodes{'"$(review_comment_fields)"'} pageInfo{hasNextPage endCursor}}}}}' -F id="$thread_id" > "$scratch/live.json" || return 20
   jq -se --arg owner "$owner" --arg repo "$repo" --argjson pr "$pr_number" '
     length == 1 and (.[0] |
     (.errors == null or (.errors | type == "array" and length == 0))
@@ -76,7 +76,7 @@ thread_ok_to_post() {
     and ((.data.node.pullRequest.repository.name | ascii_downcase) == ($repo | ascii_downcase))
     and .data.node.pullRequest.number == $pr)
   ' "$scratch/live.json" >/dev/null || return 20
-  complete_connection "$scratch/live.json" '.data.node.comments' "$review_comments_query" "$scratch/comments.json" -F id="$thread_id" || return 20
+  complete_connection "$scratch/live.json" '.data.node.comments' "$(review_comments_query)" "$scratch/comments.json" -F id="$thread_id" || return 20
   format_review_thread "$thread_id" "$scratch/comments.json" > "$scratch/thread.json" || return 20
   jq -e --argjson cid "$comment_id" '.comment_id == $cid' "$scratch/thread.json" >/dev/null || return 20
   if [[ "$(jq -r '.data.node.isResolved' "$scratch/live.json")" == true ]]; then return 10; fi

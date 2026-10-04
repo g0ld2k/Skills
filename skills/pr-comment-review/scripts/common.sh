@@ -52,8 +52,12 @@ complete_connection() (
   cp "$scratch/all.json" "$output"
 )
 
-review_comment_fields='databaseId id body path line originalLine url createdAt author { login } replyTo { id }'
-review_comments_query='query($id:ID!,$endCursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$endCursor){nodes{'"$review_comment_fields"'} pageInfo{hasNextPage endCursor}}}}}'
+review_comment_fields() {
+  printf '%s\n' 'databaseId id body path line originalLine url createdAt author { login } replyTo { id }'
+}
+review_comments_query() {
+  printf '%s\n' 'query($id:ID!,$endCursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$endCursor){nodes{'"$(review_comment_fields)"'} pageInfo{hasNextPage endCursor}}}}}'
+}
 
 # Normalize a complete conversation. Missing roots or IDs are errors, not threads
 # to silently omit. The URL fallback is GitHub's actual discussion fragment.

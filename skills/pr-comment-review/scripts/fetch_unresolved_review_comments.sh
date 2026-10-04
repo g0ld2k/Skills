@@ -22,7 +22,7 @@ require_cmd gh
 require_cmd jq
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/fetch-review.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100,after:$endCursor){nodes{id isResolved comments(first:100){nodes{'"$review_comment_fields"'} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+query='query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100,after:$endCursor){nodes{id isResolved comments(first:100){nodes{'"$(review_comment_fields)"'} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
 gh api graphql -f query="$query" -F owner="$owner" -F repo="$repo" -F pr="$pr_number" -F endCursor=null > "$scratch/first.json"
 complete_connection "$scratch/first.json" '.data.repository.pullRequest.reviewThreads' "$query" "$scratch/threads.json" -F owner="$owner" -F repo="$repo" -F pr="$pr_number"
 jq -e 'all(.[]; (.id | type == "string" and length > 0) and (.isResolved | type == "boolean"))
@@ -33,7 +33,7 @@ while IFS= read -r item; do
   thread_id="$(jq -r '.id' <<<"$item")"
   # Wrap the initial nested connection to share the follow-up node query shape.
   jq '{data:{node:{comments:.comments}}}' <<<"$item" > "$scratch/thread.json"
-  complete_connection "$scratch/thread.json" '.data.node.comments' "$review_comments_query" "$scratch/comments.json" -F id="$thread_id"
+  complete_connection "$scratch/thread.json" '.data.node.comments' "$(review_comments_query)" "$scratch/comments.json" -F id="$thread_id"
   format_review_thread "$thread_id" "$scratch/comments.json" >> "$scratch/results.jsonl"
 done < "$scratch/unresolved.jsonl"
 jq -s 'sort_by(.path, .line, .comment_id)' "$scratch/results.jsonl" > "$scratch/result.json"
