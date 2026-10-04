@@ -7,9 +7,11 @@ this skill directory; run Git operations in the target repository.
 ## Establish Live Publication State
 
 Confirm repository, head, base, commits ahead, and changed files. Do not publish
-from the repository default/protected branch. Fetch current remote state before publication, and
-reconcile any difference from the draft before writing. Preserve an explicitly
-provided base, including integration and stacked-PR bases.
+from the repository default branch. An authorized protected non-default head is
+allowed; respect its actual push rules and never bypass protection. Fetch current
+remote state before publication, and reconcile any difference from the draft
+before writing. Preserve an explicitly provided base, including integration and
+stacked-PR bases.
 
 Prefer an available authenticated `gh` capability; otherwise use an authenticated
 GitHub MCP equivalent. Check authentication only as needed to select a working

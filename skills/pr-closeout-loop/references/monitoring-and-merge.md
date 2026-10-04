@@ -34,9 +34,11 @@ A compact task note is enough; no prescribed ledger schema is required.
   repository policy. Unclear/conflicting feedback remains a blocker. Resolve
   fixed threads only within the separately authorized resolution policy.
 - Confirm mergeability and protect unrelated work. Use the platform's supported
-  expected-head guard for merging (for example `gh pr merge --match-head-commit`),
-  without admin bypass. If unavailable, report that capability gap rather than
-  promising an atomic guarantee the tools do not provide.
+  expected-head guard for merging. For `gh pr merge`, pass
+  `--match-head-commit "$HEAD_SHA"` with `HEAD_SHA` set to the freshly fetched and
+  validated PR head. Do not use admin bypass. If the guard is unavailable, report
+  that capability gap rather than promising an atomic guarantee the tools do not
+  provide.
 
 Fresh reads and expected-head guards do not atomically bind every PR field.
 Do not introduce custom full-body/thread transactions or queue/auto-merge as a
