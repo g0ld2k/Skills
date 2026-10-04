@@ -20,6 +20,11 @@ A compact task note is enough; no prescribed ledger schema is required.
 - Confirm authority for this exact target branch and merge method. Promotion to
   a protected/default branch needs explicit coverage. Preserve a requested method;
   if unspecified, use the repository's configured policy or ask when ambiguous.
+- Check the target branch's merge-queue rules before invoking `gh pr merge`: on a
+  queue-required branch, it can enqueue the PR or enable auto-merge even without
+  `--auto`. Queueing or auto-merge needs an explicitly requested workflow. If that
+  scope is absent, or queue policy cannot be verified, report the blocker before
+  invoking the merge operation; never bypass the queue.
 - Re-fetch the PR head/base, reviews, full relevant feedback and required checks.
   A review of an old head or a body reaction alone is not proof of current-head
   approval. Honor repository approval rules and any additional user-selected
@@ -42,6 +47,5 @@ A compact task note is enough; no prescribed ledger schema is required.
 
 Fresh reads and expected-head guards do not atomically bind every PR field.
 Do not introduce custom full-body/thread transactions or queue/auto-merge as a
-workaround. Queueing or auto-merge needs an explicitly requested workflow with
-its own supported repository controls. Confirm the final merged state and SHA;
-acceptance of a request is not proof that a merge completed.
+workaround. Honor the repository's supported controls and confirm the final
+merged state and SHA; acceptance of a request is not proof that a merge completed.

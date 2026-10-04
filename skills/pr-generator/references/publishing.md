@@ -51,13 +51,17 @@ If the remote ref already exists, inspect its relationship before pushing;
 a PR-create request never authorizes replacing another branch's history. Do not
 escalate a rejection to force-with-lease without separate rewrite authority.
 
-With the example's origin verified as that destination, create using the chosen
-base and head (add `--draft` when a draft was requested):
+With the example's origin verified as the push destination, set `BASE_REPO` to
+the verified target repository (`owner/repo`). Set `HEAD_REF` to `$BRANCH` for a
+same-repository PR or `$HEAD_OWNER:$BRANCH` for a fork, using the verified fork
+owner. If the CLI cannot represent that head repository, use an equivalent API
+without changing the target. Create using those identities (add `--draft` when
+a draft was requested):
 
 ```bash
 git push -u origin "$BRANCH"
-gh pr create --title "<title>" --body-file "$pr_body_file" \
-  --base "$BASE_BRANCH" --head "$BRANCH"
+gh pr create --repo "$BASE_REPO" --title "<title>" --body-file "$pr_body_file" \
+  --base "$BASE_BRANCH" --head "$HEAD_REF"
 ```
 
 ## MCP
