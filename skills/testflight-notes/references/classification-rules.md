@@ -53,7 +53,7 @@ Cross-platform signals:
 - Shared core/domain/state logic used by both apps
 - Notes or PR body explicitly say both platforms
 
-If evidence is mixed or unclear, keep cross-platform (no suffix).
+If evidence is mixed or unclear, omit the suffix; do not assert cross-platform support.
 
 ## 4) Deduplication Rules
 
@@ -79,8 +79,7 @@ Avoid:
 ## 6) Confidence Rules
 
 Only emit a note when confidence is high.
-If confidence is low:
-- Keep it broad and safe, or
-- Omit it
+If confidence is low, inspect relevant evidence or omit the claim.
+Vague wording is not a substitute for support.
 
 Prefer missing a minor improvement over including an inaccurate claim.
