@@ -16,13 +16,15 @@ SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
 PLUGIN_MANIFEST = ROOT / "plugin.json"
 PLUGIN_SCHEMA = ROOT / "schemas" / "agent-plugins" / "1.0.0" / "plugin.schema.json"
-EXPLICIT_ONLY_SKILLS = {
+EXPLICIT_ONLY_SKILLS = {"pr-closeout-loop"}
+SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+RETIRED_SKILL_NAMES = {
+    "codex-pr-approval-loop",
+    "catch-me-up",
     "integration-branch-orchestrator",
     "work-request-orchestration",
 }
-SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-RETIRED_SKILL_NAMES = {"codex-pr-approval-loop"}
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
 # Single-word command tokens that legitimately follow Use/run/invoke in prose.
 # Extend only with commands/tools, never with skill names.
@@ -220,10 +222,6 @@ def validate_skills(errors: list[str]) -> list[str]:
             if key not in frontmatter or not frontmatter[key]:
                 errors.append(f"skills/{name}/SKILL.md: missing frontmatter key: {key}")
 
-        description = str(frontmatter.get("description", ""))
-        if description and not description.startswith("Use when"):
-            errors.append(f"skills/{name}/SKILL.md: description must start with 'Use when'")
-
         declared_name = frontmatter.get("name")
         if declared_name != name:
             errors.append(f"skills/{name}/SKILL.md: name must match directory")
@@ -242,7 +240,7 @@ def validate_skills(errors: list[str]) -> list[str]:
         # disable-model-invocation from frontmatter, Codex reads
         # policy.allow_implicit_invocation from agents/openai.yaml (checked
         # below). Both are required so neither install path can invoke a
-        # state-changing orchestrator implicitly.
+        # explicit-only workflow implicitly.
         has_disable = frontmatter.get("disable-model-invocation") is True
         if name in EXPLICIT_ONLY_SKILLS and not has_disable:
             errors.append(f"skills/{name}/SKILL.md: disable-model-invocation must be true")
