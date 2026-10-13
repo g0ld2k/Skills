@@ -9,6 +9,7 @@ and verification commands.
 
 | Skill | Use |
 | --- | --- |
+| `adversarial-review` | Challenge unnecessary complexity using simplicity and correctness perspectives. |
 | `pr-generator` | Draft or publish the requested PR title/body from branch evidence. |
 | `pr-comment-review` | Triage and address existing PR feedback and scoped replies. |
 | `testflight-notes` | Draft tester-facing notes from a verified history range. |

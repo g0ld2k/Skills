@@ -102,7 +102,7 @@ class RepositoryShapeTests(unittest.TestCase):
 
         self.assertEqual(
             {path.name for path in skill_dirs},
-            {"commit-message", "pr-generator", "pr-comment-review",
+            {"adversarial-review", "commit-message", "pr-generator", "pr-comment-review",
              "pr-closeout-loop", "simplify", "testflight-notes"},
         )
 
