@@ -7,8 +7,9 @@ license: MIT
 # Adversarial Review
 
 Find the simplest correct implementation appropriate for the existing codebase.
-Prioritize unnecessary complexity and overengineering, then correctness,
-reliability, and maintainability defects. A clean review is a valid result.
+Unnecessary complexity and overengineering are the distinctive inspection focus;
+correctness and reliability always take priority in allocating review effort and
+ranking findings. A clean review is a valid result.
 
 ## When to Use
 
@@ -30,7 +31,7 @@ This workflow produces recommendations only.
 | --- | --- | --- |
 | Review scope and base | User request, PR metadata, repository state | For local edits, review staged and unstaged changes against HEAD and relevant untracked files. For branch/PR work, use the merge-base with the established target branch. Ask if competing bases materially change scope. |
 | Project constraints | Applicable repository instructions and surrounding code | Follow existing conventions; state unresolved intent. |
-| Reviewers | Host delegation capabilities | Two independent reviewers; use a supported deeper reasoning setting for the skeptic when available. |
+| Review execution | Host judgment, scope, and delegation capabilities | Review small changes directly using both perspectives in one pass. Delegate only when useful and authorized; the host chooses reviewer count and reasoning effort. |
 | Reconciliation rounds | User request | One. |
 
 ## Guardrails
@@ -54,9 +55,9 @@ This workflow produces recommendations only.
 
 ### 1. Establish scope
 
-Inspect repository state and resolve the base before dispatch. Give both
-reviewers the same diff, base/head identity, local-change scope, relevant
-instructions, and guardrails. Include untracked content when in scope.
+Inspect repository state and resolve the base before review. Use the same diff,
+base/head identity, local-change scope, relevant instructions, and guardrails
+across perspectives; pass these to any delegated reviewers. Include untracked content when in scope.
 Track this snapshot in conversation so changed inputs cannot silently invalidate
 evidence. If no changes exist, report a clean, empty scope and stop.
 
@@ -65,7 +66,7 @@ input is reported as blocking.
 
 ### 2. Simplicity Advocate
 
-Delegate an independent review of each changed area for unnecessary indirection,
+Use the advocate perspective to inspect each changed area for unnecessary indirection,
 redundant state, speculative defenses or flexibility, existing reusable
 functionality, complicated control flow, avoidable allocations or repeated work,
 non-idiomatic code, and deletable code that preserves functionality.
@@ -80,14 +81,16 @@ complexity, concrete cost, simpler replacement, evidence, and behavior that must
 remain unchanged. Account for every changed area as reviewed or unreviewed with
 a reason.
 
-**Complete when:** the advocate has returned evidence-backed proposals or an
+**Complete when:** the advocate perspective has produced evidence-backed proposals or an
 explicit no-findings report, plus coverage limitations.
 
 ### 3. Correctness Skeptic
 
-Delegate to a separate reviewer. Its first pass must be independent: withhold
-the advocate's findings until this reviewer has returned its own inspection.
-The independent pass may run concurrently with the advocate.
+Use the skeptic perspective to check correctness as well as challenge cleanup.
+For a direct review, combine this with the advocate inspection; separate reports
+or repeated passes are unnecessary. When a separate skeptic is delegated,
+withhold the advocate's findings until its independent inspection is returned.
+That independent inspection may run concurrently with the advocate.
 
 Inspect regressions, assumptions, edge cases, error handling, concurrency,
 synchronization, state consistency, lifecycle, resource ownership, cancellation,
@@ -95,21 +98,23 @@ and behavioral test gaps. A test gap merits a finding only when tied to a specif
 at-risk behavior. Account for each changed area and report independent findings
 with concrete evidence or an explicit no-findings result.
 
-After that report, provide the advocate's proposals. For each proposal ID,
+After inspecting correctness, evaluate the advocate's proposals (provide them to
+the skeptic when delegated). For each proposal ID,
 determine whether the complexity serves a current requirement; identify affected
 behavior, architectural constraints, and concrete counterexamples. Return
 **accept**, **reject**, or **narrow**, with supporting evidence and any targeted
 verification. Speculative future needs do not justify rejection; fewer lines do
 not justify acceptance.
 
-**Complete when:** the independent inspection is recorded and every advocate
+**Complete when:** correctness has been inspected and every advocate
 proposal has an explicit disposition.
 
 ### 4. Reconciliation
 
-Send substantive challenges to the advocate, preserving proposal IDs and the
-skeptic's evidence. Allow one response per challenged proposal: defend with new
-evidence, revise, or withdraw. Skip this step when there are no substantive
+Reconsider proposals with substantive challenges, preserving proposal IDs and
+the skeptic's evidence. In a delegated review, send challenges to the advocate.
+Defend with new evidence, revise, or withdraw each challenged proposal.
+Skip this step when there are no substantive
 challenges. End after the configured round limit; unresolved disagreements go
 to arbitration rather than further debate.
 
@@ -118,7 +123,7 @@ response, and the round limit is respected.
 
 ### 5. Arbitration
 
-As the coordinating reviewer, independently check surviving recommendations
+As the coordinating reviewer, check surviving recommendations
 against the code and verification evidence. Resolve disagreements on evidence,
 not votes. Deduplicate findings and weigh implementation cost and regression risk.
 Prioritize confirmed defects, high-confidence simplifications, then material
@@ -155,9 +160,9 @@ below is grounded in the reviewed snapshot.
 ## Blocked Report
 
 If the diff or base cannot be established, report the missing evidence and the
-smallest input needed to proceed. If independent agents are unavailable, perform
-separate sequential passes, record the independent correctness pass before
-evaluating simplifications, and disclose the lack of reviewer independence.
+smallest input needed to proceed. If delegation is unavailable or disproportionate,
+review directly using both perspectives and describe the review as a single-agent
+review rather than claiming independent reviewers.
 If a dispatched reviewer fails, retry where practical or report the missing
 phase and a partial review; never claim the full process completed.
 

@@ -7,8 +7,9 @@ These are evaluation cases, not claims of executed behavioral tests.
 - **Setup:** A diff adds a parser duplicating an existing helper with matching
   error semantics. It also introduces a reachable off-by-one defect elsewhere.
 - **Prompt:** Perform an adversarial review of this branch against its PR base.
-- **Pass:** Both reviewers inspect the same comparison. The skeptic reports its
-  independent inspection before receiving the advocate's proposals. The final
+- **Pass:** Both perspectives inspect the same comparison. If separate reviewers
+  are used, the skeptic reports its independent inspection before receiving the
+  advocate's proposals. The final
   report separates the confirmed defect from the verified reuse opportunity,
   with locations, evidence, risk, priority, and confidence. No files change.
 
@@ -38,7 +39,18 @@ These are evaluation cases, not claims of executed behavioral tests.
 - **Setup:** Independent reviewers are unavailable, or a dispatched reviewer
   fails. In another run, the diff changes after the independent reports.
 - **Prompt:** Run an adversarial review of the current changes.
-- **Pass:** Sequential fallback discloses the independence limitation. Failed
+- **Pass:** Direct review uses both perspectives without duplicate reports and
+  discloses the lack of independent reviewers. Failed
   phases are retried or marked incomplete. Changed inputs trigger affected
   re-review or an explicitly scoped prior-snapshot report. Unexecuted checks
   are never reported as passing.
+
+## Proportionate review and correctness priority
+
+- **Setup:** A one-line change introduces a reachable defect; a minor cleanup is
+  also apparent, and review time is limited.
+- **Prompt:** Review this small change for unnecessary complexity and defects.
+- **Pass:** The host can review directly in one pass without spawning agents or
+  producing separate perspective reports. Correctness receives attention first;
+  the defect ranks above cleanup. Behavior-changing simplifications are rejected
+  or narrowed, and the report does not claim reviewer independence.
