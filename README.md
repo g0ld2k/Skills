@@ -7,6 +7,7 @@ release notes, and work orchestration.
 
 | Skill | Purpose |
 | --- | --- |
+| `adversarial-review` | Challenge unnecessary complexity through independent simplicity and correctness reviews. |
 | `catch-me-up` | Build a mental model of unfamiliar code, architecture, or history via evidence-backed exploration. |
 | `commit-message` | Draft evidence-based Conventional Commit messages from staged changes. |
 | `integration-branch-orchestrator` | Plan autonomous PR work through integration branches and human promotion gates. |
