@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prune Comments"
+  short_description: "Remove low-value comments, preserve useful rationale"
+  default_prompt: "Use $prune-comments to clean up comments in the current local changes while preserving useful maintenance knowledge."
