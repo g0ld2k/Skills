@@ -18,16 +18,28 @@ Use the requested diff, staged or unstaged changes, or explicit files. Without a
 target, inspect staged and unstaged changes plus untracked source files. If no
 local changes exist, ask for a target before expanding scope.
 
+For a branch, commit, or PR diff, resolve its base and head before editing.
+Confirm that the editing checkout is at the selected head; otherwise use a
+suitable checkout or report the mismatch without editing the current files.
+Preserve local changes when choosing a checkout.
+
 Report symlink targets without following or editing them. Apply this boundary
 to automatic discovery, explicit targets, and contextual reads, including paths
 that traverse symlinked directories.
 
 For a diff, only touched comments are eligible for edits; a partially changed
 multiline comment is eligible as a whole. Explicit files authorize inspecting
-all their comments. All comments in newly added source files are eligible.
+all their comments. For newly added source files, only comments present in the
+selected version are eligible. A staged-only target selects index contents;
+an unstaged-only target selects the working-tree diff against the index.
 Read surrounding code and repository guidance as needed for evidence, while
 keeping edits within the target. Reconcile staged and unstaged versions against
-the current file before editing; preserve unrelated work and staging state.
+the current file before editing; preserve comments and other edits exclusive to
+an unselected version, as well as staging state. If a selected comment cannot
+be safely mapped to the current file, report it rather than overwrite the overlay.
+Apply cleanup edits to the working tree, leaving index contents unchanged
+unless the user explicitly requests staging; selecting a staged diff alone
+identifies eligible comments without authorizing index writes.
 
 Default to maintained project source, including tests and scripts. Skip
 generated files, vendored dependencies, and copied third-party code unless the

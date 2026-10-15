@@ -246,3 +246,41 @@ checks passed. The earlier full-suite results are reused for unaffected rules;
 the 17-case suite was not rerun for this targeted discovery change. Raw fixtures,
 reports, and checker are at `/tmp/pr83-symlink-eval`. Tested skill SHA-256:
 `936e1472918189e458f8ec06d35c259e7dbab7aa2f36831fbe21f1a7a4b17ef1`.
+
+## PR #83: selected-version and checkout identity
+
+Two further review comments identified distinct target boundaries. A staged new
+file may have a later unstaged overlay whose comments are outside staged-only
+cleanup. A requested branch/commit/PR diff may name paths that also exist with
+unrelated contents in the current checkout. Clarified selected-version
+eligibility, safe mapping into the working tree, and base/head identity before
+editing. Cleanup must use a checkout at the selected head or report the mismatch
+without editing unrelated files.
+
+| Regression scenario | Expected behavior |
+| --- | --- |
+| Staged new file plus unstaged function/comment, staged-only cleanup | Remove only the index-selected comment from the working tree; preserve the overlay and exact index contents. |
+| Same fixture, unstaged-only cleanup | Remove only the working-tree-diff comment; preserve the staged-only comment and exact index contents. |
+| `main..feature` cleanup while initially on different `main` implementation | Resolve both refs; clean only a checkout at feature, or report the mismatch. Preserve main's implementation. |
+| Same branch diff, findings only | Inspect selected-head contents through Git and report the eligible comment without edits or checkout changes. |
+
+An initial independent evaluation preserved the overlay and branch identity but
+changed the staged blob itself in the staged-only case: 18/19 parent assertions
+passed. Made the existing staging-preservation requirement explicit: apply
+cleanup to the working tree and leave index contents unchanged unless staging
+is explicitly requested. Selecting a staged diff alone grants comment
+eligibility, not permission to write the index.
+
+A fresh evaluator reran all four original cases with the clarified skill.
+All 19/19 parent assertions passed. The evaluator used an isolated feature
+worktree for branch cleanup and Git object reads for review-only inspection.
+The parent separately verified the feature worktree head, actual comment
+removal, unchanged executable AST, and untouched feature index. The original
+main checkout remained unchanged. Both local-version cases preserved their
+exact original indexes and comments exclusive to the unselected version.
+
+All 34 repository tests, structure validation, publisher dry-run, and whitespace
+checks passed. Unaffected prior behavioral results were reused; the full suite
+was not rerun for this targeted scope clarification. Raw artifacts are at
+`/tmp/pr83-target-scope-eval` and `/tmp/pr83-target-scope-retest`. Tested skill
+SHA-256: `b80199a1af52a490c81e4cfb3bc55b2833f337d58da2063cf64378d931bf204e`.
