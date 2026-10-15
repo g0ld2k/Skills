@@ -18,6 +18,10 @@ Use the requested diff, staged or unstaged changes, or explicit files. Without a
 target, inspect staged and unstaged changes plus untracked source files. If no
 local changes exist, ask for a target before expanding scope.
 
+Report symlink targets without following or editing them. Apply this boundary
+to automatic discovery, explicit targets, and contextual reads, including paths
+that traverse symlinked directories.
+
 For a diff, only touched comments are eligible for edits; a partially changed
 multiline comment is eligible as a whole. Explicit files authorize inspecting
 all their comments. All comments in newly added source files are eligible.

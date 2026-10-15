@@ -209,3 +209,40 @@ the tested snapshot. Repository validation and final whitespace checks passed.
 Raw fixtures, frozen skill, evaluator reports, checker, and scores are outside
 the working tree at `/tmp/prune-comments-final-regression`. The model/client and
 live-discovery limitations above still apply.
+
+## PR #83: symlink source-discovery regression
+
+Review identified an untested path boundary: an untracked `external.py` symlink
+looks like source and ordinary file reads/writes follow it outside the repo.
+A disposable reproduction confirmed that Git lists it as untracked source,
+`Path.is_file()` follows it, and a normal comment deletion through the link
+modifies the external target. Added an explicit link boundary to discovery,
+explicit targets, contextual reads, and paths through symlinked directories:
+report link targets without following or editing them.
+
+Reusable scenario setup: create a disposable repository with an ordinary
+`helpers.py` containing a redundant comment, and a sibling `outside` directory
+containing another source file with a redundant comment. Keep initial file
+bytes, link text, and index contents before requesting cleanup.
+
+| Scenario | Setup / request | Required result |
+| --- | --- | --- |
+| Untracked source-looking link | `external.py` points to sibling source; default cleanup. | Report link target, preserve link and external bytes, clean ordinary changed source. |
+| Staged link | Stage only the new source-looking link; default cleanup with ordinary source also changed. | Same boundary; preserve exact original index. |
+| Explicit link | Name `external.py` and `helpers.py` as targets. | Explicit file selection still does not authorize following the link. |
+| Linked directory | Name `linked/external.py` through a directory symlink plus ordinary source. | Detect the linked path component and preserve the external file. |
+
+A fresh evaluator with read/write permission over the entire fixture area
+completed all four cases using the skill to determine scope. It reported each
+link target without reading it and removed only the ordinary source comment.
+The parent checker passed 28/28 assertions: external bytes and link text
+unchanged, regular cleanup performed, executable ASTs unchanged, exact index
+preserved, and valid patch whitespace. Three earlier runs also passed 28/28,
+but their initial repo-only access instructions duplicated the protection;
+the fresh unrestricted-fixture run supplies the independent skill evidence.
+
+All 34 repository tests, structure validation, publisher dry-run, and whitespace
+checks passed. The earlier full-suite results are reused for unaffected rules;
+the 17-case suite was not rerun for this targeted discovery change. Raw fixtures,
+reports, and checker are at `/tmp/pr83-symlink-eval`. Tested skill SHA-256:
+`936e1472918189e458f8ec06d35c259e7dbab7aa2f36831fbe21f1a7a4b17ef1`.
