@@ -284,3 +284,102 @@ checks passed. Unaffected prior behavioral results were reused; the full suite
 was not rerun for this targeted scope clarification. Raw artifacts are at
 `/tmp/pr83-target-scope-eval` and `/tmp/pr83-target-scope-retest`. Tested skill
 SHA-256: `b80199a1af52a490c81e4cfb3bc55b2833f337d58da2063cf64378d931bf204e`.
+
+## Latest scope revision: full accumulated suite
+
+Ran three fresh-context evaluators against commit `8166e23` and the unchanged
+skill hash above. Each received fresh original fixtures for all 25 scenarios:
+the original 17, four symlink cases, and four selected-version/checkout cases.
+This is 75 scenario executions. Expected outcomes, original snapshots, checker,
+and other passes were withheld. Fixture permissions allowed the full assigned
+area, including external-target files, so permission restrictions did not
+establish the symlink boundary for the evaluators.
+
+| Pass | Parent assertions | Observed failure |
+| --- | --- | --- |
+| 1 | 178/179 | Multiline-comment removal collapsed a significant return line break, changing the JavaScript result. |
+| 2 | 178/179 | Behavior preserved, but trailing whitespace remained in the placement fixture. |
+| 3 | 179/179 | None observed. |
+
+All selected-version, index-preservation, checkout-identity, and symlink
+assertions passed in every run. All three branch-edit cases chose the skill's
+permitted mismatch-report outcome rather than creating a suitable checkout;
+current files and main implementations remained unchanged. Branch review used
+the selected Git objects without changing checkout or files. Prior targeted
+evidence for actual cleanup in a matching feature worktree remains separate.
+
+The pass-1 failure is a real semantic change. Direct Node execution of the
+original source returned `undefined` for `missing(7)`; its cleaned output
+returned `7`. The evaluator used JavaScript non-comment token equality and
+syntax checking, which did not detect that behavior change. Pass 2's runtime
+result remained `undefined`, but the parent's `git diff --check` detected
+trailing whitespace after `return`. Its reported whitespace checks covered
+other Git cases rather than every edited repository. Pass 3 preserved behavior
+and passed the placement patch check. The fixture's intentionally defective
+age-boundary contract remains an expected failure, separate from these failures.
+
+These outcomes do not establish consistent full-suite success. No scope-rule
+failure was observed, but this sampling cannot attribute the placement failures
+causally to the scope clarification. The existing general preservation rule is
+not reliably producing adequate verification. A proposed follow-up is to
+require parser-semantic comparison or before/after execution when line breaks
+or token separation can affect behavior, and whitespace checks for every edited
+file. This proposal has not been applied or tested in this run.
+
+One evaluator directly enumerated regular external-target files while retaining
+baseline fixture data, without traversing symlinks or using target contents as
+comment evidence. Thus no-target-reading behavior was not universally observed;
+external-target byte preservation was verified in every case. Live client
+discovery, additional models/languages, and file-access tracing remain untested.
+
+All 34 repository tests, structure validation, and publisher dry-run passed.
+The skill source remains unchanged and matches the frozen suite input; failing
+fixture outputs were retained without repair. Raw artifacts, reports, checker,
+and assertion results are at `/tmp/prune-comments-latest-suite`.
+
+## Verification clarification: full-suite retest
+
+Strengthened the skill after the mixed full-suite result. For comments with
+line breaks or separating tokens, require before/after parser-semantic
+comparison or focused behavior execution; syntax checks and comment-stripped
+token equality alone are insufficient. Preserve significant terminators and
+token separation, and retain/report a placement-sensitive comment when semantic
+preservation cannot be verified. Check every edited file for patch whitespace
+errors, including untracked files, and correct introduced errors without
+flattening significant line breaks.
+
+Three fresh-context evaluators each ran all 25 original scenarios against the
+same frozen revised skill: 75 scenario executions. Expected answers, checker,
+snapshots, and other passes were withheld. Permissions covered each complete
+fixture area, so access restrictions did not supply the source boundaries.
+The parent reused the prior 179 assertions and added one direct whitespace
+assertion that includes untracked source.
+
+| Independent pass | Scenarios | Parent assertions |
+| --- | --- | --- |
+| 1 | 25 | 180/180 passed |
+| 2 | 25 | 180/180 passed |
+| 3 | 25 | 180/180 passed |
+
+All three evaluators executed before/after placement checks and checked edited
+file whitespace, including untracked source. The parent independently confirmed
+`missing(7)` still returns undefined, `identity(7)` returns 7, and the endpoint
+string is unchanged in every output. Existing scope, staging, protected text,
+documentation, navigation, and symlink assertions all passed. As permitted by
+the skill, all three branch-edit cases reported the checkout/head mismatch
+without editing main; branch review inspected the selected objects only.
+
+One evaluator's whitespace check caught an introduced trailing space in the
+placement case, removed it, and repeated verification before completion. No
+parent intervention or repair of final outputs was needed. The deliberately
+defective age-boundary fixture remains an expected failure, separate from the
+passing evaluation assertions. The result demonstrates consistent final
+outcomes in these three runs, not error-free intermediate edits or universal
+cross-model reliability.
+
+All 34 repository tests, structure validation, publisher dry-run, and project
+patch checks passed. The current skill matches the tested snapshot, SHA-256
+`5b8bc65808193c46e7936304cc535dc63e03b19f4960325119a4d6d426aeeb44`.
+Raw fixtures, reports, checker, and results are at
+`/tmp/prune-comments-verification-suite`. No live client discovery or
+documentation-generator testing was added.

@@ -91,7 +91,14 @@ outside scope. Honor review-only requests by returning findings without edits.
 Before editing, retain enough of the original state to distinguish this cleanup
 from pre-existing changes. Review the resulting patch to confirm every edit is
 within scope, executable code is unchanged, and protected comments remain
-intact. Preserve syntax and behavior where comment placement is significant.
+intact. For comments containing line breaks or separating tokens, compare
+before/after parser semantics or execute a focused before/after behavior check.
+Preserve significant line terminators and token separation; syntax checks and
+comment-stripped token equality alone do not establish equivalent behavior.
+If semantic preservation cannot be verified, retain the placement-sensitive
+comment and report the limitation.
+Check every edited file for patch whitespace errors, including untracked files;
+correct introduced whitespace errors while preserving significant line breaks.
 Run repository-required checks and relevant tooling checks when comment syntax
 or documentation processing warrants them; reuse unaffected verification.
 
