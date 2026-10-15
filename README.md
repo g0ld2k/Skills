@@ -15,6 +15,7 @@ and verification commands.
 | `testflight-notes` | Draft tester-facing notes from a verified history range. |
 | `commit-message` | A thin Conventional Commit compatibility/style entrypoint. |
 | `simplify` | Optional focused review or requested cleanup. |
+| `prune-comments` | Remove low-value comments while preserving useful maintenance knowledge. |
 | `pr-closeout-loop` | Explicitly selected readiness or bounded closeout; monitoring and merging require their own scope. |
 
 The three everyday skills do not automatically call every other skill. User

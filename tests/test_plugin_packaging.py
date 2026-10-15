@@ -103,7 +103,7 @@ class RepositoryShapeTests(unittest.TestCase):
         self.assertEqual(
             {path.name for path in skill_dirs},
             {"adversarial-review", "commit-message", "pr-generator", "pr-comment-review",
-             "pr-closeout-loop", "simplify", "testflight-notes"},
+             "pr-closeout-loop", "prune-comments", "simplify", "testflight-notes"},
         )
 
     def test_generated_packaging_layer_is_absent(self) -> None:
