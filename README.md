@@ -10,6 +10,7 @@ and verification commands.
 | Skill | Use |
 | --- | --- |
 | `adversarial-review` | Challenge unnecessary complexity using simplicity and correctness perspectives. |
+| `test-adequacy-review` | Find low-quality tests worth strengthening, replacing, or removing, and missing behavioral coverage. |
 | `pr-generator` | Draft or publish the requested PR title/body from branch evidence. |
 | `pr-comment-review` | Triage and address existing PR feedback and scoped replies. |
 | `testflight-notes` | Draft tester-facing notes from a verified history range. |
