@@ -14,7 +14,7 @@ and verification commands.
 | `pr-generator` | Draft or publish the requested PR title/body from branch evidence. |
 | `pr-comment-review` | Triage and address existing PR feedback and scoped replies. |
 | `testflight-notes` | Draft tester-facing notes from a verified history range. |
-| `commit-message` | A thin Conventional Commit compatibility/style entrypoint. |
+| `commit-message` | Draft copyable Conventional Commit messages from staged changes or an explicitly selected source. |
 | `simplify` | Optional focused review or requested cleanup. |
 | `prune-comments` | Remove low-value comments while preserving useful maintenance knowledge. |
 | `pr-closeout-loop` | Explicitly selected readiness or bounded closeout; monitoring and merging require their own scope. |

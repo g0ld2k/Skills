@@ -191,7 +191,8 @@ class SharedConventionsTests(unittest.TestCase):
 
         consumers = shared.consumer_names(ROOT / "skills")
 
-        self.assertIn("commit-message", consumers)
+        self.assertIn("pr-closeout-loop", consumers)
+        self.assertNotIn("commit-message", consumers)
         self.assertNotIn("testflight-notes", consumers)
         for name in consumers:
             skill = (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
