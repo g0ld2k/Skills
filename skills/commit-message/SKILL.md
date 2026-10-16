@@ -1,33 +1,52 @@
 ---
 name: commit-message
-description: Draft a Conventional Commit message from staged changes; commit them only when requested.
+description: Use when drafting a Conventional Commit message, including within an authorized commit workflow.
 license: MIT
 ---
 
-# Commit message
+# Commit Message
 
-Inspect the staged diff and describe only those changes. An empty index is a
-missing input, not permission to stage files. Use nearby history or project
-terminology only when it helps resolve type or scope.
+Generate a commit message for a clearly identified change. Staging and committing
+belong to the user or calling workflow; this skill performs neither.
 
-Prefer `<type>(optional-scope): <specific imperative subject>`; omit scope when
-no area dominates. `style` means formatting, not a visual redesign. Explain
-non-obvious intent or breaking impact in the body; add a breaking marker/footer
-only when supported. A short subject and roughly 72-column wrapping are style
-preferences, not reasons to change the requested content.
+## Source
 
-Return the message. Do not require a rationale unless the choice needs explaining.
-A message request alone never stages, commits, or pushes. When the user or trusted
-caller requests a commit and its existing authorization covers the staged work,
-show the message and proceed without another approval question.
+- Use staged changes by default. Inspect the full staged diff and file summary.
+- If the user or calling workflow explicitly identifies another source (a supplied
+  diff, commit range, or set of changes), inspect that source instead.
+- If nothing is staged and no source is identified, report that and ask which
+  changes to describe. Leave the working tree and index unchanged.
+- Ground claims in the selected changes and supplied context. Use repository
+  guidance, terminology, branch names, and history as context, not proof of changes.
+  Mention only changes within the selected source. Claim test execution or results
+  only when directly observed or supplied; adding tests does not prove they passed.
+  Include issue IDs only when provided by the user or repository context.
 
-Before committing, recheck the staged scope and current branch so the message
-still describes the authorized work. Reconcile unexpected changes before writing.
-Use ordinary `git commit`, preserving hooks and signing; do not replace Git's
-lifecycle with manual locks or commit plumbing. Confirm the resulting SHA and
-subject, and report hook/validation failures honestly. A commit does not authorize
-a push.
+## Message Standards
 
-Use [shared conventions](references/conventions.md) for permission, verification,
-and temporary-file handling. When changing this contract, exercise the affected
-[validation scenarios](references/validation-scenarios.md).
+```text
+<type>[optional scope][!]: <short description>
+
+<optional body>
+
+<optional footer>
+```
+
+- Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`,
+  `chore`, `style`, `revert`. The `style` type covers formatting or whitespace.
+- Scope: use a repository area when one clearly dominates; omit for mixed areas.
+  Use terminology established by the repository or user.
+- Subject: imperative mood, aiming for 72 characters or fewer. Short changes
+  deserve short subjects.
+- Body: include when it adds useful what/why context; wrap at about 72 characters.
+- Breaking changes: mark clearly breaking changes with `!` before the colon and
+  add `BREAKING CHANGE: <impact>` in the footer.
+
+## Output
+
+Return only the complete message in one code block. Explain choices only when
+asked. If the source is missing or cannot be inspected, report the issue instead
+of inventing a message.
+
+Use [validation scenarios](references/validation-scenarios.md) when changing this
+contract.
