@@ -73,6 +73,15 @@ Use [authoring guidance](docs/skill-template.md) and [focused evaluations](docs/
 Add only resources that improve the actual workflow. Preserve authorization,
 target identity, unrelated work and truthful evidence.
 
+Before reporting a skill addition or change ready, run the applicable existing
+regression and packaging checks. The
+[validation workflow](.github/workflows/validate-skills.yml) is the canonical
+full command set. When adding, renaming, or removing a skill, update the expected
+skill set in `test_skills_are_discoverable_at_the_plugin_root` in
+[tests/test_plugin_packaging.py](tests/test_plugin_packaging.py).
+
+Common local commands, run from the repository root:
+
 ```bash
 python3 scripts/sync-shared-conventions.py
 python3 scripts/validate-skills-repo.py
@@ -83,3 +92,8 @@ gh skill publish --dry-run
 CI also verifies shared-file drift, JSON/shell syntax and ShellCheck. The publisher
 command above validates only; it does not publish a release. Structural checks
 do not substitute for behavioral evidence or client/runtime testing.
+
+Reuse passing results while the relevant files and environment remain unchanged;
+rerun affected checks after changes. Report what actually ran and any skipped or
+blocked checks. Label written or statically reviewed validation scenarios as such,
+rather than as executed tests.
