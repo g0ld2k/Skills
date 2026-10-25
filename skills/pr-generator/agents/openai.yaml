@@ -1,4 +1,0 @@
-interface:
-  display_name: "PR Generator"
-  short_description: "Draft GitHub pull requests"
-  default_prompt: "Use $pr-generator to draft a GitHub pull request title and body for the current branch."

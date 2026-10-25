@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pull Request"
+  short_description: "Write a PR title and body that's fast to review"
+  default_prompt: "Use $pull-request to write the title and body for this branch's PR."

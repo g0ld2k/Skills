@@ -1,0 +1,26 @@
+# Blocks merging, including auto-merge, while a PR carries the
+# needs-human-verification label. Removing the label re-runs the check.
+# The ruleset on main requires the "Label gate" check.
+name: Label gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  label-gate:
+    name: Label gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Check for needs-human-verification
+        env:
+          BLOCKED: ${{ contains(github.event.pull_request.labels.*.name, 'needs-human-verification') }}
+        run: |
+          if [ "$BLOCKED" = "true" ]; then
+            echo "::error::Remove the needs-human-verification label after completing the manual checks."
+            exit 1
+          fi
+          echo "No needs-human-verification label."

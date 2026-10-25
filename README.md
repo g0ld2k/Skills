@@ -1,9 +1,9 @@
 # g0ld2k Skills
 
-Focused personal skills for PR authoring, review feedback, and release notes,
-with small compatibility and on-demand tools. The harness owns general planning,
-delegation and branch orchestration; repository guidance owns project constraints
-and verification commands.
+Focused personal skills for PR authoring, review feedback, GitHub repo setup and
+release notes, with small compatibility and on-demand tools. The harness owns
+general planning, delegation and branch orchestration; repository guidance owns
+project constraints and verification commands.
 
 ## Skills
 
@@ -11,18 +11,20 @@ and verification commands.
 | --- | --- |
 | `adversarial-review` | Challenge unnecessary complexity using simplicity and correctness perspectives. |
 | `test-adequacy-review` | Find low-quality tests worth strengthening, replacing, or removing, and missing behavioral coverage. |
-| `pr-generator` | Draft or publish the requested PR title/body from branch evidence. |
+| `pull-request` | Write a PR's Conventional Commit title and reviewable body, with screenshots for UI changes. |
 | `pr-comment-review` | Triage and address existing PR feedback and scoped replies. |
 | `testflight-notes` | Draft tester-facing notes from a verified history range. |
 | `commit-message` | Draft copyable Conventional Commit messages from staged changes or an explicitly selected source. |
 | `simplify` | Optional focused review or requested cleanup. |
 | `prune-comments` | Remove low-value comments while preserving useful maintenance knowledge. |
-| `pr-closeout-loop` | Explicitly selected readiness or bounded closeout; monitoring and merging require their own scope. |
+| `github-repo-setup` | Explicitly selected: apply the squash-only, ruleset-gated GitHub setup to a repository. |
 
 The three everyday skills do not automatically call every other skill. User
 intent and existing authorization take precedence over workflow preferences.
 See the [2026-10-04 simplification and PR disposition](docs/2026-10-04-simplification.md)
-for retired entrypoints and preserved historical proposals.
+for retired entrypoints and preserved historical proposals. `pull-request`, a fork
+of Matt Pocock's `pr` skill, replaced `pr-generator` and `pr-closeout-loop` on
+2026-10-25.
 
 ## Packaging
 
@@ -35,7 +37,7 @@ manifest is validated against the pinned schema in `schemas/agent-plugins/`.
 An explicit-only skill carries both Claude's `disable-model-invocation: true`
 frontmatter and Codex's `policy.allow_implicit_invocation: false` in
 `agents/openai.yaml`; neither client reads the other's guard. The validator
-checks both for the explicitly selected closeout workflow.
+checks both for the explicitly selected `github-repo-setup`.
 
 `_shared/conventions.md` is vendored into its consuming skill directories by
 `scripts/sync-shared-conventions.py` and drift-checked. This deliberate duplication
@@ -47,7 +49,7 @@ entrypoint links to `references/conventions.md`.
 Direct single-skill example:
 
 ```bash
-gh skill install g0ld2k/Skills skills/pr-generator/SKILL.md --agent codex --scope user
+gh skill install g0ld2k/Skills skills/pull-request/SKILL.md --agent codex --scope user
 ```
 
 Codex marketplace:
