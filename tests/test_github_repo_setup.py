@@ -62,10 +62,10 @@ GHA = 15368
 XCODE_CLOUD = 117084
 
 
-def ruleset(rules: list[dict], include: str = "~DEFAULT_BRANCH") -> dict:
+def ruleset(rules: list[dict], include: str = "~DEFAULT_BRANCH", exclude: tuple = ()) -> dict:
     return {
         "id": 7, "target": "branch", "source_type": "Repository", "enforcement": "active",
-        "conditions": {"ref_name": {"include": [include], "exclude": []}}, "rules": rules,
+        "conditions": {"ref_name": {"include": [include], "exclude": list(exclude)}}, "rules": rules,
     }
 
 
@@ -199,6 +199,31 @@ class ApplyGithubSetupTests(unittest.TestCase):
         [write] = self.writes()
         self.assertEqual((write["method"], write["endpoint"]), ("POST", f"repos/{REPO}/rulesets"))
         self.assertEqual(write["input"]["conditions"]["ref_name"]["include"], ["~DEFAULT_BRANCH"])
+
+    def test_ruleset_skips_a_ruleset_that_excludes_the_default_branch(self) -> None:
+        fixtures = configured_repo()
+        fixtures[f"repos/{REPO}/rulesets/7"] = ruleset(
+            configured_rules(), include="~ALL", exclude=("refs/heads/main",))
+
+        result = self.run_script(fixtures, "verify", "--ci-check", CI_CHECK)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("no ruleset targets the default branch", result.stdout)
+
+        result = self.run_script(fixtures, "ruleset", "--ci-check", CI_CHECK)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        [write] = self.writes()
+        self.assertEqual((write["method"], write["endpoint"]), ("POST", f"repos/{REPO}/rulesets"))
+
+    def test_ruleset_stops_when_the_lookup_fails(self) -> None:
+        for missing in (f"repos/{REPO}/rulesets", f"repos/{REPO}/rulesets/7"):
+            with self.subTest(missing=missing):
+                fixtures = configured_repo()
+                del fixtures[missing]
+
+                result = self.run_script(fixtures, "ruleset", "--ci-check", CI_CHECK)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.writes(), [])
 
     def test_verify_passes_on_the_configured_repo_and_reports_drift(self) -> None:
         result = self.run_script(configured_repo(), "verify", "--ci-check", CI_CHECK)

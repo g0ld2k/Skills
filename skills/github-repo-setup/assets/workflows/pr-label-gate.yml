@@ -1,10 +1,13 @@
 # Blocks merging, including auto-merge, while a PR carries the
 # needs-human-verification label. Removing the label re-runs the check.
 # The ruleset on main requires the "Label gate" check.
+# pull_request_target runs the default branch's copy of this file, so a PR
+# can't pass the gate by editing it. It reads event metadata only: never
+# check out or run the PR's code here.
 name: Label gate
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize, labeled, unlabeled]
 
 permissions: {}

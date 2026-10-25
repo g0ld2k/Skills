@@ -96,15 +96,24 @@ write() {
 
 default_branch() { gh api "repos/$repo" --jq .default_branch; }
 
+# True when a ruleset's ref_name condition applies to $ref: an include matches
+# and no exclude does. Name patterns other than these exact forms are ignored.
+TARGETS_BRANCH='def hits($ref): any(.[]; . == "~ALL" or . == "~DEFAULT_BRANCH" or . == $ref);
+  (.conditions.ref_name.include // [] | hits($ref))
+  and (.conditions.ref_name.exclude // [] | hits($ref) | not)'
+
 # Prints the id of the repository ruleset that targets the default branch, or
 # nothing. Fails when more than one does, since merging rules across them is
-# a decision for the maintainer.
+# a decision for the maintainer. Each gh call is checked explicitly: errexit
+# doesn't reach inside command substitutions, and a failed lookup read as "no
+# ruleset" would create a duplicate.
 default_branch_ruleset_id() {
-  local branch=$1 ids=() id
-  for id in $(gh api --paginate "repos/$repo/rulesets" \
-    --jq '.[] | select(.target == "branch" and .source_type == "Repository") | .id'); do
-    if gh api "repos/$repo/rulesets/$id" --jq '.conditions.ref_name.include[]' |
-      grep -qxF -e '~DEFAULT_BRANCH' -e "refs/heads/$branch" -e '~ALL'; then
+  local branch=$1 ids=() id list detail
+  list=$(gh api --paginate "repos/$repo/rulesets" \
+    --jq '.[] | select(.target == "branch" and .source_type == "Repository") | .id') || return 1
+  for id in $list; do
+    detail=$(gh api "repos/$repo/rulesets/$id") || return 1
+    if jq -e --arg ref "refs/heads/$branch" "$TARGETS_BRANCH" >/dev/null <<<"$detail"; then
       ids+=("$id")
     fi
   done
@@ -139,7 +148,7 @@ apply_ruleset() {
       exit 1
     fi
   done
-  id=$(default_branch_ruleset_id "$branch")
+  id=$(default_branch_ruleset_id "$branch") || exit 1
   if [ -n "$id" ]; then
     # Keep rules this setup doesn't manage, such as required signatures.
     rules=$(gh api "repos/$repo/rulesets/$id" |
@@ -192,8 +201,9 @@ verify() {
     drift=1
   fi
 
-  local id want actual
-  id=$(default_branch_ruleset_id "$(default_branch)")
+  local branch id want actual
+  branch=$(default_branch)
+  id=$(default_branch_ruleset_id "$branch") || exit 1
   want=$(ruleset_rules | jq -cS --argjson managed "$MANAGED_RULE_TYPES" "{enforcement: \"active\", rules: ($RULES_SUMMARY)}")
   if [ -z "$id" ]; then
     echo "drift  no ruleset targets the default branch"
