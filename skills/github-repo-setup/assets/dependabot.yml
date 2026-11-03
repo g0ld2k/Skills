@@ -1,0 +1,13 @@
+# Dependabot can't update Swift packages referenced from an Xcode project, so
+# only GitHub Actions are tracked. Updates are grouped into one weekly PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]

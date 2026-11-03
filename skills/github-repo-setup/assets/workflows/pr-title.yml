@@ -1,0 +1,31 @@
+# Squash merges use the PR title as the commit subject on main, so the
+# title must be a Conventional Commit subject: type(scope)!: subject.
+# The ruleset on main requires the "PR title" check.
+# pull_request_target runs the default branch's copy of this file, so a PR
+# can't pass the check by editing it. It reads event metadata only: never
+# check out or run the PR's code here.
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  pr-title:
+    name: PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Check Conventional Commit format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|test|docs|build|ci|chore|style|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*[^.]$'
+          if printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "PR title is a Conventional Commit subject."
+            exit 0
+          fi
+          echo "::error::PR title must look like 'fix(history): hide row separators' (types: feat, fix, perf, refactor, test, docs, build, ci, chore, style, revert; lowercase scope optional; no trailing period)."
+          exit 1

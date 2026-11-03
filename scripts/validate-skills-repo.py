@@ -16,7 +16,7 @@ SKILLS_DIR = ROOT / "skills"
 LEGACY_SKILLS_DIR = ROOT / "Skills"
 PLUGIN_MANIFEST = ROOT / "plugin.json"
 PLUGIN_SCHEMA = ROOT / "schemas" / "agent-plugins" / "1.0.0" / "plugin.schema.json"
-EXPLICIT_ONLY_SKILLS = {"pr-closeout-loop"}
+EXPLICIT_ONLY_SKILLS = {"github-repo-setup"}
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LOCAL_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RETIRED_SKILL_NAMES = {
@@ -28,7 +28,7 @@ RETIRED_SKILL_NAMES = {
 EXTERNAL_SKILL_PREFIXES = ("superpowers:",)
 # Single-word command tokens that legitimately follow Use/run/invoke in prose.
 # Extend only with commands/tools, never with skill names.
-NON_SKILL_TOKENS = {"gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
+NON_SKILL_TOKENS = {"diff", "gh", "git", "jq", "rg", "make", "mktemp", "shellcheck"}
 # Matches: Use `name`, use `name`, Invoke `name`, delegating to `name`, Run `name`
 SKILL_REF_CONTEXT_RE = re.compile(
     r"(?<![A-Za-z0-9_-])(?:[Uu]se|[Ii]nvoke|[Dd]elegat\w+ to|[Rr]un)\s+`([a-z0-9][a-z0-9:-]*[a-z0-9])`"

@@ -102,8 +102,8 @@ class RepositoryShapeTests(unittest.TestCase):
 
         self.assertEqual(
             {path.name for path in skill_dirs},
-            {"adversarial-review", "commit-message", "pr-generator", "pr-comment-review",
-             "pr-closeout-loop", "prune-comments", "simplify", "test-adequacy-review",
+            {"adversarial-review", "commit-message", "github-repo-setup", "pr-comment-review",
+             "prune-comments", "pull-request", "simplify", "test-adequacy-review",
              "testflight-notes"},
         )
 
@@ -157,7 +157,7 @@ class RepositoryShapeTests(unittest.TestCase):
 class ExplicitOnlyInvocationTests(unittest.TestCase):
     """Both install paths need their own guard; neither client reads the other's."""
 
-    EXPLICIT_ONLY = ("pr-closeout-loop",)
+    EXPLICIT_ONLY = ("github-repo-setup",)
 
     def test_claude_guard_present_in_frontmatter(self) -> None:
         for name in self.EXPLICIT_ONLY:
@@ -191,7 +191,7 @@ class SharedConventionsTests(unittest.TestCase):
 
         consumers = shared.consumer_names(ROOT / "skills")
 
-        self.assertIn("pr-closeout-loop", consumers)
+        self.assertIn("pr-comment-review", consumers)
         self.assertNotIn("commit-message", consumers)
         self.assertNotIn("testflight-notes", consumers)
         for name in consumers:
