@@ -73,8 +73,7 @@ Avoid:
 ## 6) Confidence Rules
 
 Only emit a note when confidence is high.
-If confidence is low:
-- Keep it broad and safe, or
-- Omit it
+If confidence is low, inspect relevant evidence or omit the claim.
+Vague wording is not a substitute for support.
 
 Prefer missing a minor improvement over including an inaccurate claim.
