@@ -30,6 +30,15 @@ Do not infer impact from a Conventional Commit prefix alone. Exclude CI, tests,
 formatting, tooling and internal refactors unless the evidence establishes a
 user-visible change. Do not invent stability or performance improvements.
 
+## Platform versions
+
+Determine target platforms from the user's request or the repository's supported
+app targets. Verify applicability with [classification guidance](references/classification-rules.md).
+When applicable changes differ, produce a complete version for each target platform,
+including shared changes and that platform's changes. When they are the same,
+produce one shared version. Honor an explicit request for separate versions.
+Every included entry must have supported scope for its version's audience.
+
 ## Output
 
 Use [format preferences](references/format-guide.md) for default copy-ready notes;
@@ -42,3 +51,7 @@ If there are no supported user-visible changes, say so plainly rather than
 manufacturing an IMPROVED entry. If evidence could not be read, report that gap
 instead of asserting that there were no changes. Add an excluded-changes summary
 only when requested.
+
+Before returning, check every version against the format guide: copy-ready block,
+section grouping, optional user-supplied release context, and per-block character
+budget. Keep evidence caveats and platform labels outside the copyable blocks.

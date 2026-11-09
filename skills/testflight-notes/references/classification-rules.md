@@ -19,9 +19,9 @@ Exclude when primarily internal:
 - Logging-only changes unless they resolve user-facing failures
 - Screenshot automation and release process mechanics
 
-## 2) Label Mapping
+## 2) Section Mapping
 
-Use exactly one label per final item.
+Assign each final item to exactly one section. Rendering is defined in `format-guide.md`.
 
 - NEW:
   - Capability did not exist previously
@@ -37,23 +37,17 @@ When uncertain between IMPROVED and FIX:
 - If previously broken -> FIX
 - If previously worked but now better -> IMPROVED
 
-## 3) Platform Scope Heuristics
+## 3) Platform Applicability
 
-Add `(iOS)` or `(macOS)` only with clear evidence from commit paths/messages.
+Use commit bodies, target membership, conditional compilation, and relevant source or product documentation to establish which requested or supported platforms expose the changed behavior.
 
-Likely iOS-only signals:
-- iOS-only targets/modules, UIKit-only code, iPhone/iPad specific flow notes
-- File paths or target names containing `iOS`, `Mobile`, `UIKit`
+- Shared domain logic supports a shared entry only when the relevant behavior is used on each target platform.
+- Platform frameworks and paths are investigation clues, not proof of exclusivity. For example, UIKit code can also serve Mac Catalyst.
+- Verify iOS, macOS, visionOS, watchOS, or other supported targets individually when their capabilities differ. A feature available on one platform does not establish availability on another.
+- Include companion Apple Watch changes in the iOS version when that version distributes the companion. Keep their Apple Watch scope explicit in the bullet. Use a standalone watchOS version when requested or independently distributed.
+- If scope remains uncertain, inspect the relevant implementation or omit the unsupported claim. Uncertainty is not evidence that a change is shared.
 
-Likely macOS-only signals:
-- macOS-only targets/modules, AppKit-only code, menu bar/window-specific changes
-- File paths or target names containing `macOS`, `Mac`, `AppKit`
-
-Cross-platform signals:
-- Shared core/domain/state logic used by both apps
-- Notes or PR body explicitly say both platforms
-
-If evidence is mixed or unclear, omit the suffix; do not assert cross-platform support.
+The main workflow decides whether these applicability differences require separate versions.
 
 ## 4) Deduplication Rules
 

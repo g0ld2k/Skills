@@ -1,15 +1,20 @@
 # Good vs Bad Transformations
 
+These are section excerpts. Use `format-guide.md` for complete copy-ready blocks.
+
 ## Example 1
 
 Raw commit:
 `feat: add TimezoneBucket model and ManagementTimezonesTabView`
 
 Bad note:
-`NEW: Added TimezoneBucket model and ManagementTimezonesTabView.`
+`• Added TimezoneBucket model and ManagementTimezonesTabView.`
 
 Good note:
-`NEW: Timezones are now grouped into expandable buckets so large lists are easier to scan.`
+```text
+NEW
+• Timezones are now grouped into expandable buckets so large lists are easier to scan.
+```
 
 ## Example 2
 
@@ -18,10 +23,13 @@ Raw commits:
 - `fix: guard list reload during save`
 
 Bad note:
-`FIX: Added scroll guard and reload guard in people view model.`
+`• Added scroll guard and reload guard in people view model.`
 
 Good note:
-`FIX: Scroll position no longer jumps when you save changes in the People editor.`
+```text
+FIX
+• Scroll position no longer jumps when you save changes in the People editor.
+```
 
 ## Example 3
 
@@ -29,7 +37,7 @@ Raw commit:
 `refactor: extract sync scheduler`
 
 Bad note:
-`IMPROVED: Refactored scheduler architecture.`
+`• Refactored scheduler architecture.`
 
 Good handling:
 Omit unless there is explicit user-visible impact.
@@ -41,10 +49,15 @@ Raw commits:
 - `fix(macOS): shortcut conflict when app inactive`
 
 Bad note:
-`NEW (macOS): Added shortcut and fixed conflict.`
+`• Added shortcut and fixed conflict.`
 
 Good note:
-`NEW (macOS): You can open the quick panel from anywhere with a global keyboard shortcut.`
+macOS
+
+```text
+NEW
+• You can open the quick panel from anywhere with a global keyboard shortcut.
+```
 
 ## Example 5
 
