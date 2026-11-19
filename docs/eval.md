@@ -4,10 +4,11 @@ Use representative requests and meaningful safety boundaries. Structural checks
 verify packaging and links; they do not prove good decisions. Simulated tool calls
 do not prove live client behavior or external side effects.
 
-For a behavioral change, compare baseline and candidate on the same bounded
-request and artifacts. Include direct/indirect triggers, an adjacent request
-that should not activate, and the relevant edge cases. A passing baseline is
-useful evidence; do not manufacture a failure to justify a change.
+For a behavioral change, define what a reviewer should be able to observe in
+the result. Compare baseline and candidate against those criteria on the same
+bounded request and artifacts. Include direct and indirect triggers, an adjacent
+request that should not activate, and the relevant edge cases. Record where
+each version meets or misses the criteria, including when both pass.
 
 For complex or consequential behavior, use an independent evaluator with the
 request, skill, and minimum raw artifacts. Do not tell it the intended answer or
@@ -34,6 +35,5 @@ or unresolved concerns. Formatting-only changes need structural checks rather
 than a fresh model evaluation. Use per-skill scenarios as examples, not an exact
 prose or tool-count contract.
 
-This approach follows the [current skill guidance](https://learn.chatgpt.com/docs/build-skills)
-and [Astra prompting guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra),
-checked 2026-10-04. Preserve actual repository and security requirements.
+See the [skill guidance](https://learn.chatgpt.com/docs/build-skills) and
+[GPT-6.2 prompting guidance](https://learn.chatgpt.com/guides/prompting-gpt-6-2-astra).

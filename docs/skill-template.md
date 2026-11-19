@@ -1,8 +1,8 @@
 # Authoring a skill
 
-Use the built-in skill-creator guidance. Start with a concrete request and add
-only the domain context, output preferences, or non-obvious constraints the
-model needs. A skill is not a replacement for the harness's planning or tools.
+Use the built-in skill-creator guidance. Lead with the outcome and what a
+reviewer can inspect to tell whether it meets the request. Add domain context,
+output preferences, and non-obvious constraints where they change the result.
 
 ```markdown
 ---
@@ -13,13 +13,23 @@ license: MIT
 
 # Skill title
 
-State the useful outcome, required evidence, authority boundaries, and how to
-finish or report a blocker. Link substantial supporting details only where a
-particular operation needs them.
+State the outcome, observable completion criteria, and authority boundaries.
+Name the evidence to report when a check is blocked. Link supporting details
+at the decision that needs them.
 ```
 
 For this repository, add `agents/openai.yaml` with a display name, a 25–64
 character short description, and a default prompt mentioning `$skill-name`.
+Give the default prompt a concrete result and the most useful review criterion.
+For example, replace “Review these tests” with “Use `$test-adequacy-review`
+to review the current changes for weak tests and coverage gaps. For each gap,
+name a plausible regression the tests would miss and the assertion that would
+catch it.”
+
+Leave reasoning effort to the task and client. Describe where the work needs
+to be exhaustive. When independent work regularly improves a skill, give the
+host a concrete trigger for delegation and the boundaries the agents share.
+
 Preserve the existing invocation policy when editing a skill. Only make a skill
 explicit-only when requested; list it in `EXPLICIT_ONLY_SKILLS` and use both
 Claude's `disable-model-invocation: true` frontmatter and Codex's
@@ -41,7 +51,9 @@ Validate structure with `python3 scripts/validate-skills-repo.py`, update affect
 behavioral scenarios, and follow [evaluation guidance](eval.md). Test observable
 results and safety boundaries; avoid tests of exact prose or headings.
 
-Official guidance checked 2026-10-04:
+## Official guidance
+
+- [Prompting GPT-6.2 in Codex](https://learn.chatgpt.com/guides/prompting-gpt-6-2-astra)
 - [Rethinking skills and prompts for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
 - [Build skills](https://learn.chatgpt.com/docs/build-skills)
 - [Plugin skills](https://developers.openai.com/plugins/build/skills)

@@ -10,7 +10,7 @@
     {
       "name": "g0ld2k-skills",
       "description": "Focused personal skills for PR authoring, review feedback, GitHub repo setup, cleanup, commit messages, and release notes.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "source": "."
     }
   ]
