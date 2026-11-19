@@ -174,11 +174,13 @@ You may use one of these, you may use several, it is unlikely you will use all o
 
 Concrete evidence that the change works. Show a before and after.
 
-Screenshots are S-tier - when the environment is set up for it and the change is visual.
+For a logic change, show the relevant test as pseudocode and cite the observed test result or console output. Include both runs when you have failing and passing evidence.
 
-Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
+For a UI change, use the project's launch instructions or build configuration to run the app. Capture the base revision in a temporary `git worktree`, then capture the branch on the same device with the same data.
 
-For a UI change, Evidence is before and after screenshots. Capture both with the launch command the repo's `AGENTS.md` names, on the same device and data, building the base branch in a temporary `git worktree` for "before". Keep the images out of the commit. Reference each in the body as `![alt](./after.png)` and publish with `gh pr create` or `gh pr edit` plus `--attach './after.png#alt text'` (gh 2.102 or later), using the same path in both; gh uploads the file and rewrites the reference.
+Inspect the changed UI at the size people will see it and compare it with the supplied design reference when available. For an interactive change, perform the affected action and report what happened. In Evidence, describe what the screenshots show and identify any check you could not complete.
+
+Keep the images out of the commit. Reference each in the PR body as `![alt](./after.png)`. For `gh pr create` or `gh pr edit`, pass the matching path with `--attach './after.png#alt text'` (gh 2.102 or later).
 
 ### Merge Danger
 

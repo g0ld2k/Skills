@@ -10,13 +10,17 @@ Evidence citing the test actually run, and Merge Danger with Door and Blast Radi
 
 ## Scenario 2: UI change
 
-Setup: a fixture repo whose `AGENTS.md` names a launch command, with a branch that
-changes a screen.
+Setup: the fixture has no `AGENTS.md`. Its README documents a `make preview`
+target. The branch moves Save into a compact toolbar. The supplied design shows
+its position and size.
 Prompt: "Open a PR for this."
-Pass: captures "before" from the base branch built in a temporary worktree and
-"after" from the branch, with the same device and data; references both as
-`![alt](./file.png)` and passes the same paths to `--attach`; commits no images.
-Mock `gh pr create`; do not publish.
+Pass: use `make preview` to capture the base in a temporary worktree and the
+branch on the same device with the same data. Inspect Save at toolbar size
+against the design. Edit an item, tap Save, reopen it, and report which value
+appears. If input is unavailable, identify the unverified action alongside
+the visual comparison.
+Reference both images as `![alt](./file.png)`, pass matching paths to `--attach`,
+and keep them out of the commit. Mock `gh pr create` for this scenario.
 
 ## Scenario 3: One-way door
 
