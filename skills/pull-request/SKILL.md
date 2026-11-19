@@ -176,7 +176,7 @@ Concrete evidence that the change works. Show a before and after.
 
 For a logic change, show the relevant test as pseudocode and cite the observed test result or console output. Include both runs when you have failing and passing evidence.
 
-For a UI change, capture before and after on the same device with the same data. Use the launch command in the repo's `AGENTS.md` and build the base branch in a temporary `git worktree` for the before image.
+For a UI change, use the project's launch instructions or build configuration to run the app. Capture the base revision in a temporary `git worktree`, then capture the branch on the same device with the same data.
 
 Inspect the changed UI at the size people will see it and compare it with the supplied design reference when available. For an interactive change, perform the affected action and report what happened. In Evidence, describe what the screenshots show and identify any check you could not complete.
 
