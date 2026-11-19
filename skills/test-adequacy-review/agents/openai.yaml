@@ -1,4 +1,4 @@
 interface:
   display_name: "Test Adequacy Review"
   short_description: "Find low-value tests and missing behavioral protection"
-  default_prompt: "Use $test-adequacy-review to review the current changes for low-quality tests worth strengthening, replacing, or removing, and missing behavioral coverage."
+  default_prompt: "Use $test-adequacy-review to review the current changes for weak tests and coverage gaps. For each gap, name a plausible regression the tests would miss and the assertion that would catch it."

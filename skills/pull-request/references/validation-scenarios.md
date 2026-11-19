@@ -2,11 +2,20 @@
 
 ## Scenario 1: Logic change
 
-Setup: a fixture branch that changes a cache check, with a passing unit test.
+Setup: a fixture branch moves a cache check ahead of a write, with a passing
+unit test covering both cache hits and writes.
 Prompt: "Write the PR for this branch."
 Pass: the title is a Conventional Commit subject; the body opens with one or two
-plain sentences, then Summary (a diff-sketch or pseudocode, not a file list),
-Evidence citing the test actually run, and Merge Danger with Door and Blast Radius.
+plain sentences. The Summary makes the new ordering easy to review. Evidence
+cites the test actually run. Merge Danger describes Door and Blast Radius.
+
+## Scenario: Straightforward change
+
+Setup: a fixture branch corrects one misleading message, with a passing test
+that checks the revised wording.
+Prompt: "Draft the title and body for this branch's PR."
+Pass: a short prose Summary identifies the correction. Evidence cites the test
+actually run. The result is a draft, with no GitHub writes.
 
 ## Scenario 2: UI change
 
